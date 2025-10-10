@@ -1,0 +1,15 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f0f5ff 0%, #e6f4f1 100%);
+  padding: 24px;
+}
+
+.card {
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 12px 48px rgba(15, 45, 75, 0.12);
+}

@@ -1,0 +1,24 @@
+{
+  "name": "easy-law",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "prepare": "husky install",
+    "dev:web": "pnpm --filter web-project dev",
+    "dev:app": "pnpm --filter app-project dev",
+    "dev:server": "pnpm --filter server-project dev",
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r lint",
+    "lint-staged": "lint-staged"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,cjs,mjs,json}": "pnpm exec eslint --max-warnings=0 --fix"
+  }
+}

@@ -1,0 +1,12 @@
+node_modules
+.DS_Store
+.dist
+.next
+dist
+expo/
+.expo
+.env*
+coverage
+*.log
+tsconfig.tsbuildinfo
+.__temp__
