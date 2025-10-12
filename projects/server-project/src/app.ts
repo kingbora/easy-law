@@ -7,6 +7,7 @@ import { auth } from './auth';
 import env from './config/env';
 import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
 import healthRouter from './routes/health';
+import usersRouter from './routes/users';
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/health', healthRouter);
+app.use('/api/users', usersRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

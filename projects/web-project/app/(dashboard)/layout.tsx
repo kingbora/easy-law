@@ -7,7 +7,6 @@ import {
   FolderOpenOutlined,
   HomeOutlined,
   LogoutOutlined,
-  PlusOutlined,
   RightOutlined,
   SolutionOutlined,
   TeamOutlined,
@@ -17,10 +16,14 @@ import { Avatar, Badge, Breadcrumb, Button, Dropdown, Layout, Menu, message, typ
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { authClient } from '@/lib/auth-client';
+import ProfileModal from '@/components/profile/ProfileModal';
+import { ApiError } from '@/lib/api-client';
+import { updateUser } from '@/lib/users-api';
 
+import { DashboardHeaderActionProvider } from './header-context';
 import styles from './layout.module.scss';
 
 const { Header, Sider, Content } = Layout;
@@ -41,6 +44,7 @@ const breadcrumbMap: Record<string, string[]> = {
 };
 
 interface SessionUser {
+  id?: string;
   name?: string | null;
   email?: string | null;
   image?: string | null;
@@ -55,6 +59,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [headerAction, setHeaderAction] = useState<ReactNode | null>(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -65,9 +72,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         if (!mounted || result.error) {
           return;
         }
-        const sessionUser = result.data?.user as SessionUser | undefined;
-        if (sessionUser) {
-          setUser(sessionUser);
+        const rawUser = result.data?.user;
+        if (rawUser) {
+          setUser({
+            id: rawUser.id as string | undefined,
+            name: rawUser.name,
+            email: rawUser.email,
+            image: rawUser.image
+          });
         }
       })
       .catch(() => {
@@ -131,7 +143,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       {
         key: 'dashboard-home',
         title:
-          pathname === '/' ? null : (
+          pathname === '/' ? (
+            <HomeOutlined />
+          ) : (
             <Link href="/">
               <HomeOutlined />
             </Link>
@@ -144,27 +158,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     ];
   }, [pathname]);
 
-  const actionButton = useMemo(() => {
-    if (pathname === '/cases/my') {
-      return (
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => {}}>
-          新增案件
-        </Button>
-      );
-    }
-    if (pathname === '/clients/my') {
-      return (
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => {}}>
-          新增客户
-        </Button>
-      );
-    }
-    return null;
-  }, [pathname]);
-
   const handleDropdownClick: MenuProps['onClick'] = async ({ key }) => {
     if (key === 'profile') {
-      router.push('/profile');
+      setProfileModalOpen(true);
       return;
     }
     if (key === 'email') {
@@ -188,6 +184,43 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       }
     }
   };
+
+  const handleProfileSubmit = useCallback(
+    async ({ name, image }: { name: string; image?: string | null }) => {
+      if (!user?.id) {
+        message.error('未获取到用户信息');
+        return;
+      }
+
+      setProfileSaving(true);
+      try {
+        const updated = await updateUser(user.id, {
+          name,
+          image: typeof image === 'undefined' ? undefined : image
+        });
+
+        setUser((prev) => {
+          if (!prev) {
+            return prev;
+          }
+          return {
+            ...prev,
+            name: updated.name ?? name,
+            image: updated.image ?? null
+          };
+        });
+
+        message.success('个人资料已更新');
+        setProfileModalOpen(false);
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '更新个人资料失败，请稍后重试';
+        message.error(errorMessage);
+      } finally {
+        setProfileSaving(false);
+      }
+    },
+    [user?.id]
+  );
 
   const userMenu: MenuProps['items'] = [
     {
@@ -223,39 +256,52 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   );
 
   return (
-    <Layout className={styles.layout} hasSider>
-      <Sider width={220} className={styles.sidebar} breakpoint="lg" collapsedWidth={64} theme="light">
-        <div className={styles.logo}>Easy Law</div>
-        <Menu
-          mode="inline"
-          items={menuItems}
-          selectedKeys={selectedKeys}
-          defaultOpenKeys={['cases', 'clients']}
-        />
-      </Sider>
-      <Layout>
-        <Header className={styles.header}>
-          <Breadcrumb className={styles.breadcrumb} items={breadcrumbItems} separator={<RightOutlined />} />
-          <div className={styles.headerRight}>
-            {actionButton}
-            <Badge dot>
+    <DashboardHeaderActionProvider setAction={setHeaderAction}>
+      <Layout className={styles.layout} hasSider>
+        <Sider width={220} className={styles.sidebar} breakpoint="lg" collapsedWidth={64} theme="light">
+          <div className={styles.logo}>Easy Law</div>
+          <Menu
+            mode="inline"
+            items={menuItems}
+            selectedKeys={selectedKeys}
+            defaultOpenKeys={['cases', 'clients']}
+          />
+        </Sider>
+        <Layout>
+          <Header className={styles.header}>
+            <Breadcrumb className={styles.breadcrumb} items={breadcrumbItems} separator={<RightOutlined />} />
+            <div className={styles.headerRight}>
+              {headerAction}
+              <Badge dot>
                 <Button
                   type='text'
                   shape='circle'
                   icon={<BellOutlined />}
                 />
               </Badge>
-            <Dropdown
-              menu={{ items: userMenu, onClick: handleDropdownClick }}
-              trigger={['click']}
-              placement="bottomRight"
-            >
-              {avatar}
-            </Dropdown>
-          </div>
-        </Header>
-        <Content className={styles.content}>{children}</Content>
+              <Dropdown
+                menu={{ items: userMenu, onClick: handleDropdownClick }}
+                trigger={['click']}
+                placement="bottomRight"
+              >
+                {avatar}
+              </Dropdown>
+            </div>
+          </Header>
+          <Content className={styles.content}>{children}</Content>
+        </Layout>
       </Layout>
-    </Layout>
+      <ProfileModal
+        open={profileModalOpen}
+        initialValues={{
+          name: user?.name,
+          email: user?.email,
+          image: user?.image ?? null
+        }}
+        onCancel={() => setProfileModalOpen(false)}
+        onSubmit={handleProfileSubmit}
+        confirmLoading={profileSaving}
+      />
+    </DashboardHeaderActionProvider>
   );
 }
