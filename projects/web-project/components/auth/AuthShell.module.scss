@@ -1,0 +1,19 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(120deg, #f0f5ff 0%, #e8faf1 100%);
+  padding: 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 24px 60px rgba(15, 45, 75, 0.18);
+  border-radius: 16px;
+}
+
+.content {
+  margin-top: 16px;
+}

@@ -13,11 +13,5 @@ module.exports = {
         alphabetize: { order: 'asc', caseInsensitive: true }
       }
     ],
-    'import/no-extraneous-dependencies': [
-      'error',
-      {
-        devDependencies: ['**/test/**', '**/*.test.*', '**/*.spec.*']
-      }
-    ]
   }
 };

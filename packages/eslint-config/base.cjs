@@ -36,7 +36,8 @@ module.exports = {
       rules: {
         'jsonc/sort-keys': 'off',
         'jsonc/key-name-casing': 'off',
-        '@typescript-eslint/consistent-type-imports': 'off'
+        '@typescript-eslint/consistent-type-imports': 'off',
+        'import/no-extraneous-dependencies': 'off'
       }
     }
   ]

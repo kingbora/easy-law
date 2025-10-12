@@ -1,5 +1,5 @@
 module.exports = {
-  extends: [require.resolve('./base.cjs')],
+  extends: ['next/core-web-vitals', require.resolve('./base.cjs')],
   env: {
     browser: true,
     es2022: true,

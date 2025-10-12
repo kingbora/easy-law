@@ -1,12 +1,19 @@
+import { toNodeHandler } from 'better-auth/node';
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
 
+import { auth } from './auth';
+import env from './config/env';
 import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
 import healthRouter from './routes/health';
 
 const app = express();
 
-const allowedOrigins = process.env.CORS_ORIGIN?.split(',').map((origin: string) => origin.trim()).filter(Boolean);
+const allowedOrigins = env.corsOrigin
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
@@ -14,6 +21,8 @@ app.use(
     credentials: true
   })
 );
+app.all('/api/auth/*', toNodeHandler(auth));
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

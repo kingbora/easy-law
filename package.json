@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "prepare": "husky install",
+    "prepare": "husky",
     "dev:web": "pnpm --filter web-project dev",
     "dev:app": "pnpm --filter app-project dev",
     "dev:server": "pnpm --filter server-project dev",
