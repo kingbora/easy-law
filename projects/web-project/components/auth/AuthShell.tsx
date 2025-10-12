@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Typography } from 'antd';
+import { Typography } from 'antd';
 import type { ReactNode } from 'react';
 
 import styles from './AuthShell.module.scss';
@@ -15,10 +15,10 @@ interface AuthShellProps {
 
 export const AuthShell = ({ title, description, children }: AuthShellProps) => (
   <div className={styles.container}>
-    <Card className={styles.card} bordered={false}>
-      <Title level={3}>{title}</Title>
+    <div className={styles.card}>
+      <Title level={3} className={styles.cardTitle}>{title}</Title>
       {description ? <Paragraph type="secondary">{description}</Paragraph> : null}
       <div className={styles.content}>{children}</div>
-    </Card>
+    </div>
   </div>
 );

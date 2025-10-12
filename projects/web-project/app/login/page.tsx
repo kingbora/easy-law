@@ -45,7 +45,7 @@ const LoginPage = () => {
   };
 
   return (
-    <AuthShell title="登录" description="请输入账号和密码进入系统">
+    <AuthShell title="账号登录">
       {errorMessage ? <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: 16 }} /> : null}
       <Form<LoginFormValues> layout="vertical" onFinish={handleFinish} requiredMark={false}>
         <Form.Item
@@ -71,11 +71,19 @@ const LoginPage = () => {
           登录
         </Button>
       </Form>
-      <Paragraph style={{ marginTop: 16 }}>
-        还没有账号？<Link href={redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : '/register'}>立即注册</Link>
-      </Paragraph>
-      <Paragraph>
-        忘记密码？<Link href={redirectParam ? `/forgot-password?redirect=${encodeURIComponent(redirectParam)}` : '/forgot-password'}>找回密码</Link>
+      <Paragraph
+        style={{
+          marginTop: 16,
+          display: 'flex',
+          justifyContent: 'space-between'
+        }}
+      >
+        <Link href={redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : '/register'}>
+          注册账号？
+        </Link>
+        <Link href={redirectParam ? `/forgot-password?redirect=${encodeURIComponent(redirectParam)}` : '/forgot-password'}>
+          忘记密码？
+        </Link>
       </Paragraph>
     </AuthShell>
   );

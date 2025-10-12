@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { localization } from 'better-auth-localization';
 
 import env from '../config/env';
 import { db } from '../db/client';
@@ -15,6 +16,11 @@ const basePath = process.env.AUTH_BASE_PATH ?? '/api/auth';
 export const auth = betterAuth({
   basePath,
   baseURL,
+  plugins: [
+    localization({
+      defaultLocale: 'zh-Hans',
+    })
+  ],
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema: {

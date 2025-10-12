@@ -56,6 +56,9 @@ importers:
       better-auth:
         specifier: 1.3.27
         version: 1.3.27(next@14.2.33(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(sass@1.93.2))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      better-auth-localization:
+        specifier: ^2.1.8
+        version: 2.1.8(better-auth@1.3.27)
       cookie-parser:
         specifier: ^1.4.6
         version: 1.4.7
@@ -1171,6 +1174,11 @@ packages:
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
+
+  better-auth-localization@2.1.8:
+    resolution: {integrity: sha512-cNjW0LsJtaKTKDJgvbtNf3XbJmi0Wf5htBrAN6BI30eb9e/dvIIt8l/0Y4ezT/f6Bmv0Ww6NoFaZt+zqaDzP0w==}
+    peerDependencies:
+      better-auth: ^1.3.4
 
   better-auth@1.3.27:
     resolution: {integrity: sha512-SwiGAJ7yU6dBhNg0NdV1h5M8T5sa7/AszZVc4vBfMDrLLmvUfbt9JoJ0uRUJUEdKRAAxTyl9yA+F3+GhtAD80w==}
@@ -4155,6 +4163,10 @@ snapshots:
   axobject-query@4.1.0: {}
 
   balanced-match@1.0.2: {}
+
+  better-auth-localization@2.1.8(better-auth@1.3.27):
+    dependencies:
+      better-auth: 1.3.27(next@14.2.33(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(sass@1.93.2))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
 
   better-auth@1.3.27(next@14.2.33(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(sass@1.93.2))(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
