@@ -26,6 +26,10 @@ export interface UpdateUserPayload {
   image?: string | null;
 }
 
+export interface CurrentUserResponse extends UserResponse {
+  permissions: string[];
+}
+
 export async function fetchUsers(): Promise<UserResponse[]> {
   return apiFetch<UserResponse[]>('/api/users');
 }
@@ -48,4 +52,8 @@ export async function deleteUser(id: string): Promise<void> {
   await apiFetch<void>(`/api/users/${id}`, {
     method: 'DELETE'
   });
+}
+
+export async function fetchCurrentUser(): Promise<CurrentUserResponse> {
+  return apiFetch<CurrentUserResponse>('/api/users/me');
 }

@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-import { Button, Descriptions, Form, Input, Modal, Select, Space, Typography } from 'antd';
+import { Button, Descriptions, Input, Modal, Select, Space, Typography, message } from 'antd';
 import { EditOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 
 export const DEFAULT_INITIAL_PASSWORD = 'a@000123';
 
@@ -15,8 +16,8 @@ export interface TeamMemberModalResult {
 }
 
 export interface TeamMemberModalDetail extends TeamMemberModalResult {
+  id?: string;
   joinDate?: string;
-  status?: string;
   initialPassword?: string;
   roleLabel?: string;
 }
@@ -39,11 +40,11 @@ interface TeamMemberModalProps {
   confirmLoading?: boolean;
 }
 
-interface TeamMemberFormValues {
+interface TeamMemberFormState {
   name: string;
   role: string;
   email: string;
-  password?: string;
+  joinDate: string;
 }
 
 const { Paragraph, Title } = Typography;
@@ -58,7 +59,12 @@ export default function TeamMemberModal({
   onModeChange,
   confirmLoading
 }: TeamMemberModalProps) {
-  const [form] = Form.useForm<TeamMemberFormValues>();
+  const [formValues, setFormValues] = useState<TeamMemberFormState>({
+    name: '',
+    role: roles[0]?.value ?? '',
+    email: '',
+    joinDate: dayjs().format('YYYY-MM-DD')
+  });
 
   const title = useMemo(() => {
     if (mode === 'create') {
@@ -72,21 +78,22 @@ export default function TeamMemberModal({
 
   useEffect(() => {
     if (!open) {
-      form.resetFields();
       return;
     }
 
-    if (mode === 'view') {
-      return;
-    }
+    const baseRole = initialValues?.role ?? roles[0]?.value ?? '';
+    const baseJoinDate =
+      mode === 'create'
+        ? dayjs().format('YYYY-MM-DD')
+        : initialValues?.joinDate ?? '';
 
-    form.setFieldsValue({
+    setFormValues({
       name: initialValues?.name ?? '',
-      role: initialValues?.role ?? roles[0]?.value ?? '',
+      role: baseRole,
       email: initialValues?.email ?? '',
-      password: mode === 'create' ? DEFAULT_INITIAL_PASSWORD : undefined
+      joinDate: baseJoinDate
     });
-  }, [form, initialValues, mode, open, roles]);
+  }, [initialValues?.email, initialValues?.id, initialValues?.joinDate, initialValues?.name, initialValues?.role, mode, open, roles]);
 
   const handleSubmit = async () => {
     if (!onSubmit) {
@@ -94,18 +101,36 @@ export default function TeamMemberModal({
       return;
     }
 
-    try {
-      const values = await form.validateFields();
-      const payload: TeamMemberModalResult = {
-        name: values.name,
-        role: values.role,
-        email: values.email,
-        password: mode === 'create' ? DEFAULT_INITIAL_PASSWORD : undefined
-      };
-      onSubmit(payload);
-    } catch (error) {
-      // validation errors handled by antd form
+    const { name, role, email } = formValues;
+
+    if (!name.trim()) {
+      message.error('请输入成员名称');
+      return;
     }
+
+    if (!role) {
+      message.error('请选择角色类型');
+      return;
+    }
+
+    if (!email.trim()) {
+      message.error('请输入成员邮箱');
+      return;
+    }
+
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(email)) {
+      message.error('请输入有效的邮箱地址');
+      return;
+    }
+
+    const payload: TeamMemberModalResult = {
+      name: name.trim(),
+      role,
+      email: email.trim(),
+      password: mode === 'create' ? DEFAULT_INITIAL_PASSWORD : undefined
+    };
+    onSubmit(payload);
   };
 
   const footer = mode === 'view'
@@ -136,60 +161,77 @@ export default function TeamMemberModal({
       destroyOnClose
       width={560}
     >
-      {mode === 'view' ? (
-        <Space direction="vertical" size={24} style={{ width: '100%' }}>
-          <Descriptions column={1} bordered>
-            <Descriptions.Item label="成员名称">{initialValues?.name ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="角色类型">
-              {initialValues?.roleLabel ?? roles.find((option) => option.value === initialValues?.role)?.label ?? initialValues?.role ?? '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="成员邮箱">{initialValues?.email ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="加入时间">{initialValues?.joinDate ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="成员状态">{initialValues?.status ?? '在职'}</Descriptions.Item>
-          </Descriptions>
-          {initialValues?.initialPassword ? (
-            <div>
-              <Title level={5}>初始密码提示</Title>
-              <Paragraph type="secondary">{initialValues.initialPassword}</Paragraph>
-            </div>
-          ) : null}
-        </Space>
-      ) : (
-        <Form form={form} layout="vertical" preserve={false}>
-          <Form.Item
-            label="成员名称"
-            name="name"
-            rules={[{ required: true, message: '请输入成员名称' }]}
-          >
-            <Input placeholder="请输入成员名称" />
-          </Form.Item>
-          <Form.Item
-            label="角色类型"
-            name="role"
-            rules={[{ required: true, message: '请选择角色类型' }]}
-          >
-            <Select
-              placeholder="请选择角色类型"
-              options={roles}
-            />
-          </Form.Item>
-          <Form.Item
-            label="成员邮箱"
-            name="email"
-            rules={[
-              { required: true, message: '请输入成员邮箱' },
-              { type: 'email', message: '请输入有效的邮箱地址' }
-            ]}
-          >
-            <Input placeholder="请输入成员邮箱" />
-          </Form.Item>
-          {mode === 'create' ? (
-            <Form.Item label="初始密码" name="password" initialValue={DEFAULT_INITIAL_PASSWORD}>
-              <Input disabled />
-            </Form.Item>
-          ) : null}
-        </Form>
-      )}
+      <Space direction="vertical" size={24} style={{ width: '100%' }}>
+        <Descriptions column={1} bordered>
+          <Descriptions.Item label="成员名称">
+            {mode === 'view' ? (
+              initialValues?.name ?? '-'
+            ) : (
+              <Input
+                value={formValues.name}
+                placeholder="请输入成员名称"
+                onChange={(event) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    name: event.target.value
+                  }))
+                }
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="角色类型">
+            {mode === 'view' ? (
+              initialValues?.roleLabel ??
+              roles.find((option) => option.value === initialValues?.role)?.label ??
+              initialValues?.role ??
+              '-'
+            ) : (
+              <Select
+                value={formValues.role}
+                options={roles}
+                placeholder="请选择角色类型"
+                onChange={(value) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    role: value
+                  }))
+                }
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="成员邮箱">
+            {mode === 'view' ? (
+              initialValues?.email ?? '-'
+            ) : (
+              <Input
+                value={formValues.email}
+                placeholder="请输入成员邮箱"
+                onChange={(event) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    email: event.target.value
+                  }))
+                }
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="加入时间">
+            {mode === 'create'
+              ? formValues.joinDate
+              : mode === 'edit'
+                ? initialValues?.joinDate ?? '-'
+                : initialValues?.joinDate ?? '-'}
+          </Descriptions.Item>
+        </Descriptions>
+        {(mode === 'view' && initialValues?.initialPassword) || mode === 'create' ? (
+          <div>
+            <Title level={5}>初始密码提示</Title>
+            <Paragraph type="secondary">
+              {mode === 'create' ? DEFAULT_INITIAL_PASSWORD : initialValues?.initialPassword}
+            </Paragraph>
+          </div>
+        ) : null}
+      </Space>
     </Modal>
   );
 }

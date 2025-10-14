@@ -1,6 +1,8 @@
-import { boolean, integer, pgEnum, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['master', 'admin', 'sale', 'lawyer', 'assistant']);
+
+export const permissionCategoryEnum = pgEnum('permission_category', ['menu', 'action']);
 
 export const users = pgTable(
   'users',
@@ -16,6 +18,30 @@ export const users = pgTable(
     password: text('password')
   },
   (table) => [uniqueIndex('users_email_idx').on(table.email)]
+);
+
+export const permissions = pgTable(
+  'permissions',
+  {
+    code: text('code').primaryKey(),
+    name: text('name').notNull(),
+    category: permissionCategoryEnum('category').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+  }
+);
+
+export const rolePermissions = pgTable(
+  'role_permissions',
+  {
+    role: userRoleEnum('role').notNull(),
+    permissionCode: text('permission_code')
+      .notNull()
+      .references(() => permissions.code, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
+  },
+  (table) => [primaryKey({ name: 'role_permissions_pk', columns: [table.role, table.permissionCode] })]
 );
 
 export const sessions = pgTable(
@@ -71,3 +97,4 @@ export const verifications = pgTable('verifications', {
 });
 
 export type UserRole = typeof userRoleEnum.enumValues[number];
+export type PermissionCategory = typeof permissionCategoryEnum.enumValues[number];

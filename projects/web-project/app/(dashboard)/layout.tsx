@@ -16,12 +16,12 @@ import { Avatar, Badge, Breadcrumb, Button, Dropdown, Layout, Menu, message, typ
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { authClient } from '@/lib/auth-client';
 import ProfileModal from '@/components/profile/ProfileModal';
 import { ApiError } from '@/lib/api-client';
-import { updateUser } from '@/lib/users-api';
+import { fetchCurrentUser, updateUser, type UserRole } from '@/lib/users-api';
 
 import { DashboardHeaderActionProvider } from './header-context';
 import styles from './layout.module.scss';
@@ -48,6 +48,8 @@ interface SessionUser {
   name?: string | null;
   email?: string | null;
   image?: string | null;
+  role?: UserRole | null;
+  permissions?: string[];
 }
 
 interface DashboardLayoutProps {
@@ -62,29 +64,57 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [headerAction, setHeaderAction] = useState<ReactNode | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const blockedWarningShown = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
-    authClient
-      .getSession()
-      .then((result) => {
-        if (!mounted || result.error) {
+    const loadUser = async () => {
+      try {
+        const session = await authClient.getSession();
+        if (!mounted || session.error) {
           return;
         }
-        const rawUser = result.data?.user;
-        if (rawUser) {
-          setUser({
-            id: rawUser.id as string | undefined,
-            name: rawUser.name,
-            email: rawUser.email,
-            image: rawUser.image
-          });
+        const rawUser = session.data?.user;
+        if (!rawUser) {
+          return;
         }
-      })
-      .catch(() => {
+
+        let nextUser: SessionUser = {
+          id: rawUser.id as string | undefined,
+          name: rawUser.name,
+          email: rawUser.email,
+          image: rawUser.image ?? null,
+          role: null,
+          permissions: undefined
+        };
+
+        try {
+          const detail = await fetchCurrentUser();
+          if (!mounted) {
+            return;
+          }
+          nextUser = {
+            ...nextUser,
+            name: detail.name ?? nextUser.name,
+            email: detail.email ?? nextUser.email,
+            image: detail.image ?? nextUser.image ?? null,
+            role: detail.role,
+            permissions: detail.permissions
+          };
+        } catch (error) {
+          // ignore fetch errors; keep session data
+        }
+
+        if (mounted) {
+          setUser(nextUser);
+        }
+      } catch (error) {
         /* noop */
-      });
+      }
+    };
+
+    void loadUser();
 
     return () => {
       mounted = false;
@@ -96,13 +126,23 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     return key ? [key] : [];
   }, [pathname]);
 
-  const menuItems: MenuProps['items'] = useMemo(
-    () => [
-      {
+  const hasPermission = useCallback(
+    (code: string) => user?.permissions?.includes(code) ?? false,
+    [user?.permissions]
+  );
+
+  const menuItems: MenuProps['items'] = useMemo(() => {
+    const items: MenuProps['items'] = [];
+
+    if (hasPermission('menu.dashboard')) {
+      items.push({
         key: 'overview',
         icon: <HomeOutlined />,
         label: <Link href="/">首页概览</Link>
-      },
+      });
+    }
+
+    items.push(
       {
         key: 'cases',
         icon: <BookOutlined />,
@@ -126,15 +166,45 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             label: <Link href="/clients/my">我的客户</Link>
           }
         ]
-      },
-      {
+      }
+    );
+
+    if (hasPermission('menu.team')) {
+      items.push({
         key: 'team',
         icon: <TeamOutlined />,
         label: <Link href="/team">团队管理</Link>
+      });
+    }
+
+    return items;
+  }, [hasPermission]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const allowTeam = hasPermission('menu.team');
+
+    if (pathname !== '/team') {
+      if (allowTeam) {
+        blockedWarningShown.current = false;
       }
-    ],
-    []
-  );
+      return;
+    }
+
+    if (allowTeam) {
+      blockedWarningShown.current = false;
+      return;
+    }
+
+    if (!blockedWarningShown.current) {
+      message.warning('当前角色暂无访问团队管理权限');
+      blockedWarningShown.current = true;
+    }
+    router.replace('/');
+  }, [user, pathname, hasPermission, router]);
 
   const breadcrumbItems = useMemo(() => {
     const segments = breadcrumbMap[pathname] ?? [];
@@ -143,9 +213,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       {
         key: 'dashboard-home',
         title:
-          pathname === '/' ? (
-            <HomeOutlined />
-          ) : (
+          pathname === '/' ? null : (
             <Link href="/">
               <HomeOutlined />
             </Link>

@@ -1,11 +1,12 @@
-import { desc, eq } from 'drizzle-orm';
+import { fromNodeHeaders } from 'better-auth/node';
+import { desc, eq, inArray } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 
 import { auth } from '../auth';
 import env from '../config/env';
 import { db } from '../db/client';
-import { users, userRoleEnum } from '../db/schema';
+import { rolePermissions, users, userRoleEnum } from '../db/schema';
 
 type UserRow = typeof users.$inferSelect;
 
@@ -15,6 +16,19 @@ const router = Router();
 
 const DEFAULT_INITIAL_PASSWORD = env.defaultUserPassword ?? 'a@000123';
 const roleSet = new Set<UserRoleValue>(userRoleEnum.enumValues);
+
+const MANAGER_ROLES = new Set<UserRoleValue>(['master', 'admin']);
+const ADMIN_RESTRICTED_ROLES: UserRoleValue[] = ['master', 'admin'];
+const ADMIN_ASSIGNABLE_ROLES: UserRoleValue[] = ['sale', 'lawyer', 'assistant'];
+
+class HttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 const toUserResponse = (row: UserRow) => ({
   id: row.id,
@@ -26,17 +40,105 @@ const toUserResponse = (row: UserRow) => ({
   updatedAt: row.updatedAt ? row.updatedAt.toISOString() : null
 });
 
-router.get('/', async (_req: Request, res: Response, next) => {
+const requireCurrentUser = async (req: Request): Promise<UserRow> => {
+  const headers = fromNodeHeaders(req.headers);
+  const session = await auth.api.getSession({
+    headers,
+    asResponse: false,
+    returnHeaders: false
+  });
+
+  const sessionUser = session?.user as { id?: string; role?: string | null } | undefined;
+
+  if (!sessionUser?.id) {
+    throw new HttpError(401, '未登录或登录状态已过期');
+  }
+
+  const [currentUser] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, sessionUser.id))
+    .limit(1);
+
+  if (!currentUser) {
+    throw new HttpError(401, '未找到当前用户信息');
+  }
+
+  return currentUser;
+};
+
+const getPermissionsForRole = async (role: UserRoleValue) => {
+  const rows = await db
+    .select({ code: rolePermissions.permissionCode })
+    .from(rolePermissions)
+    .where(eq(rolePermissions.role, role));
+
+  return rows.map((item) => item.code);
+};
+
+const ensureTeamAccess = (user: UserRow) => {
+  if (!MANAGER_ROLES.has(user.role)) {
+    throw new HttpError(403, '无权限访问团队成员数据');
+  }
+};
+
+const ensureAdminCanAssignRole = (user: UserRow, targetRole: UserRoleValue) => {
+  if (user.role === 'admin' && ADMIN_RESTRICTED_ROLES.includes(targetRole)) {
+    throw new HttpError(403, '管理员无法创建或调整为该角色');
+  }
+};
+
+const ensureAdminCanModifyTarget = (user: UserRow, target: UserRow) => {
+  if (user.role === 'admin' && ADMIN_RESTRICTED_ROLES.includes(target.role)) {
+    throw new HttpError(403, '管理员无法操作该成员');
+  }
+};
+
+router.get('/me', async (req: Request, res: Response, next) => {
   try {
-    const rows = await db.select().from(users).orderBy(desc(users.createdAt));
+    const currentUser = await requireCurrentUser(req);
+    const permissionCodes = await getPermissionsForRole(currentUser.role);
+
+    res.json({
+      ...toUserResponse(currentUser),
+      permissions: permissionCodes
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.get('/', async (req: Request, res: Response, next) => {
+  try {
+    const currentUser = await requireCurrentUser(req);
+    ensureTeamAccess(currentUser);
+
+    const baseQuery = db.select().from(users);
+    const filteredQuery =
+      currentUser.role === 'admin'
+        ? baseQuery.where(inArray(users.role, ADMIN_ASSIGNABLE_ROLES))
+        : baseQuery;
+
+    const rows = await filteredQuery.orderBy(desc(users.createdAt));
     res.json(rows.map(toUserResponse));
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
     next(error);
   }
 });
 
 router.post('/', async (req: Request, res: Response, next) => {
   try {
+    const currentUser = await requireCurrentUser(req);
+    ensureTeamAccess(currentUser);
+
     const { name, email, role } = req.body ?? {};
 
     const sanitizedName = typeof name === 'string' ? name.trim() : '';
@@ -54,6 +156,8 @@ router.post('/', async (req: Request, res: Response, next) => {
     if (!sanitizedRole || !roleSet.has(sanitizedRole)) {
       return res.status(400).json({ message: '角色类型不合法' });
     }
+
+    ensureAdminCanAssignRole(currentUser, sanitizedRole);
 
     const existing = await db
       .select({ id: users.id })
@@ -98,18 +202,33 @@ router.post('/', async (req: Request, res: Response, next) => {
 
     return res.status(201).json(responsePayload);
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
     next(error);
   }
 });
 
 router.put('/:id', async (req: Request, res: Response, next) => {
   try {
+    const currentUser = await requireCurrentUser(req);
+    ensureTeamAccess(currentUser);
+
     const { id } = req.params;
     const { name, email, role, image } = req.body ?? {};
 
     if (!id) {
       return res.status(400).json({ message: '缺少成员ID' });
     }
+
+    const [target] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+
+    if (!target) {
+      return res.status(404).json({ message: '成员不存在' });
+    }
+
+    ensureAdminCanModifyTarget(currentUser, target);
 
     const updateData: Partial<UserRow> & { updatedAt?: Date } = {};
 
@@ -145,6 +264,7 @@ router.put('/:id', async (req: Request, res: Response, next) => {
       if (!roleSet.has(normalizedRole)) {
         return res.status(400).json({ message: '角色类型不合法' });
       }
+      ensureAdminCanAssignRole(currentUser, normalizedRole);
       updateData.role = normalizedRole;
     }
 
@@ -172,17 +292,31 @@ router.put('/:id', async (req: Request, res: Response, next) => {
 
     return res.json(toUserResponse(updated));
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
     next(error);
   }
 });
 
 router.delete('/:id', async (req: Request, res: Response, next) => {
   try {
+    const currentUser = await requireCurrentUser(req);
+    ensureTeamAccess(currentUser);
     const { id } = req.params;
 
     if (!id) {
       return res.status(400).json({ message: '缺少成员ID' });
     }
+
+    const [target] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+
+    if (!target) {
+      return res.status(404).json({ message: '成员不存在' });
+    }
+
+    ensureAdminCanModifyTarget(currentUser, target);
 
     const [deleted] = await db.delete(users).where(eq(users.id, id)).returning();
 
@@ -192,6 +326,10 @@ router.delete('/:id', async (req: Request, res: Response, next) => {
 
     return res.status(204).send();
   } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
     next(error);
   }
 });

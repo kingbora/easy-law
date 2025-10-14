@@ -13,7 +13,7 @@ import TeamMemberModal, {
   type TeamMemberModalResult
 } from '@/components/team/TeamMemberModal';
 import { ApiError } from '@/lib/api-client';
-import { createUser, deleteUser, fetchUsers, updateUser, type UserResponse, type UserRole } from '@/lib/users-api';
+import { createUser, deleteUser, fetchCurrentUser, fetchUsers, updateUser, type UserResponse, type UserRole } from '@/lib/users-api';
 
 import { useDashboardHeaderAction } from '../header-context';
 
@@ -77,6 +77,7 @@ export default function TeamManagementPage() {
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [submitting, setSubmitting] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
+  const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
   const [filterForm] = Form.useForm<Filters>();
 
   const loadMembers = useCallback(async () => {
@@ -95,6 +96,28 @@ export default function TeamManagementPage() {
   useEffect(() => {
     void loadMembers();
   }, [loadMembers]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCurrentRole = async () => {
+      try {
+        const me = await fetchCurrentUser();
+        if (!mounted) {
+          return;
+        }
+        setCurrentUserRole(me.role);
+      } catch (error) {
+        // ignore
+      }
+    };
+
+    void loadCurrentRole();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
@@ -126,6 +149,23 @@ export default function TeamManagementPage() {
   const openCreateModal = useCallback(() => {
     setModalState({ open: true, mode: 'create' });
   }, []);
+
+  const creatableRoleOptions = useMemo(() => {
+    if (currentUserRole === 'admin') {
+      return ROLE_OPTIONS.filter((option) => option.value !== 'master' && option.value !== 'admin');
+    }
+    return ROLE_OPTIONS;
+  }, [currentUserRole]);
+
+  const modalRoleOptions = useMemo(() => {
+    if (!modalState.open) {
+      return ROLE_OPTIONS;
+    }
+    if (modalState.mode === 'create') {
+      return creatableRoleOptions;
+    }
+    return ROLE_OPTIONS;
+  }, [creatableRoleOptions, modalState]);
 
   const headerAction = useMemo(
     () => (
@@ -166,6 +206,16 @@ export default function TeamManagementPage() {
           role: values.role as UserRole
         };
 
+        if (
+          modalState.open &&
+          modalState.mode === 'create' &&
+          currentUserRole === 'admin' &&
+          (payload.role === 'master' || payload.role === 'admin')
+        ) {
+          message.error('管理员无法创建超级管理员或管理员角色');
+          return;
+        }
+
         if (modalState.open && modalState.mode === 'edit' && modalState.record) {
           const updated = await updateUser(modalState.record.id, payload);
           const nextMember = mapUserResponse(updated, modalState.record.initialPassword);
@@ -187,7 +237,7 @@ export default function TeamManagementPage() {
         setSubmitting(false);
       }
     },
-    [closeModal, modalState]
+    [closeModal, currentUserRole, modalState]
   );
 
   const handleDeleteMember = useCallback(
@@ -267,6 +317,7 @@ export default function TeamManagementPage() {
     }
     const { name, role, email, joinDate, initialPassword } = modalState.record;
     return {
+      id: modalState.record.id,
       name,
       role,
       roleLabel: ROLE_LABEL_MAP[role],
@@ -321,7 +372,7 @@ export default function TeamManagementPage() {
         <TeamMemberModal
           open
           mode={modalState.mode}
-          roles={ROLE_OPTIONS}
+          roles={modalRoleOptions}
           initialValues={modalInitialValues}
           onCancel={closeModal}
           onSubmit={handleSubmit}

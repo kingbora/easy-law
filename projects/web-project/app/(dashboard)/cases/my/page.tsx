@@ -187,7 +187,13 @@ export default function MyCasesPage() {
   }, []);
 
   const closeModal = useCallback(() => {
-    setModalState({ open: false });
+    setModalState((prev) => {
+      if (prev.open && prev.mode === 'edit') {
+        return { open: true, mode: 'view', record: prev.record };
+      } else {
+        return { open: false };
+      }
+    });
     setSubmitting(false);
   }, []);
 

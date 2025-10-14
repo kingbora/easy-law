@@ -6,14 +6,14 @@ import {
   Button,
   DatePicker,
   Descriptions,
-  Form,
   Input,
   List,
   Modal,
   Select,
   Space,
   Typography,
-  Upload
+  Upload,
+  message
 } from 'antd';
 import { DownloadOutlined, EditOutlined, UploadOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
@@ -53,7 +53,7 @@ interface CaseModalProps {
   confirmLoading?: boolean;
 }
 
-interface CaseFormValues {
+interface CaseFormState {
   caseNumber: string;
   type: string;
   clientName: string;
@@ -61,7 +61,7 @@ interface CaseFormValues {
   lawyer: string;
   stage: string;
   urgency: string;
-  acceptedAt?: dayjs.Dayjs;
+  acceptedAt: dayjs.Dayjs | null;
   description: string;
 }
 
@@ -77,8 +77,18 @@ export default function CaseModal({
   onModeChange,
   confirmLoading
 }: CaseModalProps) {
-  const [form] = Form.useForm<CaseFormValues>();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [formValues, setFormValues] = useState<CaseFormState>({
+    caseNumber: '',
+    type: caseTypes[0] ?? '',
+    clientName: '',
+    party: '',
+    lawyer: '',
+    stage: caseStages[0] ?? '',
+    urgency: urgencyOptions[0] ?? '',
+    acceptedAt: null,
+    description: ''
+  });
 
   const title = useMemo(() => {
     if (mode === 'create') {
@@ -92,24 +102,11 @@ export default function CaseModal({
 
   useEffect(() => {
     if (!open) {
-      form.resetFields();
       setFileList([]);
       return;
     }
 
-    if (mode === 'view') {
-      setFileList(
-        (initialValues?.attachments ?? []).map((file) => ({
-          uid: file.uid,
-          name: file.name,
-          status: 'done',
-          url: file.url
-        }))
-      );
-      return;
-    }
-
-    form.setFieldsValue({
+    const nextState: CaseFormState = {
       caseNumber: initialValues?.caseNumber ?? '',
       type: initialValues?.type ?? caseTypes[0] ?? '',
       clientName: initialValues?.clientName ?? '',
@@ -117,9 +114,11 @@ export default function CaseModal({
       lawyer: initialValues?.lawyer ?? '',
       stage: initialValues?.stage ?? caseStages[0] ?? '',
       urgency: initialValues?.urgency ?? urgencyOptions[0] ?? '',
-      acceptedAt: initialValues?.acceptedAt ? dayjs(initialValues.acceptedAt) : undefined,
+      acceptedAt: initialValues?.acceptedAt ? dayjs(initialValues.acceptedAt) : null,
       description: initialValues?.description ?? ''
-    });
+    };
+
+    setFormValues(nextState);
     setFileList(
       (initialValues?.attachments ?? []).map((file) => ({
         uid: file.uid,
@@ -128,35 +127,59 @@ export default function CaseModal({
         url: file.url
       }))
     );
-  }, [open, mode, initialValues, form, caseStages, caseTypes, urgencyOptions]);
+  }, [open, mode, initialValues, caseStages, caseTypes, urgencyOptions]);
 
   const handleSubmit = async () => {
     if (!onSubmit) {
       onCancel();
       return;
     }
-    try {
-      const values = await form.validateFields();
-      const payload: CaseModalResult = {
-        caseNumber: values.caseNumber,
-        type: values.type,
-        clientName: values.clientName,
-        party: values.party,
-        lawyer: values.lawyer,
-        stage: values.stage,
-        urgency: values.urgency,
-        acceptedAt: values.acceptedAt ? values.acceptedAt.format('YYYY-MM-DD') : '',
-        description: values.description,
-        attachments: fileList.map((file) => ({
-          uid: file.uid,
-          name: file.name,
-          url: file.url
-        }))
-      };
-      onSubmit(payload);
-    } catch (error) {
-      // validation errors are handled by the form
+    const requiredFields: Array<keyof CaseFormState> = [
+      'caseNumber',
+      'type',
+      'clientName',
+      'party',
+      'lawyer',
+      'stage',
+      'urgency',
+      'description'
+    ];
+
+    const missingField = requiredFields.find((field) => {
+      const value = formValues[field];
+      if (typeof value === 'string') {
+        return !value.trim();
+      }
+      return !value;
+    });
+
+    if (!formValues.acceptedAt) {
+      message.error('请选择受理时间');
+      return;
     }
+
+    if (missingField) {
+      message.error('请填写完整的案件信息');
+      return;
+    }
+
+    const payload: CaseModalResult = {
+      caseNumber: formValues.caseNumber.trim(),
+      type: formValues.type,
+      clientName: formValues.clientName.trim(),
+      party: formValues.party.trim(),
+      lawyer: formValues.lawyer.trim(),
+      stage: formValues.stage,
+      urgency: formValues.urgency,
+      acceptedAt: formValues.acceptedAt.format('YYYY-MM-DD'),
+      description: formValues.description.trim(),
+      attachments: fileList.map((file) => ({
+        uid: file.uid,
+        name: file.name,
+        url: file.url
+      }))
+    };
+    onSubmit(payload);
   };
 
   const footer = mode === 'view'
@@ -187,26 +210,164 @@ export default function CaseModal({
       destroyOnClose
       width={760}
     >
-      {mode === 'view' ? (
-        <Space direction="vertical" size={24} style={{ width: '100%' }}>
-          <Descriptions column={2} bordered labelStyle={{ width: 120 }}>
-            <Descriptions.Item label="案号">{initialValues?.caseNumber ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="案件类型">{initialValues?.type ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="委托人">{initialValues?.clientName ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="当事人">{initialValues?.party ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="承办律师">{initialValues?.lawyer ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="案件进度">{initialValues?.stage ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="紧急程度">{initialValues?.urgency ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="受理时间">{initialValues?.acceptedAt ?? '-'}</Descriptions.Item>
-          </Descriptions>
-          <div>
-            <Typography.Title level={5}>案件描述</Typography.Title>
+      <Space direction="vertical" size={24} style={{ width: '100%' }}>
+        <Descriptions column={2} bordered labelStyle={{ width: 120 }}>
+          <Descriptions.Item label="案号">
+            {mode === 'view' ? (
+              initialValues?.caseNumber ?? '-'
+            ) : (
+              <Input
+                value={formValues.caseNumber}
+                onChange={(event) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    caseNumber: event.target.value
+                  }))
+                }
+                placeholder="请输入案号"
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="案件类型">
+            {mode === 'view' ? (
+              initialValues?.type ?? '-'
+            ) : (
+              <Select
+                value={formValues.type}
+                options={caseTypes.map((value) => ({ label: value, value }))}
+                onChange={(value) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    type: value
+                  }))
+                }
+                placeholder="请选择案件类型"
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="委托人">
+            {mode === 'view' ? (
+              initialValues?.clientName ?? '-'
+            ) : (
+              <Input
+                value={formValues.clientName}
+                onChange={(event) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    clientName: event.target.value
+                  }))
+                }
+                placeholder="请输入委托人"
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="当事人">
+            {mode === 'view' ? (
+              initialValues?.party ?? '-'
+            ) : (
+              <Input
+                value={formValues.party}
+                onChange={(event) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    party: event.target.value
+                  }))
+                }
+                placeholder="请输入当事人"
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="承办律师">
+            {mode === 'view' ? (
+              initialValues?.lawyer ?? '-'
+            ) : (
+              <Input
+                value={formValues.lawyer}
+                onChange={(event) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    lawyer: event.target.value
+                  }))
+                }
+                placeholder="请输入承办律师"
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="案件进度">
+            {mode === 'view' ? (
+              initialValues?.stage ?? '-'
+            ) : (
+              <Select
+                value={formValues.stage}
+                options={caseStages.map((value) => ({ label: value, value }))}
+                onChange={(value) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    stage: value
+                  }))
+                }
+                placeholder="请选择案件进度"
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="紧急程度">
+            {mode === 'view' ? (
+              initialValues?.urgency ?? '-'
+            ) : (
+              <Select
+                value={formValues.urgency}
+                options={urgencyOptions.map((value) => ({ label: value, value }))}
+                onChange={(value) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    urgency: value
+                  }))
+                }
+                placeholder="请选择紧急程度"
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="受理时间">
+            {mode === 'view' ? (
+              initialValues?.acceptedAt ?? '-'
+            ) : (
+              <DatePicker
+                style={{ width: '100%' }}
+                value={formValues.acceptedAt}
+                onChange={(value) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    acceptedAt: value ?? null
+                  }))
+                }
+                placeholder="请选择受理时间"
+              />
+            )}
+          </Descriptions.Item>
+        </Descriptions>
+        <div>
+          <Typography.Title level={5}>案件描述</Typography.Title>
+          {mode === 'view' ? (
             <Typography.Paragraph>
               {initialValues?.description?.trim() ? initialValues.description : '暂无描述'}
             </Typography.Paragraph>
-          </div>
-          <div>
-            <Typography.Title level={5}>材料补充清单</Typography.Title>
+          ) : (
+            <Input.TextArea
+              rows={4}
+              value={formValues.description}
+              onChange={(event) =>
+                setFormValues((prev) => ({
+                  ...prev,
+                  description: event.target.value
+                }))
+              }
+              placeholder="请填写案件描述"
+            />
+          )}
+        </div>
+        <div>
+          <Typography.Title level={5}>材料补充清单</Typography.Title>
+          {mode === 'view' ? (
             <List
               dataSource={initialValues?.attachments ?? []}
               locale={{ emptyText: '暂无附件' }}
@@ -223,74 +384,7 @@ export default function CaseModal({
                 </List.Item>
               )}
             />
-          </div>
-        </Space>
-      ) : (
-        <Form form={form} layout="vertical" preserve={false}>
-          <Form.Item
-            label="案号"
-            name="caseNumber"
-            rules={[{ required: true, message: '请输入案号' }]}
-          >
-            <Input placeholder="请输入案号" />
-          </Form.Item>
-          <Form.Item
-            label="案件类型"
-            name="type"
-            rules={[{ required: true, message: '请选择案件类型' }]}
-          >
-            <Select options={caseTypes.map((value) => ({ label: value, value }))} placeholder="请选择案件类型" />
-          </Form.Item>
-          <Form.Item
-            label="委托人"
-            name="clientName"
-            rules={[{ required: true, message: '请输入委托人' }]}
-          >
-            <Input placeholder="请输入委托人" />
-          </Form.Item>
-          <Form.Item
-            label="当事人"
-            name="party"
-            rules={[{ required: true, message: '请输入当事人' }]}
-          >
-            <Input placeholder="请输入当事人" />
-          </Form.Item>
-          <Form.Item
-            label="承办律师"
-            name="lawyer"
-            rules={[{ required: true, message: '请输入承办律师' }]}
-          >
-            <Input placeholder="请输入承办律师" />
-          </Form.Item>
-          <Form.Item
-            label="案件进度"
-            name="stage"
-            rules={[{ required: true, message: '请选择案件进度' }]}
-          >
-            <Select options={caseStages.map((value) => ({ label: value, value }))} placeholder="请选择案件进度" />
-          </Form.Item>
-          <Form.Item
-            label="紧急程度"
-            name="urgency"
-            rules={[{ required: true, message: '请选择紧急程度' }]}
-          >
-            <Select options={urgencyOptions.map((value) => ({ label: value, value }))} placeholder="请选择紧急程度" />
-          </Form.Item>
-          <Form.Item
-            label="受理时间"
-            name="acceptedAt"
-            rules={[{ required: true, message: '请选择受理时间' }]}
-          >
-            <DatePicker style={{ width: '100%' }} placeholder="请选择受理时间" />
-          </Form.Item>
-          <Form.Item
-            label="案件描述"
-            name="description"
-            rules={[{ required: true, message: '请输入案件描述' }]}
-          >
-            <Input.TextArea rows={4} placeholder="请填写案件描述" />
-          </Form.Item>
-          <Form.Item label="材料补充清单">
+          ) : (
             <Upload
               multiple
               fileList={fileList}
@@ -302,9 +396,9 @@ export default function CaseModal({
             >
               <Button icon={<UploadOutlined />}>上传文件</Button>
             </Upload>
-          </Form.Item>
-        </Form>
-      )}
+          )}
+        </div>
+      </Space>
     </Modal>
   );
 }
