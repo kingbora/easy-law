@@ -1,8 +1,26 @@
-import { boolean, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import {
+  boolean,
+  index,
+  integer,
+  numeric,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid
+} from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['master', 'admin', 'sale', 'lawyer', 'assistant']);
 
 export const permissionCategoryEnum = pgEnum('permission_category', ['menu', 'action']);
+
+export const clientTypeEnum = pgEnum('client_type', ['individual', 'company']);
+export const clientStatusEnum = pgEnum('client_status', ['potential', 'active', 'dormant', 'lost']);
+export const clientSourceEnum = pgEnum('client_source', ['referral', 'website', 'offline_event', 'other']);
+export const clientGenderEnum = pgEnum('client_gender', ['male', 'female']);
 
 export const users = pgTable(
   'users',
@@ -42,6 +60,79 @@ export const rolePermissions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
   },
   (table) => [primaryKey({ name: 'role_permissions_pk', columns: [table.role, table.permissionCode] })]
+);
+
+export const clients = pgTable(
+  'clients',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    type: clientTypeEnum('type').notNull(),
+    phone: text('phone').notNull(),
+    email: text('email'),
+    address: text('address'),
+    source: clientSourceEnum('source'),
+    sourceRemark: text('source_remark'),
+    status: clientStatusEnum('status').notNull().default('active'),
+    responsibleLawyerId: text('responsible_lawyer_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+  tags: text('tags').array(),
+    remark: text('remark'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+  },
+  (table) => [
+    index('clients_name_idx').on(sql`to_tsvector('simple', ${table.name})`),
+    index('clients_type_idx').on(table.type),
+    index('clients_source_idx').on(table.source),
+    index('clients_responsible_idx').on(table.responsibleLawyerId)
+  ]
+);
+
+export const clientIndividuals = pgTable(
+  'client_individual_profiles',
+  {
+    clientId: uuid('client_id')
+      .primaryKey()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    idCardNumber: text('id_card_no').notNull(),
+    gender: clientGenderEnum('gender'),
+    occupation: text('occupation')
+  },
+  (table) => [uniqueIndex('client_individual_id_card_idx').on(table.idCardNumber)]
+);
+
+export const clientCompanies = pgTable(
+  'client_company_profiles',
+  {
+    clientId: uuid('client_id')
+      .primaryKey()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    unifiedCreditCode: text('unified_credit_code').notNull(),
+    companyType: text('company_type'),
+    industry: text('industry'),
+    registeredCapital: numeric('registered_capital', { precision: 16, scale: 2 }),
+    legalRepresentative: text('legal_representative')
+  },
+  (table) => [uniqueIndex('client_company_credit_code_idx').on(table.unifiedCreditCode)]
+);
+
+export const clientAttachments = pgTable(
+  'client_attachments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    filename: text('filename').notNull(),
+    fileType: text('file_type'),
+    fileUrl: text('file_url').notNull(),
+    description: text('description'),
+    uploadedBy: text('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }).defaultNow()
+  },
+  (table) => [index('client_attachments_client_idx').on(table.clientId)]
 );
 
 export const sessions = pgTable(
@@ -98,3 +189,7 @@ export const verifications = pgTable('verifications', {
 
 export type UserRole = typeof userRoleEnum.enumValues[number];
 export type PermissionCategory = typeof permissionCategoryEnum.enumValues[number];
+export type ClientType = typeof clientTypeEnum.enumValues[number];
+export type ClientStatus = typeof clientStatusEnum.enumValues[number];
+export type ClientSource = typeof clientSourceEnum.enumValues[number];
+export type ClientGender = typeof clientGenderEnum.enumValues[number];

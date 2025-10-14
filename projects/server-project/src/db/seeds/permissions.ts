@@ -17,6 +17,12 @@ const PERMISSION_DEFINITIONS = [
     description: '访问团队管理页面'
   },
   {
+    code: 'menu.clients',
+    name: '客户管理菜单',
+    category: 'menu' as const,
+    description: '访问客户管理页面'
+  },
+  {
     code: 'action.team.read',
     name: '团队管理查看',
     category: 'action' as const,
@@ -27,15 +33,35 @@ const PERMISSION_DEFINITIONS = [
     name: '团队成员管理',
     category: 'action' as const,
     description: '创建、更新或删除团队成员'
+  },
+  {
+    code: 'action.clients.read',
+    name: '客户管理查看',
+    category: 'action' as const,
+    description: '查看客户列表和详情'
+  },
+  {
+    code: 'action.clients.manage',
+    name: '客户信息维护',
+    category: 'action' as const,
+    description: '创建、更新或删除客户信息'
   }
 ];
 
 const ROLE_PERMISSION_MAP: Record<UserRole, string[]> = {
   master: PERMISSION_DEFINITIONS.map((item) => item.code),
-  admin: ['menu.dashboard', 'menu.team', 'action.team.read', 'action.team.manage'],
-  sale: ['menu.dashboard'],
-  lawyer: ['menu.dashboard'],
-  assistant: ['menu.dashboard']
+  admin: [
+    'menu.dashboard',
+    'menu.team',
+    'menu.clients',
+    'action.team.read',
+    'action.team.manage',
+    'action.clients.read',
+    'action.clients.manage'
+  ],
+  sale: ['menu.dashboard', 'menu.clients', 'action.clients.read'],
+  lawyer: ['menu.dashboard', 'menu.clients', 'action.clients.read', 'action.clients.manage'],
+  assistant: ['menu.dashboard', 'menu.clients', 'action.clients.read']
 };
 
 export const ensureDefaultPermissions = async () => {

@@ -6,7 +6,9 @@ import express from 'express';
 import { auth } from './auth';
 import env from './config/env';
 import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
+import clientsRouter from './routes/clients';
 import healthRouter from './routes/health';
+import lawyersRouter from './routes/lawyers';
 import usersRouter from './routes/users';
 
 const app = express();
@@ -29,6 +31,8 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/health', healthRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/clients', clientsRouter);
+app.use('/api/lawyers', lawyersRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

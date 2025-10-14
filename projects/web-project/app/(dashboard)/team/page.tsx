@@ -161,11 +161,24 @@ export default function TeamManagementPage() {
     if (!modalState.open) {
       return ROLE_OPTIONS;
     }
+
     if (modalState.mode === 'create') {
       return creatableRoleOptions;
     }
+
+    if (currentUserRole === 'admin') {
+      const recordRole = modalState.record?.role;
+
+      return ROLE_OPTIONS.filter((option) => {
+        if (option.value === recordRole) {
+          return true;
+        }
+        return option.value !== 'master' && option.value !== 'admin';
+      });
+    }
+
     return ROLE_OPTIONS;
-  }, [creatableRoleOptions, modalState]);
+  }, [creatableRoleOptions, currentUserRole, modalState]);
 
   const headerAction = useMemo(
     () => (

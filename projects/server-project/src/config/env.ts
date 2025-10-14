@@ -19,10 +19,7 @@ const env = {
   host: process.env.HOST ?? '127.0.0.1',
   port: parseNumber(process.env.PORT, 4000),
   databaseUrl: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/easy_law',
-  corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:3000',
-  defaultUserEmail: process.env.DEFAULT_USER_EMAIL ?? 'test@qq.com',
-  defaultUserPassword: process.env.DEFAULT_USER_PASSWORD ?? 'a@000123',
-  defaultUserName: process.env.DEFAULT_USER_NAME ?? '测试用户'
+  corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:3000'
 };
 
 export default env;

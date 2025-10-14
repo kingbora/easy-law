@@ -1,12 +1,12 @@
-import { fromNodeHeaders } from 'better-auth/node';
 import { desc, eq, inArray } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 
 import { auth } from '../auth';
-import env from '../config/env';
 import { db } from '../db/client';
 import { rolePermissions, users, userRoleEnum } from '../db/schema';
+
+import { HttpError, requireCurrentUser } from './utils/current-user';
 
 type UserRow = typeof users.$inferSelect;
 
@@ -14,21 +14,12 @@ type UserRoleValue = (typeof userRoleEnum.enumValues)[number];
 
 const router = Router();
 
-const DEFAULT_INITIAL_PASSWORD = env.defaultUserPassword ?? 'a@000123';
+const DEFAULT_INITIAL_PASSWORD = 'a@000123';
 const roleSet = new Set<UserRoleValue>(userRoleEnum.enumValues);
 
 const MANAGER_ROLES = new Set<UserRoleValue>(['master', 'admin']);
 const ADMIN_RESTRICTED_ROLES: UserRoleValue[] = ['master', 'admin'];
 const ADMIN_ASSIGNABLE_ROLES: UserRoleValue[] = ['sale', 'lawyer', 'assistant'];
-
-class HttpError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
 
 const toUserResponse = (row: UserRow) => ({
   id: row.id,
@@ -39,33 +30,6 @@ const toUserResponse = (row: UserRow) => ({
   createdAt: row.createdAt ? row.createdAt.toISOString() : null,
   updatedAt: row.updatedAt ? row.updatedAt.toISOString() : null
 });
-
-const requireCurrentUser = async (req: Request): Promise<UserRow> => {
-  const headers = fromNodeHeaders(req.headers);
-  const session = await auth.api.getSession({
-    headers,
-    asResponse: false,
-    returnHeaders: false
-  });
-
-  const sessionUser = session?.user as { id?: string; role?: string | null } | undefined;
-
-  if (!sessionUser?.id) {
-    throw new HttpError(401, '未登录或登录状态已过期');
-  }
-
-  const [currentUser] = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, sessionUser.id))
-    .limit(1);
-
-  if (!currentUser) {
-    throw new HttpError(401, '未找到当前用户信息');
-  }
-
-  return currentUser;
-};
 
 const getPermissionsForRole = async (role: UserRoleValue) => {
   const rows = await db
