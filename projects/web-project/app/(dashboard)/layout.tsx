@@ -7,6 +7,8 @@ import {
   FolderOpenOutlined,
   HomeOutlined,
   LogoutOutlined,
+  MailOutlined,
+  SettingOutlined,
   RightOutlined,
   SolutionOutlined,
   TeamOutlined,
@@ -32,7 +34,9 @@ const pathKeyMap: Record<string, string> = {
   '/': 'overview',
   '/cases/my': 'cases-my',
   '/clients/my': 'clients-my',
-  '/team': 'team'
+  '/team': 'team',
+  '/settings/email': 'settings-email',
+  '/settings/case': 'settings-case'
 };
 
 const breadcrumbMap: Record<string, string[]> = {
@@ -40,7 +44,8 @@ const breadcrumbMap: Record<string, string[]> = {
   '/clients/my': ['客户管理', '我的客户'],
   '/team': ['团队管理'],
   '/profile': ['个人资料'],
-  '/settings/email': ['邮箱认证']
+  '/settings/email': ['平台设置', '邮箱认证'],
+  '/settings/case': ['平台设置', '案件设置']
 };
 
 interface SessionUser {
@@ -175,6 +180,33 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         icon: <TeamOutlined />,
         label: <Link href="/team">团队管理</Link>
       });
+    }
+
+    if (hasPermission('menu.settings')) {
+      const settingsChildren: MenuProps['items'] = [];
+
+      if (hasPermission('menu.settings.case')) {
+        settingsChildren.push({
+          key: 'settings-case',
+          icon: <FolderOpenOutlined />,
+          label: <Link href="/settings/case">案件设置</Link>
+        });
+      }
+
+      settingsChildren.push({
+        key: 'settings-email',
+        icon: <MailOutlined />,
+        label: <Link href="/settings/email">邮箱认证</Link>
+      });
+
+      if (settingsChildren.length > 0) {
+        items.push({
+          key: 'settings',
+          icon: <SettingOutlined />,
+          label: '平台设置',
+          children: settingsChildren
+        });
+      }
     }
 
     return items;
@@ -332,7 +364,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             mode="inline"
             items={menuItems}
             selectedKeys={selectedKeys}
-            defaultOpenKeys={['cases', 'clients']}
+            defaultOpenKeys={['cases', 'clients', 'settings']}
           />
         </Sider>
         <Layout>

@@ -1,354 +1,484 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-
-import {
-  Button,
-  Card,
-  Dropdown,
-  Form,
-  Input,
-  Progress,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  message,
-  type MenuProps
-} from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Button, Card, Form, Select, Space, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import dayjs from 'dayjs';
-import { MoreOutlined, PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 
-import CaseModal, { type CaseAttachment, type CaseModalResult } from '@/components/cases/CaseModal';
-
+import CaseDetailDrawer from '@/components/cases/CaseDetailDrawer';
+import CaseFormDrawer from '@/components/cases/CaseFormDrawer';
+import { ApiError } from '@/lib/api-client';
+import type { CaseDetail, CaseListItem, CasePayload, CaseStatus } from '@/lib/cases-api';
+import { createCase, fetchCases, fetchCaseDetail, updateCase } from '@/lib/cases-api';
+import { CASE_BILLING_METHOD_LABELS, CASE_STATUS_LABELS, CASE_STATUS_OPTIONS } from '@/lib/cases-constants';
+import { fetchCaseTypes, type CaseTypeItem } from '@/lib/case-settings-api';
+import { fetchClients } from '@/lib/clients-api';
+import type { LawyerResponse } from '@/lib/lawyers-api';
+import { searchLawyers } from '@/lib/lawyers-api';
+import { fetchCurrentUser } from '@/lib/users-api';
 import { useDashboardHeaderAction } from '../../header-context';
 
-const CASE_STAGES = ['立案', '证据交换', '庭前会议', '庭审', '调解', '判决', '执行'] as const;
-const URGENCY_OPTIONS = ['普通', '紧急', '特急'] as const;
-const CASE_TYPES = ['民事纠纷', '劳动仲裁', '知识产权', '合同纠纷', '行政诉讼', '刑事辩护'] as const;
-
-type CaseStage = (typeof CASE_STAGES)[number];
-type UrgencyLevel = (typeof URGENCY_OPTIONS)[number];
-
-interface CaseItem {
-  id: string;
-  caseNumber: string;
-  type: string;
-  clientName: string;
-  party: string;
-  lawyer: string;
-  stage: CaseStage;
-  urgency: UrgencyLevel;
-  acceptedAt: string;
-  description: string;
-  attachments: CaseAttachment[];
-}
-
-const INITIAL_CASES: CaseItem[] = [
-  {
-    id: 'case-2025-001',
-    caseNumber: '2025-沪民初字第001号',
-    type: '合同纠纷',
-    clientName: '上海腾达科技有限公司',
-    party: '李四',
-    lawyer: '王哲',
-    stage: '证据交换',
-    urgency: '普通',
-    acceptedAt: '2025-03-12',
-    description: '围绕技术服务费用结算产生争议，需确认合同履行情况与违约责任。',
-    attachments: [
-      {
-        uid: 'att-001',
-        name: '立案材料.pdf',
-        url: '#'
-      },
-      {
-        uid: 'att-002',
-        name: '合同文本.zip',
-        url: '#'
-      }
-    ]
-  },
-  {
-    id: 'case-2025-002',
-    caseNumber: '2025-沪劳仲字第018号',
-    type: '劳动仲裁',
-    clientName: '陈晓',
-    party: '上海瀚锐传媒有限公司',
-    lawyer: '周宁',
-    stage: '调解',
-    urgency: '紧急',
-    acceptedAt: '2025-04-05',
-    description: '涉及劳动合同解除及经济补偿金争议，当前处于调解阶段。',
-    attachments: [
-      {
-        uid: 'att-101',
-        name: '劳动合同扫描件.pdf',
-        url: '#'
-      }
-    ]
-  }
-];
-
 type Filters = {
-  party?: string;
-  stage?: CaseStage;
-  urgency?: UrgencyLevel;
+  clientId?: string;
+  caseTypeId?: string;
+  caseCategoryId?: string;
+  lawyerId?: string;
+  status?: CaseStatus;
 };
 
-type ModalState =
-  | { open: false }
-  | { open: true; mode: 'create'; record?: undefined }
-  | { open: true; mode: 'view' | 'edit'; record: CaseItem };
+const DEFAULT_PAGE_SIZE = 10;
 
-const { Text } = Typography;
+const STATUS_COLOR_MAP: Record<CaseStatus, string> = {
+  consultation: 'default',
+  entrusted: 'processing',
+  in_progress: 'blue',
+  closed: 'success',
+  terminated: 'error'
+};
 
-function getStagePercent(stage: CaseStage) {
-  const index = CASE_STAGES.indexOf(stage);
-  if (index === -1) {
-    return 0;
-  }
-  return Math.round(((index + 1) / CASE_STAGES.length) * 100);
-}
-
-const ACTION_MENU_ITEMS: MenuProps['items'] = [
-  { key: 'supplement', label: '补充结案文件' },
-  { key: 'archive', label: '案件归档' },
-  { key: 'transfer', label: '转交' }
-];
-
-function createCaseId() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `case-${Date.now()}`;
-}
-
-function transformToCaseItem(values: CaseModalResult, id?: string): CaseItem {
-  return {
-    id: id ?? createCaseId(),
-    caseNumber: values.caseNumber,
-    type: values.type,
-    clientName: values.clientName,
-    party: values.party,
-    lawyer: values.lawyer,
-    stage: values.stage as CaseStage,
-    urgency: values.urgency as UrgencyLevel,
-    acceptedAt: values.acceptedAt,
-    description: values.description,
-    attachments: values.attachments ?? []
-  };
-}
+const BILLING_COLOR = 'purple';
 
 export default function MyCasesPage() {
-  const [cases, setCases] = useState<CaseItem[]>(INITIAL_CASES);
+  const [casesData, setCasesData] = useState<CaseListItem[]>([]);
+  const [pagination, setPagination] = useState({ page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0 });
   const [filters, setFilters] = useState<Filters>({});
-  const [modalState, setModalState] = useState<ModalState>({ open: false });
+  const [tableLoading, setTableLoading] = useState(false);
+
+  const [caseTypes, setCaseTypes] = useState<CaseTypeItem[]>([]);
+  const [clients, setClients] = useState<Array<{ id: string; name: string }>>([]);
+  const [lawyers, setLawyers] = useState<LawyerResponse[]>([]);
+
+  const [filtersForm] = Form.useForm<Filters>();
+
+  const [permissionLoaded, setPermissionLoaded] = useState(false);
+  const [canManage, setCanManage] = useState(false);
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detail, setDetail] = useState<CaseDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const [formState, setFormState] = useState<{ open: boolean; mode: 'create' | 'edit'; detail: CaseDetail | null }>({
+    open: false,
+    mode: 'create',
+    detail: null
+  });
   const [submitting, setSubmitting] = useState(false);
 
-  const filteredCases = useMemo(() => {
-    return cases.filter((item) => {
-      if (filters.party && !item.party.toLowerCase().includes(filters.party.toLowerCase())) {
-        return false;
+  const loadCases = useCallback(
+    async (page: number, pageSize: number, activeFilters: Filters) => {
+      setTableLoading(true);
+      try {
+        const response = await fetchCases({
+          page,
+          pageSize,
+          clientId: activeFilters.clientId,
+          caseTypeId: activeFilters.caseTypeId,
+          caseCategoryId: activeFilters.caseCategoryId,
+          lawyerId: activeFilters.lawyerId,
+          status: activeFilters.status
+        });
+        setCasesData(response.items);
+        setPagination({
+          page: response.pagination.page,
+          pageSize: response.pagination.pageSize,
+          total: response.pagination.total
+        });
+      } catch (error) {
+        const messageText = error instanceof ApiError ? error.message : '获取案件列表失败，请稍后重试';
+        message.error(messageText);
+      } finally {
+        setTableLoading(false);
       }
-      if (filters.stage && item.stage !== filters.stage) {
-        return false;
-      }
-      if (filters.urgency && item.urgency !== filters.urgency) {
-        return false;
-      }
-      return true;
-    });
-  }, [cases, filters]);
-
-  const handleFilterChange = (_: unknown, allValues: Filters) => {
-    setFilters(allValues);
-  };
-
-  const openCreateModal = useCallback(() => {
-    setModalState({ open: true, mode: 'create' });
-  }, []);
-
-  const headerAction = useMemo(
-    () => (
-      <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-        新增案件
-      </Button>
-    ),
-    [openCreateModal]
+    },
+    []
   );
 
-  useDashboardHeaderAction(headerAction);
-
-  const handleViewCase = useCallback((record: CaseItem) => {
-    setModalState({ open: true, mode: 'view', record });
-  }, []);
-
-  const closeModal = useCallback(() => {
-    setModalState((prev) => {
-      if (prev.open && prev.mode === 'edit') {
-        return { open: true, mode: 'view', record: prev.record };
-      } else {
-        return { open: false };
-      }
-    });
-    setSubmitting(false);
-  }, []);
-
-  const handleModeChange = useCallback((mode: 'create' | 'view' | 'edit') => {
-    if (mode === 'view' || mode === 'edit') {
-      setModalState((prev) => {
-        if (prev.open && prev.mode !== 'create' && prev.record) {
-          return { open: true, mode, record: prev.record };
-        }
-        return prev;
-      });
+  const loadPermissions = useCallback(async () => {
+    try {
+      const currentUser = await fetchCurrentUser();
+      setCanManage(currentUser.permissions.includes('action.cases.manage'));
+    } catch {
+      // ignore, backend will enforce permissions
+    } finally {
+      setPermissionLoaded(true);
     }
   }, []);
 
-  const handleSubmit = useCallback(
-    async (values: CaseModalResult) => {
-      setSubmitting(true);
-      await new Promise((resolve) => setTimeout(resolve, 350));
+  const loadMeta = useCallback(async () => {
+    try {
+      const [typeData, clientData, lawyerData] = await Promise.all([
+        fetchCaseTypes(),
+        fetchClients({ page: 1, pageSize: 100 }),
+        searchLawyers()
+      ]);
+      setCaseTypes(typeData);
+      setClients(clientData.items.map((item) => ({ id: item.id, name: item.name })));
+      setLawyers(lawyerData);
+    } catch (error) {
+      const messageText = error instanceof ApiError ? error.message : '加载基础数据失败，请稍后重试';
+      message.error(messageText);
+    }
+  }, []);
 
-      const isEdit = modalState.open && modalState.mode === 'edit' && modalState.record;
+  useEffect(() => {
+    void loadPermissions();
+    void loadMeta();
+    void loadCases(1, DEFAULT_PAGE_SIZE, {});
+  }, [loadPermissions, loadMeta, loadCases]);
 
-      setCases((prev) => {
-        if (isEdit && modalState.record) {
-          return prev.map((item) => (item.id === modalState.record.id ? transformToCaseItem(values, modalState.record.id) : item));
-        }
-
-        return [transformToCaseItem(values), ...prev];
-      });
-
-      message.success(isEdit ? '案件信息已更新' : '新增案件成功');
-      closeModal();
-    },
-    [closeModal, modalState]
+  const clientOptions = useMemo(
+    () => clients.map((client) => ({ label: client.name, value: client.id })),
+    [clients]
   );
 
-  const columns = useMemo<ColumnsType<CaseItem>>(
+  const caseTypeOptions = useMemo(
+    () => caseTypes.map((type) => ({ label: type.name, value: type.id })),
+    [caseTypes]
+  );
+
+  const filterCaseTypeId = Form.useWatch('caseTypeId', filtersForm);
+
+  const caseCategoryOptions = useMemo(() => {
+    if (filterCaseTypeId) {
+      const type = caseTypes.find((item) => item.id === filterCaseTypeId);
+      return type
+        ? type.categories.map((category) => ({ label: category.name, value: category.id }))
+        : [];
+    }
+    return caseTypes.flatMap((type) =>
+      type.categories.map((category) => ({
+        label: `${type.name} · ${category.name}`,
+        value: category.id
+      }))
+    );
+  }, [caseTypes, filterCaseTypeId]);
+
+  const lawyerOptions = useMemo(
+    () =>
+      lawyers.map((lawyer) => ({
+        label: lawyer.name ?? lawyer.email ?? '未命名律师',
+        value: lawyer.id
+      })),
+    [lawyers]
+  );
+
+  const handleFilterChange = useCallback(
+    (_: unknown, allValues: Filters) => {
+      const nextFilters = { ...allValues };
+      if (nextFilters.caseTypeId) {
+        const selectedType = caseTypes.find((type) => type.id === nextFilters.caseTypeId);
+        if (
+          nextFilters.caseCategoryId &&
+          selectedType &&
+          !selectedType.categories.some((category) => category.id === nextFilters.caseCategoryId)
+        ) {
+          filtersForm.setFieldsValue({ caseCategoryId: undefined });
+          nextFilters.caseCategoryId = undefined;
+        }
+      }
+      setFilters(nextFilters);
+      setPagination((prev) => ({ ...prev, page: 1 }));
+      void loadCases(1, pagination.pageSize, nextFilters);
+    },
+    [caseTypes, filtersForm, loadCases, pagination.pageSize]
+  );
+
+  const handleResetFilters = useCallback(() => {
+    filtersForm.resetFields();
+    setFilters({});
+    setPagination((prev) => ({ ...prev, page: 1 }));
+    void loadCases(1, pagination.pageSize, {});
+  }, [filtersForm, loadCases, pagination.pageSize]);
+
+  const handleTableChange = useCallback(
+    (pageInfo: { current?: number; pageSize?: number }) => {
+      const nextPage = pageInfo.current ?? 1;
+      const nextPageSize = pageInfo.pageSize ?? pagination.pageSize;
+      setPagination((prev) => ({ ...prev, page: nextPage, pageSize: nextPageSize }));
+      void loadCases(nextPage, nextPageSize, filters);
+    },
+    [filters, loadCases, pagination.pageSize]
+  );
+
+  const handleRefresh = useCallback(() => {
+    void loadCases(pagination.page, pagination.pageSize, filters);
+  }, [filters, loadCases, pagination.page, pagination.pageSize]);
+
+  const handleViewCase = useCallback(
+    async (record: CaseListItem) => {
+      setDetailLoading(true);
+      try {
+        const detailData = await fetchCaseDetail(record.id);
+        setDetail(detailData);
+        setDetailOpen(true);
+      } catch (error) {
+        const messageText = error instanceof ApiError ? error.message : '获取案件详情失败，请稍后重试';
+        message.error(messageText);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    []
+  );
+
+  const openCreateDrawer = useCallback(() => {
+    setFormState({ open: true, mode: 'create', detail: null });
+  }, []);
+
+  const handleEditCase = useCallback(
+    async (caseId: string) => {
+      setDetailLoading(true);
+      try {
+        const detailData = await fetchCaseDetail(caseId);
+        setFormState({ open: true, mode: 'edit', detail: detailData });
+        setDetail(detailData);
+        setDetailOpen(false);
+      } catch (error) {
+        const messageText = error instanceof ApiError ? error.message : '加载案件信息失败，请稍后重试';
+        message.error(messageText);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    []
+  );
+
+  const handleEditFromDetail = useCallback(
+    (detailData: CaseDetail) => {
+      if (!canManage) {
+        message.warning('您没有编辑权限');
+        return;
+      }
+      void handleEditCase(detailData.id);
+    },
+    [canManage, handleEditCase]
+  );
+
+  const closeFormDrawer = useCallback(() => {
+    setFormState({ open: false, mode: 'create', detail: null });
+  }, []);
+
+  const handleSubmit = useCallback(
+    async (payload: CasePayload) => {
+      setSubmitting(true);
+      try {
+        if (formState.mode === 'edit' && formState.detail) {
+          const updated = await updateCase(formState.detail.id, payload);
+          message.success('案件信息已更新');
+          setFormState({ open: false, mode: 'create', detail: null });
+          await loadCases(pagination.page, pagination.pageSize, filters);
+          setDetail((prev) => (prev && prev.id === updated.id ? updated : prev));
+        } else {
+          await createCase(payload);
+          message.success('案件已创建');
+          setFormState({ open: false, mode: 'create', detail: null });
+          setPagination((prev) => ({ ...prev, page: 1 }));
+          await loadCases(1, pagination.pageSize, filters);
+        }
+      } catch (error) {
+        const messageText = error instanceof ApiError ? error.message : '保存失败，请稍后重试';
+        message.error(messageText);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [filters, formState.detail, formState.mode, loadCases, pagination.page, pagination.pageSize]
+  );
+
+  const columns = useMemo<ColumnsType<CaseListItem>>(
     () => [
       {
-        title: '案号',
-        dataIndex: 'caseNumber',
+        title: '案件名称',
+        dataIndex: 'name',
         fixed: 'left',
-        width: 200,
-        render: (_, record) => (
+        width: 240,
+        render: (_: string, record) => (
           <Button type="link" onClick={() => handleViewCase(record)}>
-            {record.caseNumber}
+            {record.name}
           </Button>
         )
       },
       {
-        title: '类型',
-        dataIndex: 'type'
+        title: '客户',
+        dataIndex: ['client', 'name'],
+        width: 180
       },
       {
-        title: '委托人',
-        dataIndex: 'clientName'
+        title: '案由',
+        key: 'caseCategory',
+        render: (_, record) => `${record.caseType.name} / ${record.caseCategory.name}`,
+        width: 240
       },
       {
-        title: '当事人',
-        dataIndex: 'party'
-      },
-      {
-        title: '承办律师',
-        dataIndex: 'lawyer'
-      },
-      {
-        title: '案件进度',
-        dataIndex: 'stage',
-        render: (stage: CaseStage) => {
-          const percent = getStagePercent(stage);
-          return (
-            <Space direction="vertical" size={4} style={{ width: 160 }}>
-              <Progress percent={percent} steps={CASE_STAGES.length} status="active" showInfo={false} />
-              <Text type="secondary">{stage}</Text>
+        title: '负责律师',
+        key: 'lawyers',
+        render: (_, record) =>
+          record.lawyers.length === 0 ? (
+            <Tag>未分配</Tag>
+          ) : (
+            <Space size={[8, 8]} wrap>
+              {record.lawyers.map((lawyer) => (
+                <Tag color={lawyer.isPrimary ? 'blue' : 'default'} key={lawyer.id}>
+                  {lawyer.name ?? lawyer.email ?? '未命名律师'}
+                  {lawyer.isPrimary ? '（主办）' : ''}
+                </Tag>
+              ))}
             </Space>
-          );
-        }
+          ),
+        width: 260
       },
       {
-        title: '紧急程度',
-        dataIndex: 'urgency',
-        render: (urgency: UrgencyLevel) => {
-          const color = urgency === '特急' ? 'red' : urgency === '紧急' ? 'orange' : 'blue';
-          return <Tag color={color}>{urgency}</Tag>;
-        }
+        title: '案件状态',
+        dataIndex: 'status',
+        width: 140,
+        render: (status: CaseStatus) => (
+          <Tag color={STATUS_COLOR_MAP[status]}>{CASE_STATUS_LABELS[status]}</Tag>
+        )
       },
       {
-        title: '受理时间',
-        dataIndex: 'acceptedAt',
-        sorter: (a, b) => dayjs(a.acceptedAt).valueOf() - dayjs(b.acceptedAt).valueOf()
+        title: '收费方式',
+        dataIndex: 'billingMethod',
+        width: 160,
+        render: (billingMethod: string) => (
+          <Tag color={BILLING_COLOR}>
+            {CASE_BILLING_METHOD_LABELS[billingMethod as keyof typeof CASE_BILLING_METHOD_LABELS]}
+          </Tag>
+        )
       },
       {
         title: '操作',
         key: 'actions',
         fixed: 'right',
-        width: 60,
+        width: 160,
         render: (_, record) => (
-          <Dropdown menu={{ items: ACTION_MENU_ITEMS }} trigger={['click']}>
-              <Button type="text" icon={<MoreOutlined />} aria-label={`操作 ${record.caseNumber}`} />
-            </Dropdown>
+          <Space>
+            <Button type="link" onClick={() => handleViewCase(record)}>
+              查看
+            </Button>
+            <Button type="link" onClick={() => handleEditCase(record.id)} disabled={!canManage}>
+              编辑
+            </Button>
+          </Space>
         )
       }
     ],
-    [handleViewCase]
+    [canManage, handleEditCase, handleViewCase]
   );
+
+  const headerAction = useMemo(
+    () => (
+      <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer} disabled={!canManage}>
+        新增案件
+      </Button>
+    ),
+    [canManage, openCreateDrawer]
+  );
+
+  useDashboardHeaderAction(headerAction);
 
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      {!permissionLoaded && (
+        <Alert message="正在检测权限，请稍候..." type="info" showIcon style={{ marginBottom: 16 }} />
+      )}
+      {permissionLoaded && !canManage && (
+        <Alert
+          message="您拥有案件查看权限"
+          description="如需创建或编辑案件，请联系管理员授予权限。"
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
       <Card>
-        <Form layout="inline" onValuesChange={handleFilterChange} style={{ rowGap: 16 }}>
-          <Form.Item label="当事人" name="party">
-            <Input allowClear placeholder="请输入当事人姓名" style={{ width: 220 }} />
-          </Form.Item>
-          <Form.Item label="案件进度" name="stage">
+        <Form layout="inline" form={filtersForm} onValuesChange={handleFilterChange} style={{ rowGap: 16 }}>
+          <Form.Item label="客户" name="clientId">
             <Select
               allowClear
-              placeholder="请选择案件进度"
-              style={{ width: 220 }}
-              options={CASE_STAGES.map((stage) => ({ label: stage, value: stage }))}
+              placeholder="选择客户"
+              showSearch
+              optionFilterProp="label"
+              options={clientOptions}
+              style={{ minWidth: 220 }}
             />
           </Form.Item>
-          <Form.Item label="紧急程度" name="urgency">
+          <Form.Item label="案件类型" name="caseTypeId">
             <Select
               allowClear
-              placeholder="请选择紧急程度"
-              style={{ width: 220 }}
-              options={URGENCY_OPTIONS.map((level) => ({ label: level, value: level }))}
+              placeholder="选择案件类型"
+              options={caseTypeOptions}
+              style={{ minWidth: 220 }}
             />
+          </Form.Item>
+          <Form.Item label="案由" name="caseCategoryId">
+            <Select
+              allowClear
+              placeholder={filterCaseTypeId ? '选择案由' : '不限案由'}
+              options={caseCategoryOptions}
+              style={{ minWidth: 240 }}
+            />
+          </Form.Item>
+          <Form.Item label="负责律师" name="lawyerId">
+            <Select
+              allowClear
+              placeholder="选择负责律师"
+              showSearch
+              optionFilterProp="label"
+              options={lawyerOptions}
+              style={{ minWidth: 220 }}
+            />
+          </Form.Item>
+          <Form.Item label="案件状态" name="status">
+            <Select allowClear placeholder="选择状态" options={CASE_STATUS_OPTIONS} style={{ minWidth: 200 }} />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={tableLoading}>
+                刷新
+              </Button>
+              <Button onClick={handleResetFilters}>重置</Button>
+            </Space>
           </Form.Item>
         </Form>
       </Card>
 
-      <Card styles={{ body: { padding: 0 }}}>
-        <Table
+      <Card styles={{ body: { padding: 0 } }}>
+        <Table<CaseListItem>
           rowKey="id"
           columns={columns}
-          dataSource={filteredCases}
-          pagination={{ pageSize: 8, showSizeChanger: false }}
+          dataSource={casesData}
+          loading={tableLoading}
           scroll={{ x: 1200 }}
+          pagination={{
+            current: pagination.page,
+            pageSize: pagination.pageSize,
+            total: pagination.total,
+            showSizeChanger: true
+          }}
+          onChange={(pager) => handleTableChange({ current: pager.current, pageSize: pager.pageSize })}
         />
       </Card>
 
-      {modalState.open ? (
-        <CaseModal
-          open
-          mode={modalState.mode}
-          caseStages={[...CASE_STAGES]}
-          caseTypes={[...CASE_TYPES]}
-          urgencyOptions={[...URGENCY_OPTIONS]}
-          initialValues={modalState.mode === 'create' ? undefined : modalState.record}
-          onCancel={closeModal}
-          onSubmit={handleSubmit}
-          onModeChange={handleModeChange}
-          confirmLoading={submitting}
-        />
-      ) : null}
+      <CaseFormDrawer
+        open={formState.open}
+        mode={formState.mode}
+        submitting={submitting}
+        initialValues={formState.detail ?? undefined}
+        caseTypes={caseTypes}
+        clients={clients}
+        lawyers={lawyers}
+        onClose={closeFormDrawer}
+        onSubmit={handleSubmit}
+      />
+
+      <CaseDetailDrawer
+        open={detailOpen}
+        loading={detailLoading}
+        caseDetail={detail}
+        onClose={() => setDetailOpen(false)}
+        onEdit={canManage ? handleEditFromDetail : undefined}
+      />
     </Space>
   );
 }

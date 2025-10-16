@@ -10,7 +10,8 @@
     "lint": "eslint \"*.{ts,tsx,json}\" --max-warnings=0",
     "start-db": "docker-compose -f ./docker-compose.yml up",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "seed:super-admin": "tsx scripts/seed-super-admin.ts"
   },
   "dependencies": {
     "better-auth": "1.3.27",

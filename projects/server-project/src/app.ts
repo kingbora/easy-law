@@ -6,6 +6,8 @@ import express from 'express';
 import { auth } from './auth';
 import env from './config/env';
 import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
+import caseSettingsRouter from './routes/case-settings';
+import casesRouter from './routes/cases';
 import clientsRouter from './routes/clients';
 import healthRouter from './routes/health';
 import lawyersRouter from './routes/lawyers';
@@ -33,6 +35,8 @@ app.use('/health', healthRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/clients', clientsRouter);
 app.use('/api/lawyers', lawyersRouter);
+app.use('/api/cases', casesRouter);
+app.use('/api/case-settings', caseSettingsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

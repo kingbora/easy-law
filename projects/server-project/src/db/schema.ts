@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  date,
   index,
   integer,
   numeric,
@@ -21,6 +22,8 @@ export const clientTypeEnum = pgEnum('client_type', ['individual', 'company']);
 export const clientStatusEnum = pgEnum('client_status', ['potential', 'active', 'dormant', 'lost']);
 export const clientSourceEnum = pgEnum('client_source', ['referral', 'website', 'offline_event', 'other']);
 export const clientGenderEnum = pgEnum('client_gender', ['male', 'female']);
+export const caseStatusEnum = pgEnum('case_status', ['consultation', 'entrusted', 'in_progress', 'closed', 'terminated']);
+export const caseBillingMethodEnum = pgEnum('case_billing_method', ['fixed_fee', 'hourly', 'contingency', 'hybrid']);
 
 export const users = pgTable(
   'users',
@@ -135,6 +138,106 @@ export const clientAttachments = pgTable(
   (table) => [index('client_attachments_client_idx').on(table.clientId)]
 );
 
+export const caseTypes = pgTable(
+  'case_types',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    description: text('description'),
+    isSystem: boolean('is_system').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+  },
+  (table) => [uniqueIndex('case_types_name_idx').on(table.name)]
+);
+
+export const caseCategories = pgTable(
+  'case_categories',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    caseTypeId: uuid('case_type_id')
+      .notNull()
+      .references(() => caseTypes.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    sortIndex: integer('sort_index').default(0).notNull(),
+    isSystem: boolean('is_system').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+  },
+  (table) => [
+    index('case_categories_case_type_idx').on(table.caseTypeId),
+    uniqueIndex('case_categories_case_type_name_idx').on(table.caseTypeId, table.name)
+  ]
+);
+
+export const cases = pgTable(
+  'cases',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    caseTypeId: uuid('case_type_id')
+      .notNull()
+      .references(() => caseTypes.id, { onDelete: 'restrict' }),
+    caseCategoryId: uuid('case_category_id')
+      .notNull()
+      .references(() => caseCategories.id, { onDelete: 'restrict' }),
+    status: caseStatusEnum('status').default('consultation').notNull(),
+    description: text('description'),
+    court: text('court'),
+    filingDate: date('filing_date'),
+    hearingDate: date('hearing_date'),
+    evidenceDeadline: date('evidence_deadline'),
+    appealDeadline: date('appeal_deadline'),
+    disputedAmount: numeric('disputed_amount', { precision: 16, scale: 2 }),
+    materialsChecklist: text('materials_checklist'),
+    billingMethod: caseBillingMethodEnum('billing_method').notNull(),
+    lawyerFeeTotal: numeric('lawyer_fee_total', { precision: 16, scale: 2 }),
+    estimatedHours: integer('estimated_hours'),
+    contingencyRate: numeric('contingency_rate', { precision: 6, scale: 2 }),
+    otherFeeBudget: numeric('other_fee_budget', { precision: 16, scale: 2 }),
+    paymentPlan: text('payment_plan'),
+    opponentName: text('opponent_name').notNull(),
+    opponentType: clientTypeEnum('opponent_type').notNull(),
+    opponentIdNumber: text('opponent_id_number'),
+    opponentLawyer: text('opponent_lawyer'),
+    thirdParty: text('third_party'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+  },
+  (table) => [
+    index('cases_client_idx').on(table.clientId),
+    index('cases_type_idx').on(table.caseTypeId),
+    index('cases_category_idx').on(table.caseCategoryId),
+    index('cases_status_idx').on(table.status),
+    index('cases_created_idx').on(table.createdAt)
+  ]
+);
+
+export const caseLawyers = pgTable(
+  'case_lawyers',
+  {
+    caseId: uuid('case_id')
+      .notNull()
+      .references(() => cases.id, { onDelete: 'cascade' }),
+    lawyerId: text('lawyer_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    isPrimary: boolean('is_primary').default(false).notNull(),
+    hourlyRate: numeric('hourly_rate', { precision: 10, scale: 2 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
+  },
+  (table) => [
+    primaryKey({ name: 'case_lawyers_pk', columns: [table.caseId, table.lawyerId] }),
+    index('case_lawyers_case_idx').on(table.caseId),
+    index('case_lawyers_lawyer_idx').on(table.lawyerId)
+  ]
+);
+
 export const sessions = pgTable(
   'sessions',
   {
@@ -193,3 +296,9 @@ export type ClientType = typeof clientTypeEnum.enumValues[number];
 export type ClientStatus = typeof clientStatusEnum.enumValues[number];
 export type ClientSource = typeof clientSourceEnum.enumValues[number];
 export type ClientGender = typeof clientGenderEnum.enumValues[number];
+export type CaseTypeRow = typeof caseTypes.$inferSelect;
+export type CaseCategoryRow = typeof caseCategories.$inferSelect;
+export type CaseRow = typeof cases.$inferSelect;
+export type CaseLawyerRow = typeof caseLawyers.$inferSelect;
+export type CaseStatus = typeof caseStatusEnum.enumValues[number];
+export type CaseBillingMethod = typeof caseBillingMethodEnum.enumValues[number];

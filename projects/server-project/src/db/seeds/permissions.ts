@@ -23,6 +23,24 @@ const PERMISSION_DEFINITIONS = [
     description: '访问客户管理页面'
   },
   {
+    code: 'menu.cases',
+    name: '案件管理菜单',
+    category: 'menu' as const,
+    description: '访问案件管理页面'
+  },
+  {
+    code: 'menu.settings',
+    name: '平台设置菜单',
+    category: 'menu' as const,
+    description: '访问平台设置入口'
+  },
+  {
+    code: 'menu.settings.case',
+    name: '案件设置菜单',
+    category: 'menu' as const,
+    description: '访问案件设置配置页面'
+  },
+  {
     code: 'action.team.read',
     name: '团队管理查看',
     category: 'action' as const,
@@ -45,6 +63,30 @@ const PERMISSION_DEFINITIONS = [
     name: '客户信息维护',
     category: 'action' as const,
     description: '创建、更新或删除客户信息'
+  },
+  {
+    code: 'action.cases.read',
+    name: '案件信息查看',
+    category: 'action' as const,
+    description: '查看案件列表和详情'
+  },
+  {
+    code: 'action.cases.manage',
+    name: '案件信息维护',
+    category: 'action' as const,
+    description: '创建、更新或删除案件信息'
+  },
+  {
+    code: 'action.case_settings.read',
+    name: '案件设置查看',
+    category: 'action' as const,
+    description: '查看案件类型与案由配置'
+  },
+  {
+    code: 'action.case_settings.manage',
+    name: '案件设置管理',
+    category: 'action' as const,
+    description: '创建、更新或删除案件类型及案由配置'
   }
 ];
 
@@ -54,14 +96,29 @@ const ROLE_PERMISSION_MAP: Record<UserRole, string[]> = {
     'menu.dashboard',
     'menu.team',
     'menu.clients',
+    'menu.cases',
+    'menu.settings',
+    'menu.settings.case',
     'action.team.read',
     'action.team.manage',
     'action.clients.read',
-    'action.clients.manage'
+    'action.clients.manage',
+    'action.cases.read',
+    'action.cases.manage',
+    'action.case_settings.read',
+    'action.case_settings.manage'
   ],
   sale: ['menu.dashboard', 'menu.clients', 'action.clients.read'],
-  lawyer: ['menu.dashboard', 'menu.clients', 'action.clients.read', 'action.clients.manage'],
-  assistant: ['menu.dashboard', 'menu.clients', 'action.clients.read']
+  lawyer: [
+    'menu.dashboard',
+    'menu.clients',
+    'menu.cases',
+    'action.clients.read',
+    'action.clients.manage',
+    'action.cases.read',
+    'action.cases.manage'
+  ],
+  assistant: ['menu.dashboard', 'menu.clients', 'menu.cases', 'action.clients.read', 'action.cases.read']
 };
 
 export const ensureDefaultPermissions = async () => {
