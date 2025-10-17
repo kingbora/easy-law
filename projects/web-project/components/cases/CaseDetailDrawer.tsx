@@ -43,6 +43,22 @@ const formatText = (value: string | null | undefined) => (value && value.trim() 
 
 const formatDate = (value: string | null) => value ?? '—';
 
+const formatFileSize = (size: number | null | undefined) => {
+  if (size === null || size === undefined) {
+    return '';
+  }
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  if (size < 1024 * 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+};
+
 export default function CaseDetailDrawer({ open, loading, caseDetail, onClose, onEdit }: CaseDetailDrawerProps) {
   const headerExtra = useMemo(() => {
     if (!caseDetail || !onEdit) {
@@ -93,9 +109,39 @@ export default function CaseDetailDrawer({ open, loading, caseDetail, onClose, o
             </Descriptions>
             <div>
               <Title level={5} style={{ marginBottom: 8 }}>
-                材料补充清单
+                材料补充文件
               </Title>
-              <Paragraph style={{ whiteSpace: 'pre-wrap' }}>{formatText(caseDetail.materialsChecklist)}</Paragraph>
+              {caseDetail.materials.length > 0 ? (
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  {caseDetail.materials.map((material) => {
+                    const sizeText = formatFileSize(material.fileSize);
+                    const metaParts = [
+                      sizeText,
+                      material.fileType ?? undefined,
+                      material.uploadedAt ? new Date(material.uploadedAt).toLocaleString('zh-CN') : undefined
+                    ].filter(Boolean);
+                    return (
+                      <Space
+                        key={material.id}
+                        direction="vertical"
+                        size={4}
+                        style={{ width: '100%' }}
+                      >
+                        <Typography.Link href={material.downloadUrl} target="_blank" rel="noopener noreferrer">
+                          {material.filename}
+                        </Typography.Link>
+                        {metaParts.length > 0 ? (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {metaParts.join(' · ')}
+                          </Text>
+                        ) : null}
+                      </Space>
+                    );
+                  })}
+                </Space>
+              ) : (
+                <Text type="secondary">暂无附件</Text>
+              )}
             </div>
           </Space>
         )
@@ -148,7 +194,7 @@ export default function CaseDetailDrawer({ open, loading, caseDetail, onClose, o
       width={880}
       title="案件详情"
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={false}
       extra={headerExtra}
     >
@@ -182,7 +228,7 @@ export default function CaseDetailDrawer({ open, loading, caseDetail, onClose, o
 
             <Descriptions column={2} labelStyle={{ width: 160 }}>
               <Descriptions.Item label="对方当事人">{caseDetail.opponent.name}</Descriptions.Item>
-              <Descriptions.Item label="类型">
+              <Descriptions.Item label="对方当事人类型">
                 {caseDetail.opponent.type === 'company' ? '企业' : '自然人'}
               </Descriptions.Item>
             </Descriptions>

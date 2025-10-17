@@ -44,7 +44,7 @@ const { Paragraph, Title } = Typography;
 
 type ClientModalMode = 'create' | 'edit' | 'view';
 
-interface LawyerOption {
+interface MaintainerOption {
   label: string;
   value: string;
 }
@@ -53,12 +53,12 @@ interface ClientModalProps {
   open: boolean;
   mode: ClientModalMode;
   initialValues?: ClientDetail | null;
-  lawyerOptions: LawyerOption[];
-  lawyerLoading?: boolean;
+  maintainerOptions: MaintainerOption[];
+  maintainerLoading?: boolean;
   onCancel: () => void;
   onSubmit?: (payload: ClientPayload) => void;
   onModeChange?: (mode: Exclude<ClientModalMode, 'create'>) => void;
-  onSearchLawyers?: (keyword: string) => void;
+  onSearchMaintainers?: (keyword: string) => void;
   confirmLoading?: boolean;
 }
 
@@ -71,7 +71,7 @@ interface ClientFormValues {
   address?: string;
   source?: ClientSource;
   sourceRemark?: string;
-  responsibleLawyerId: string;
+  maintainerId: string;
   tags: string[];
   remark?: string;
   individualProfile?: {
@@ -86,7 +86,7 @@ interface ClientFormValues {
     registeredCapital?: string;
     legalRepresentative?: string;
   };
-  attachments: Array<{
+  attachments?: Array<{
     id?: string;
     filename: string;
     fileType?: string;
@@ -104,7 +104,7 @@ const DEFAULT_FORM_VALUES: ClientFormValues = {
   address: '',
   source: undefined,
   sourceRemark: '',
-  responsibleLawyerId: '',
+  maintainerId: '',
   tags: [],
   remark: '',
   individualProfile: {
@@ -132,7 +132,7 @@ const normalizeDetailToForm = (detail: ClientDetail): ClientFormValues => {
     address: detail.address ?? '',
     source: detail.source ?? undefined,
     sourceRemark: detail.sourceRemark ?? '',
-    responsibleLawyerId: detail.responsibleLawyer?.id ?? '',
+    maintainerId: detail.maintainer?.id ?? '',
     tags: detail.tags ?? [],
     remark: detail.remark ?? '',
     individualProfile:
@@ -188,7 +188,7 @@ const buildPayload = (values: ClientFormValues): ClientPayload => {
         ? values.sourceRemark.trim()
         : undefined,
     status: values.status,
-    responsibleLawyerId: values.responsibleLawyerId,
+    maintainerId: values.maintainerId,
     tags: values.tags.length > 0 ? values.tags : undefined,
     remark: values.remark ? values.remark.trim() || null : null
   };
@@ -218,7 +218,8 @@ const buildPayload = (values: ClientFormValues): ClientPayload => {
     };
   }
 
-  const attachments = values.attachments
+  const attachmentsSource = values.attachments ?? [];
+  const attachments = attachmentsSource
     .map((item) => ({
       filename: item.filename.trim(),
       fileUrl: item.fileUrl.trim(),
@@ -238,12 +239,12 @@ export default function ClientModal({
   open,
   mode,
   initialValues,
-  lawyerOptions,
-  lawyerLoading,
+  maintainerOptions,
+  maintainerLoading,
   onCancel,
   onSubmit,
   onModeChange,
-  onSearchLawyers,
+  onSearchMaintainers,
   confirmLoading
 }: ClientModalProps) {
   const [form] = Form.useForm<ClientFormValues>();
@@ -288,8 +289,8 @@ export default function ClientModal({
 
     try {
       const values = await form.validateFields();
-      if (!values.responsibleLawyerId) {
-        message.error('请选择负责律师');
+      if (!values.maintainerId) {
+        message.error('请选择维护人');
         return;
       }
       if (values.type === 'individual' && !values.individualProfile?.idCardNumber?.trim()) {
@@ -336,7 +337,7 @@ export default function ClientModal({
       ];
 
   if (mode === 'view' && initialValues) {
-    const responsibleLawyerName = initialValues.responsibleLawyer?.name ?? '未指定';
+  const maintainerName = initialValues.maintainer?.name ?? '未指定';
     return (
       <Modal
         open={open}
@@ -344,7 +345,7 @@ export default function ClientModal({
         onCancel={onCancel}
         footer={footer}
         width={720}
-        destroyOnClose
+        destroyOnHidden
       >
         <Space direction="vertical" size={24} style={{ width: '100%' }}>
           <Descriptions column={2} bordered>
@@ -364,7 +365,7 @@ export default function ClientModal({
               {initialValues.source ? CLIENT_SOURCE_LABELS[initialValues.source] : '未填写'}
             </Descriptions.Item>
             <Descriptions.Item label="来源说明">{initialValues.sourceRemark ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="负责律师">{responsibleLawyerName}</Descriptions.Item>
+            <Descriptions.Item label="维护人">{maintainerName}</Descriptions.Item>
             <Descriptions.Item label="标签">
               {initialValues.tags.length > 0 ? initialValues.tags.map((tag) => <Tag key={tag}>{tag}</Tag>) : '无'}
             </Descriptions.Item>
@@ -440,7 +441,7 @@ export default function ClientModal({
       onCancel={onCancel}
       footer={footer}
       width={860}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={false}
     >
       <Form<ClientFormValues>
@@ -493,17 +494,29 @@ export default function ClientModal({
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item
-              label="负责律师"
-              name="responsibleLawyerId"
-              rules={[{ required: true, message: '请选择负责律师' }]}
+              label="维护人"
+              name="maintainerId"
+              rules={[{ required: true, message: '请选择维护人' }]}
             >
               <Select
                 showSearch
-                placeholder="请输入律师姓名检索"
+                placeholder="请输入维护人姓名检索"
                 filterOption={false}
-                options={lawyerOptions}
-                onSearch={onSearchLawyers}
-                loading={lawyerLoading}
+                options={maintainerOptions}
+                onSearch={onSearchMaintainers}
+                loading={maintainerLoading}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              label="客户来源"
+              name="source"
+              rules={[{ required: true, message: '请选择客户来源' }]}
+            >
+              <Select
+                options={CLIENT_SOURCE_OPTIONS}
+                placeholder="请选择客户来源"
               />
             </Form.Item>
           </Col>
@@ -611,16 +624,7 @@ export default function ClientModal({
             </Row>
 
             <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item label="客户来源" name="source">
-                  <Select
-                    allowClear
-                    options={CLIENT_SOURCE_OPTIONS}
-                    placeholder="请选择客户来源"
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
+              <Col span={24}>
                 <Form.Item label="来源说明" name="sourceRemark">
                   <Input placeholder="来源补充说明" maxLength={120} />
                 </Form.Item>

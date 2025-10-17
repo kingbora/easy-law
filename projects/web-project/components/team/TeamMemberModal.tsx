@@ -13,6 +13,7 @@ export interface TeamMemberModalResult {
   role: string;
   email: string;
   password?: string;
+  gender?: 'male' | 'female' | null;
 }
 
 export interface TeamMemberModalDetail extends TeamMemberModalResult {
@@ -45,9 +46,20 @@ interface TeamMemberFormState {
   role: string;
   email: string;
   joinDate: string;
+  gender: 'male' | 'female' | null;
 }
 
 const { Paragraph, Title } = Typography;
+
+const GENDER_OPTIONS = [
+  { label: '男', value: 'male' as const },
+  { label: '女', value: 'female' as const }
+];
+
+const GENDER_LABEL_MAP: Record<'male' | 'female', string> = {
+  male: '男',
+  female: '女'
+};
 
 export default function TeamMemberModal({
   open,
@@ -63,7 +75,8 @@ export default function TeamMemberModal({
     name: '',
     role: roles[0]?.value ?? '',
     email: '',
-    joinDate: dayjs().format('YYYY-MM-DD')
+    joinDate: dayjs().format('YYYY-MM-DD'),
+    gender: null
   });
 
   const title = useMemo(() => {
@@ -91,9 +104,10 @@ export default function TeamMemberModal({
       name: initialValues?.name ?? '',
       role: baseRole,
       email: initialValues?.email ?? '',
-      joinDate: baseJoinDate
+      joinDate: baseJoinDate,
+      gender: initialValues?.gender ?? null
     });
-  }, [initialValues?.email, initialValues?.id, initialValues?.joinDate, initialValues?.name, initialValues?.role, mode, open, roles]);
+  }, [initialValues?.email, initialValues?.gender, initialValues?.id, initialValues?.joinDate, initialValues?.name, initialValues?.role, mode, open, roles]);
 
   const handleSubmit = async () => {
     if (!onSubmit) {
@@ -101,7 +115,7 @@ export default function TeamMemberModal({
       return;
     }
 
-    const { name, role, email } = formValues;
+  const { name, role, email, gender } = formValues;
 
     if (!name.trim()) {
       message.error('请输入成员名称');
@@ -128,7 +142,8 @@ export default function TeamMemberModal({
       name: name.trim(),
       role,
       email: email.trim(),
-      password: mode === 'create' ? DEFAULT_INITIAL_PASSWORD : undefined
+      password: mode === 'create' ? DEFAULT_INITIAL_PASSWORD : undefined,
+      gender
     };
     onSubmit(payload);
   };
@@ -158,7 +173,7 @@ export default function TeamMemberModal({
       onCancel={onCancel}
       footer={footer}
       maskClosable={false}
-      destroyOnClose
+      destroyOnHidden
       width={560}
     >
       <Space direction="vertical" size={24} style={{ width: '100%' }}>
@@ -174,6 +189,24 @@ export default function TeamMemberModal({
                   setFormValues((prev) => ({
                     ...prev,
                     name: event.target.value
+                  }))
+                }
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="性别">
+            {mode === 'view' ? (
+              initialValues?.gender ? GENDER_LABEL_MAP[initialValues.gender] : '-'
+            ) : (
+              <Select
+                allowClear
+                value={formValues.gender ?? undefined}
+                options={GENDER_OPTIONS}
+                placeholder="请选择性别"
+                onChange={(value) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    gender: (value ?? null) as 'male' | 'female' | null
                   }))
                 }
               />

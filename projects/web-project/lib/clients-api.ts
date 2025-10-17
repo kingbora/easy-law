@@ -10,7 +10,7 @@ export interface ClientListItem {
   name: string;
   type: ClientType;
   phone: string;
-  responsibleLawyer: {
+  maintainer: {
     id: string;
     name: string | null;
   } | null;
@@ -82,7 +82,7 @@ export interface ClientPayload {
   source?: ClientSource | null;
   sourceRemark?: string | null;
   status?: ClientStatus | null;
-  responsibleLawyerId: string;
+  maintainerId: string;
   tags?: string[];
   remark?: string | null;
   individualProfile?: {

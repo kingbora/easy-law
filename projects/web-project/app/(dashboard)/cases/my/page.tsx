@@ -1,15 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Form, Select, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, Card, Form, Popconfirm, Select, Space, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined } from '@ant-design/icons';
 
 import CaseDetailDrawer from '@/components/cases/CaseDetailDrawer';
 import CaseFormDrawer from '@/components/cases/CaseFormDrawer';
 import { ApiError } from '@/lib/api-client';
 import type { CaseDetail, CaseListItem, CasePayload, CaseStatus } from '@/lib/cases-api';
-import { createCase, fetchCases, fetchCaseDetail, updateCase } from '@/lib/cases-api';
+import { createCase, deleteCase, fetchCases, fetchCaseDetail, updateCase } from '@/lib/cases-api';
 import { CASE_BILLING_METHOD_LABELS, CASE_STATUS_LABELS, CASE_STATUS_OPTIONS } from '@/lib/cases-constants';
 import { fetchCaseTypes, type CaseTypeItem } from '@/lib/case-settings-api';
 import { fetchClients } from '@/lib/clients-api';
@@ -63,6 +63,7 @@ export default function MyCasesPage() {
     detail: null
   });
   const [submitting, setSubmitting] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
 
   const loadCases = useCallback(
     async (page: number, pageSize: number, activeFilters: Filters) => {
@@ -153,13 +154,18 @@ export default function MyCasesPage() {
     );
   }, [caseTypes, filterCaseTypeId]);
 
+  const selectableLawyers = useMemo(
+    () => lawyers.filter((lawyer) => lawyer.role === 'lawyer' || lawyer.role === 'assistant'),
+    [lawyers]
+  );
+
   const lawyerOptions = useMemo(
     () =>
-      lawyers.map((lawyer) => ({
+      selectableLawyers.map((lawyer) => ({
         label: lawyer.name ?? lawyer.email ?? '未命名律师',
         value: lawyer.id
       })),
-    [lawyers]
+    [selectableLawyers]
   );
 
   const handleFilterChange = useCallback(
@@ -200,7 +206,7 @@ export default function MyCasesPage() {
     [filters, loadCases, pagination.pageSize]
   );
 
-  const handleRefresh = useCallback(() => {
+  const handleSearch = useCallback(() => {
     void loadCases(pagination.page, pagination.pageSize, filters);
   }, [filters, loadCases, pagination.page, pagination.pageSize]);
 
@@ -285,6 +291,38 @@ export default function MyCasesPage() {
     [filters, formState.detail, formState.mode, loadCases, pagination.page, pagination.pageSize]
   );
 
+  const handleDeleteCase = useCallback(
+    async (caseId: string) => {
+      if (!canManage) {
+        message.warning('您没有删除权限');
+        return;
+      }
+
+      setDeletingIds((prev) => ({ ...prev, [caseId]: true }));
+      try {
+        await deleteCase(caseId);
+        message.success('案件已删除');
+        if (detail?.id === caseId) {
+          setDetail(null);
+          setDetailOpen(false);
+        }
+
+        const nextPage = casesData.length === 1 && pagination.page > 1 ? pagination.page - 1 : pagination.page;
+        await loadCases(nextPage, pagination.pageSize, filters);
+      } catch (error) {
+        const messageText = error instanceof ApiError ? error.message : '删除失败，请稍后重试';
+        message.error(messageText);
+      } finally {
+        setDeletingIds((prev) => {
+          const next = { ...prev };
+          delete next[caseId];
+          return next;
+        });
+      }
+    },
+    [canManage, casesData, detail, filters, loadCases, pagination.page, pagination.pageSize]
+  );
+
   const columns = useMemo<ColumnsType<CaseListItem>>(
     () => [
       {
@@ -349,20 +387,30 @@ export default function MyCasesPage() {
         title: '操作',
         key: 'actions',
         fixed: 'right',
-        width: 160,
-        render: (_, record) => (
-          <Space>
-            <Button type="link" onClick={() => handleViewCase(record)}>
-              查看
+        width: 100,
+        render: (_, record) =>
+          canManage ? (
+            <Popconfirm
+              title="确认删除该案件？"
+              description="删除后将无法恢复，请谨慎操作。"
+              okText="删除"
+              okType="danger"
+              cancelText="取消"
+              okButtonProps={{ loading: Boolean(deletingIds[record.id]) }}
+              onConfirm={() => handleDeleteCase(record.id)}
+            >
+              <Button type="link" danger loading={Boolean(deletingIds[record.id])}>
+                删除
+              </Button>
+            </Popconfirm>
+          ) : (
+            <Button type="link" disabled>
+              删除
             </Button>
-            <Button type="link" onClick={() => handleEditCase(record.id)} disabled={!canManage}>
-              编辑
-            </Button>
-          </Space>
-        )
+          )
       }
     ],
-    [canManage, handleEditCase, handleViewCase]
+    [canManage, deletingIds, handleDeleteCase, handleViewCase]
   );
 
   const headerAction = useMemo(
@@ -434,8 +482,8 @@ export default function MyCasesPage() {
           </Form.Item>
           <Form.Item>
             <Space>
-              <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={tableLoading}>
-                刷新
+              <Button type="primary" onClick={handleSearch} loading={tableLoading}>
+                搜索
               </Button>
               <Button onClick={handleResetFilters}>重置</Button>
             </Space>
@@ -467,7 +515,7 @@ export default function MyCasesPage() {
         initialValues={formState.detail ?? undefined}
         caseTypes={caseTypes}
         clients={clients}
-        lawyers={lawyers}
+        lawyers={selectableLawyers}
         onClose={closeFormDrawer}
         onSubmit={handleSubmit}
       />

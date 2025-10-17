@@ -52,7 +52,7 @@ export interface CaseDetail extends CaseListItem {
   evidenceDeadline: string | null;
   appealDeadline: string | null;
   disputedAmount: string | null;
-  materialsChecklist: string | null;
+  materials: CaseMaterial[];
   billing: {
     lawyerFeeTotal: string | null;
     estimatedHours: number | null;
@@ -67,6 +67,16 @@ export interface CaseDetail extends CaseListItem {
     lawyer: string | null;
     thirdParty: string | null;
   };
+}
+
+export interface CaseMaterial {
+  id: string;
+  filename: string;
+  fileType: string | null;
+  fileSize: number | null;
+  downloadUrl: string;
+  uploadedAt: string | null;
+  uploadedBy: string | null;
 }
 
 export interface FetchCasesParams {
@@ -100,7 +110,6 @@ export interface CasePayload {
   evidenceDeadline?: string | null;
   appealDeadline?: string | null;
   disputedAmount?: string | null;
-  materialsChecklist?: string | null;
   billingMethod: CaseBillingMethod;
   lawyerFeeTotal?: string | null;
   estimatedHours?: number | null;
@@ -113,6 +122,15 @@ export interface CasePayload {
   opponentLawyer?: string | null;
   thirdParty?: string | null;
   lawyers: CaseLawyerPayload[];
+  materials?: CaseMaterialUploadItem[];
+}
+
+export interface CaseMaterialUploadItem {
+  id?: string;
+  filename?: string;
+  fileType?: string | null;
+  fileSize?: number | null;
+  base64Data?: string;
 }
 
 const buildQueryString = (params: FetchCasesParams) => {
@@ -168,5 +186,11 @@ export async function updateCase(id: string, payload: CasePayload): Promise<Case
   return apiFetch<CaseDetail>(`/api/cases/${id}`, {
     method: 'PUT',
     body: payload
+  });
+}
+
+export async function deleteCase(id: string): Promise<void> {
+  await apiFetch<void>(`/api/cases/${id}`, {
+    method: 'DELETE'
   });
 }

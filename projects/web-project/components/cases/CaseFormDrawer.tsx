@@ -1,6 +1,6 @@
 'use client';
 
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { InboxOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   Button,
   Collapse,
@@ -9,18 +9,22 @@ import {
   Form,
   Input,
   InputNumber,
+  message,
   Radio,
   Select,
   Space,
   Steps,
-  Typography
+  Typography,
+  Upload
 } from 'antd';
 import type { FormInstance } from 'antd';
 import type { NamePath } from 'antd/es/form/interface';
+import type { UploadChangeParam } from 'antd/es/upload';
+import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { CaseDetail, CasePayload } from '@/lib/cases-api';
+import type { CaseDetail, CaseMaterialUploadItem, CasePayload } from '@/lib/cases-api';
 import { CASE_BILLING_METHOD_LABELS, CASE_BILLING_METHOD_OPTIONS, CASE_STATUS_OPTIONS } from '@/lib/cases-constants';
 import type { CaseTypeItem } from '@/lib/case-settings-api';
 import type { LawyerResponse } from '@/lib/lawyers-api';
@@ -45,7 +49,6 @@ type CaseFormValues = {
   evidenceDeadline?: Dayjs | null;
   appealDeadline?: Dayjs | null;
   disputedAmount?: number | null;
-  materialsChecklist?: string | null;
   billingMethod: string;
   lawyerFeeTotal?: number | null;
   estimatedHours?: number | null;
@@ -59,6 +62,11 @@ type CaseFormValues = {
   thirdParty?: string | null;
   lawyers: CaseFormLawyer[];
   primaryLawyerId?: string;
+};
+
+type CaseUploadFile = UploadFile & {
+  existingId?: string;
+  base64Data?: string;
 };
 
 export interface CaseFormDrawerProps {
@@ -101,7 +109,6 @@ const mapDetailToFormValues = (detail: CaseDetail | undefined): Partial<CaseForm
     evidenceDeadline: detail.evidenceDeadline ? dayjs(detail.evidenceDeadline) : undefined,
     appealDeadline: detail.appealDeadline ? dayjs(detail.appealDeadline) : undefined,
     disputedAmount: toNumberOrNull(detail.disputedAmount),
-    materialsChecklist: detail.materialsChecklist ?? undefined,
     billingMethod: detail.billingMethod,
     lawyerFeeTotal: toNumberOrNull(detail.billing.lawyerFeeTotal),
     estimatedHours: detail.billing.estimatedHours ?? undefined,
@@ -151,29 +158,109 @@ export default function CaseFormDrawer({
 }: CaseFormDrawerProps) {
   const [form] = Form.useForm<CaseFormValues>();
   const [currentStep, setCurrentStep] = useState(0);
+  const [materialFiles, setMaterialFiles] = useState<CaseUploadFile[]>([]);
 
-  const caseTypeId = Form.useWatch('caseTypeId', form);
+  const fileToDataUrl = useCallback((file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string) ?? '');
+      reader.onerror = () => reject(new Error('文件读取失败'));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handleMaterialsChange: UploadProps<CaseUploadFile>['onChange'] = useCallback(
+    async ({ fileList }: UploadChangeParam<CaseUploadFile>) => {
+      const nextList = (fileList ?? []) as CaseUploadFile[];
+      const processed = await Promise.all(
+        nextList.map(async (item) => {
+          if (item.originFileObj && !item.base64Data) {
+            try {
+              const dataUrl = await fileToDataUrl(item.originFileObj as File);
+              const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
+              return {
+                ...item,
+                status: 'done' as const,
+                thumbUrl: dataUrl,
+                url: dataUrl,
+                base64Data: base64
+              } satisfies CaseUploadFile;
+            } catch (error) {
+              message.error(`文件 ${item.name} 读取失败，请重试`);
+              return null;
+            }
+          }
+          return item;
+        })
+      );
+
+      const filtered = processed.filter((item): item is CaseUploadFile => item !== null);
+      setMaterialFiles(filtered);
+    },
+    [fileToDataUrl]
+  );
+
+  const handleMaterialPreview = useCallback((file: CaseUploadFile) => {
+    const previewUrl = file.url ?? file.thumbUrl;
+    if (previewUrl) {
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+    }
+  }, []);
+
+  const handleMaterialDownload = useCallback((file: CaseUploadFile) => {
+    const targetUrl = file.url ?? file.thumbUrl;
+    if (targetUrl) {
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    }
+  }, []);
+
+  const caseTypeIdWatch = Form.useWatch('caseTypeId', form);
+  const caseTypeId = caseTypeIdWatch ?? form.getFieldValue('caseTypeId');
   const lawyersValue = Form.useWatch('lawyers', form);
   const billingMethod = Form.useWatch('billingMethod', form);
+  const opponentTypeValue = Form.useWatch('opponentType', form);
 
   useEffect(() => {
     if (!open) {
       form.resetFields();
       setCurrentStep(0);
+      setMaterialFiles([]);
       return;
     }
     setCurrentStep(0);
     if (mode === 'edit' && initialValues) {
       form.setFieldsValue(mapDetailToFormValues(initialValues));
+      setMaterialFiles(
+        (initialValues.materials ?? []).map((item) => ({
+          uid: item.id,
+          name: item.filename,
+          status: 'done' as const,
+          url: item.downloadUrl,
+          type: item.fileType ?? undefined,
+          size: item.fileSize ?? undefined,
+          existingId: item.id
+        }))
+      );
     } else {
-      form.setFieldsValue({
+      const baseValues: Partial<CaseFormValues> = {
         status: CASE_STATUS_OPTIONS[0]?.value ?? 'consultation',
         billingMethod: CASE_BILLING_METHOD_OPTIONS[0]?.value ?? 'fixed_fee',
         opponentType: 'company',
-        lawyers: [{}]
-      });
+        lawyers: []
+      };
+
+      if (!form.getFieldValue('caseTypeId') && caseTypes.length > 0) {
+        baseValues.caseTypeId = caseTypes[0]?.id;
+        const defaultCategories = caseTypes[0]?.categories ?? [];
+        if (defaultCategories.length > 0) {
+          baseValues.caseCategoryId = defaultCategories[0]?.id;
+        }
+      }
+
+      form.setFieldsValue(baseValues);
+      setMaterialFiles([]);
     }
-  }, [open, mode, initialValues, form]);
+  }, [open, mode, initialValues, form, caseTypes]);
 
   useEffect(() => {
     if (!open) {
@@ -186,16 +273,28 @@ export default function CaseFormDrawer({
     if (!open) {
       return;
     }
+
+    if (!caseTypeId) {
+      if (mode === 'create') {
+        form.setFieldsValue({ caseCategoryId: undefined });
+      }
+      return;
+    }
+
     const selectedType = caseTypes.find((item) => item.id === caseTypeId);
     if (!selectedType) {
+      if (caseTypes.length === 0) {
+        return;
+      }
       form.setFieldsValue({ caseCategoryId: undefined });
       return;
     }
+
     const currentCategoryId = form.getFieldValue('caseCategoryId');
-    if (!selectedType.categories.some((category) => category.id === currentCategoryId)) {
+    if (currentCategoryId && !selectedType.categories.some((category) => category.id === currentCategoryId)) {
       form.setFieldsValue({ caseCategoryId: undefined });
     }
-  }, [caseTypeId, caseTypes, form, open]);
+  }, [caseTypeId, caseTypes, form, open, mode]);
 
   const clientOptions = useMemo(
     () => clients.map((client) => ({ label: client.name, value: client.id })),
@@ -290,7 +389,6 @@ export default function CaseFormDrawer({
         values.disputedAmount !== undefined && values.disputedAmount !== null
           ? values.disputedAmount.toFixed(2)
           : null,
-      materialsChecklist: values.materialsChecklist?.trim() || null,
       billingMethod: values.billingMethod,
       lawyerFeeTotal:
         values.lawyerFeeTotal !== undefined && values.lawyerFeeTotal !== null
@@ -317,6 +415,31 @@ export default function CaseFormDrawer({
       lawyers: filteredLawyers
     };
 
+    if (materialFiles.length > 0) {
+      const materialsPayload = materialFiles
+        .map((file) => {
+          if (file.existingId && !file.base64Data) {
+            return { id: file.existingId } as CaseMaterialUploadItem;
+          }
+          if (file.base64Data) {
+            const rawSize =
+              (typeof file.size === 'number' ? file.size : undefined) ?? file.originFileObj?.size ?? null;
+            return {
+              filename: file.name,
+              fileType: file.type ?? file.originFileObj?.type ?? null,
+              fileSize: rawSize !== null && rawSize !== undefined ? Math.trunc(rawSize) : null,
+              base64Data: file.base64Data
+            } satisfies CaseMaterialUploadItem;
+          }
+          return null;
+        })
+        .filter((item): item is CaseMaterialUploadItem => item !== null);
+
+      payload.materials = materialsPayload;
+    } else if (mode === 'edit') {
+      payload.materials = [];
+    }
+
     await onSubmit(payload);
   };
 
@@ -342,6 +465,10 @@ export default function CaseFormDrawer({
     </Space>
   );
 
+  const opponentIdLabel = opponentTypeValue === 'individual' ? '身份证号码' : '统一社会信用代码';
+  const opponentIdPlaceholder =
+    opponentTypeValue === 'individual' ? '请填写身份证号码' : '请填写统一社会信用代码';
+
   return (
     <Drawer
       open={open}
@@ -358,33 +485,41 @@ export default function CaseFormDrawer({
           {currentStep === 0 && (
             <Space direction="vertical" size={24} style={{ width: '100%' }}>
               <Title level={5}>基本信息</Title>
-              <Form.Item
-                label="案件名称"
-                name="name"
-                rules={[
-                  { required: true, message: '请填写案件名称' },
-                  {
-                    validator: (_, value) => {
-                      if (!value) {
-                        return Promise.resolve();
+              <Space size={16} style={{ width: '100%' }} wrap>
+                <Form.Item
+                  label="案件名称"
+                  name="name"
+                  style={{ flex: 1, minWidth: 280 }}
+                  rules={[
+                    { required: true, message: '请填写案件名称' },
+                    {
+                      validator: (_, value) => {
+                        if (!value) {
+                          return Promise.resolve();
+                        }
+                        return value.trim().length >= 4
+                          ? Promise.resolve()
+                          : Promise.reject(new Error('请按照“客户简称+对方简称+案由”填写，长度需大于4个字符'));
                       }
-                      return value.trim().length >= 4
-                        ? Promise.resolve()
-                        : Promise.reject(new Error('请按照“客户简称+对方简称+案由”填写，长度需大于4个字符'));
                     }
-                  }
-                ]}
-              >
-                <Input placeholder="例如：华泰集团 vs 张三 合同纠纷" />
-              </Form.Item>
-              <Form.Item label="客户" name="clientId" rules={[{ required: true, message: '请选择客户' }]}>
-                <Select
-                  placeholder="请选择客户"
-                  showSearch
-                  optionFilterProp="label"
-                  options={clientOptions}
-                />
-              </Form.Item>
+                  ]}
+                >
+                  <Input placeholder="例如：华泰集团 vs 张三 合同纠纷" />
+                </Form.Item>
+                <Form.Item
+                  label="客户"
+                  name="clientId"
+                  style={{ flex: 1, minWidth: 280 }}
+                  rules={[{ required: true, message: '请选择客户' }]}
+                >
+                  <Select
+                    placeholder="请选择客户"
+                    showSearch
+                    optionFilterProp="label"
+                    options={clientOptions}
+                  />
+                </Form.Item>
+              </Space>
               <Space size={16} style={{ width: '100%' }} wrap>
                 <Form.Item
                   label="案件类型"
@@ -420,8 +555,8 @@ export default function CaseFormDrawer({
               </Space>
 
               <div>
-                <Title level={5}>负责律师</Title>
-                <Text type="secondary">请选择参与本案的律师，并指定主办律师。</Text>
+                <Title level={5}>负责律师（可选）</Title>
+                <Text type="secondary">可按需添加参与律师，默认第一位律师为主办律师，可在下方调整。</Text>
                 <Form.List
                   name="lawyers"
                   rules={[
@@ -429,46 +564,58 @@ export default function CaseFormDrawer({
                       validator: async (_, value) => {
                         const list = Array.isArray(value) ? value : [];
                         const entries = list.filter((item) => item && item.lawyerId);
-                        if (entries.length === 0) {
-                          throw new Error('请至少添加一位负责律师');
-                        }
                         const ids = entries.map((item: CaseFormLawyer) => item.lawyerId);
                         const unique = new Set(ids);
                         if (unique.size !== ids.length) {
-                          throw new Error('负责律师不可重复');
+                          return Promise.reject(new Error('负责律师不可重复'));
                         }
+                        return Promise.resolve();
                       }
                     }
                   ]}
                 >
-                  {(fields, { add, remove }) => (
-                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                      {fields.map((field) => {
-                        const currentLawyerId = form.getFieldValue(['lawyers', field.name, 'lawyerId']);
-                        const options = lawyerOptions.map((option) => ({
-                          ...option,
-                          disabled:
-                            !!option.value && selectedLawyerIds.includes(option.value) && option.value !== currentLawyerId
-                        }));
-                        return (
-                          <Space
-                            key={field.key}
-                            align="baseline"
-                            style={{ display: 'flex', width: '100%' }}
-                          >
-                            <Form.Item
-                              name={[field.name, 'lawyerId']}
-                              style={{ flex: 1 }}
-                              rules={[{ required: true, message: '请选择负责律师' }]}
+                  {(fields, { add, remove }) => {
+                    if (fields.length === 0) {
+                      return (
+                        <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({})} block>
+                          添加负责律师
+                        </Button>
+                      );
+                    }
+                    return (
+                      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        {fields.map((field) => {
+                          const currentLawyerId = form.getFieldValue(['lawyers', field.name, 'lawyerId']);
+                          const options = lawyerOptions.map((option) => ({
+                            ...option,
+                            disabled:
+                              !!option.value && selectedLawyerIds.includes(option.value) && option.value !== currentLawyerId
+                          }));
+                          const fieldIndex = field.name as number;
+                          return (
+                            <Space
+                              key={field.key}
+                              align="center"
+                              style={{ display: 'flex', width: '100%' }}
                             >
-                              <Select
-                                placeholder="请选择律师"
-                                showSearch
-                                optionFilterProp="label"
-                                options={options}
+                              <Button
+                                type="text"
+                                icon={<PlusOutlined />}
+                                onClick={() => add({}, fieldIndex + 1)}
+                                aria-label="在此位置新增律师"
                               />
-                            </Form.Item>
-                            {fields.length > 1 && (
+                              <Form.Item
+                                name={[field.name, 'lawyerId']}
+                                style={{ flex: 1, marginBottom: 0 }}
+                                rules={[{ required: true, message: '请选择负责律师' }]}
+                              >
+                                <Select
+                                  placeholder="请选择律师"
+                                  showSearch
+                                  optionFilterProp="label"
+                                  options={options}
+                                />
+                              </Form.Item>
                               <Button
                                 type="text"
                                 danger
@@ -476,32 +623,36 @@ export default function CaseFormDrawer({
                                 onClick={() => remove(field.name)}
                                 aria-label="移除律师"
                               />
-                            )}
-                          </Space>
-                        );
-                      })}
-                      <Button
-                        type="dashed"
-                        icon={<PlusOutlined />}
-                        onClick={() => add({})}
-                        block
-                      >
-                        添加负责律师
-                      </Button>
-                    </Space>
-                  )}
+                            </Space>
+                          );
+                        })}
+                      </Space>
+                    );
+                  }}
                 </Form.List>
 
                 <Form.Item
                   label="主办律师"
                   name="primaryLawyerId"
-                  rules={[{ required: true, message: '请指定主办律师' }]}
+                  rules={[
+                    {
+                      validator: (_, value) => {
+                        if (selectedLawyerIds.length === 0) {
+                          return Promise.resolve();
+                        }
+                        if (!value) {
+                          return Promise.reject(new Error('请指定主办律师'));
+                        }
+                        return Promise.resolve();
+                      }
+                    }
+                  ]}
                   style={{ marginTop: 16 }}
                 >
                   <Radio.Group>
                     <Space direction="vertical">
                       {selectedLawyerIds.length === 0 ? (
-                        <Text type="secondary">请先选择负责律师</Text>
+                        <Text type="secondary">暂未选择负责律师，可在后续补充。</Text>
                       ) : (
                         selectedLawyerIds.map((lawyerId) => (
                           <Radio key={lawyerId} value={lawyerId}>
@@ -543,8 +694,22 @@ export default function CaseFormDrawer({
                       <Form.Item label="标的额（元）" name="disputedAmount">
                         <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入争议金额" />
                       </Form.Item>
-                      <Form.Item label="材料补充清单" name="materialsChecklist">
-                        <Input.TextArea rows={3} placeholder="列举需要补充或已补充的材料" />
+                      <Form.Item label="材料补充文件">
+                        <Upload.Dragger
+                          multiple
+                          fileList={materialFiles}
+                          beforeUpload={() => false}
+                          onChange={handleMaterialsChange}
+                          onPreview={handleMaterialPreview}
+                          onDownload={handleMaterialDownload}
+                          showUploadList={{ showDownloadIcon: true }}
+                        >
+                          <div style={{ fontSize: 32, color: '#1677ff' }}>
+                            <InboxOutlined />
+                          </div>
+                          <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
+                          <p className="ant-upload-hint">支持多文件上传，单个文件建议不超过10MB</p>
+                        </Upload.Dragger>
                       </Form.Item>
                     </Space>
                   )
@@ -556,135 +721,170 @@ export default function CaseFormDrawer({
           {currentStep === 1 && (
             <Space direction="vertical" size={24} style={{ width: '100%' }}>
               <Title level={5}>收费方式</Title>
-              <Form.Item label="收费方式" name="billingMethod" rules={[{ required: true, message: '请选择收费方式' }]}
-              >
-                <Radio.Group>
-                  <Space direction="vertical">
-                    {CASE_BILLING_METHOD_OPTIONS.map((option) => (
-                      <Radio key={option.value} value={option.value}>
-                        {option.label}
-                      </Radio>
-                    ))}
-                  </Space>
-                </Radio.Group>
+              <Form.Item noStyle shouldUpdate={(prev, next) => prev.billingMethod !== next.billingMethod}>
+                {({ getFieldValue }) => {
+                  const method = getFieldValue('billingMethod');
+                  const showFixed = method === 'fixed_fee' || method === 'hybrid';
+                  const showHourly = method === 'hourly' || method === 'hybrid';
+                  const showContingency = method === 'contingency' || method === 'hybrid';
+                  return (
+                    <Space size={16} style={{ width: '100%' }} wrap>
+                      <Form.Item
+                        label="收费方式"
+                        name="billingMethod"
+                        style={{ flex: 1, minWidth: 240 }}
+                        rules={[{ required: true, message: '请选择收费方式' }]}
+                      >
+                        <Select
+                          placeholder="请选择收费方式"
+                          options={CASE_BILLING_METHOD_OPTIONS}
+                          optionFilterProp="label"
+                        />
+                      </Form.Item>
+
+                      {showFixed && (
+                        <Form.Item
+                          label="律师费总额（元）"
+                          name="lawyerFeeTotal"
+                          style={{ flex: 1, minWidth: 240 }}
+                          rules={[
+                            ({ getFieldValue: get }) => ({
+                              validator(_, value) {
+                                const currentMethod = get('billingMethod');
+                                if (currentMethod === 'fixed_fee' && (value === undefined || value === null)) {
+                                  return Promise.reject(new Error('请填写律师费总额'));
+                                }
+                                if (value !== undefined && value !== null && value <= 0) {
+                                  return Promise.reject(new Error('律师费总额需大于0'));
+                                }
+                                return Promise.resolve();
+                              }
+                            })
+                          ]}
+                        >
+                          <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入律师费总额" />
+                        </Form.Item>
+                      )}
+
+                      {showHourly && (
+                        <Form.Item
+                          label="预计小时数"
+                          name="estimatedHours"
+                          style={{ flex: 1, minWidth: 240 }}
+                          rules={[
+                            ({ getFieldValue: get }) => ({
+                              validator(_, value) {
+                                const currentMethod = get('billingMethod');
+                                if (currentMethod === 'hourly') {
+                                  if (value === undefined || value === null || value === '') {
+                                    return Promise.reject(new Error('请填写预计小时数'));
+                                  }
+                                }
+                                if (value !== undefined && value !== null && value < 0) {
+                                  return Promise.reject(new Error('预计小时数需大于等于0'));
+                                }
+                                return Promise.resolve();
+                              }
+                            })
+                          ]}
+                        >
+                          <InputNumber style={{ width: '100%' }} min={0} precision={0} placeholder="请输入预计小时数" />
+                        </Form.Item>
+                      )}
+
+                      {showContingency && (
+                        <Form.Item
+                          label="风险代理比例 (%)"
+                          name="contingencyRate"
+                          style={{ flex: 1, minWidth: 240 }}
+                          rules={[
+                            ({ getFieldValue: get }) => ({
+                              validator(_, value) {
+                                const currentMethod = get('billingMethod');
+                                if (currentMethod === 'contingency') {
+                                  if (value === undefined || value === null) {
+                                    return Promise.reject(new Error('请填写风险代理比例'));
+                                  }
+                                }
+                                if (value !== undefined && value !== null) {
+                                  if (value <= 0 || value > 100) {
+                                    return Promise.reject(new Error('风险代理比例需在0-100之间'));
+                                  }
+                                }
+                                return Promise.resolve();
+                              }
+                            })
+                          ]}
+                        >
+                          <InputNumber style={{ width: '100%' }} min={0} max={100} precision={2} placeholder="请输入比例，例如30" />
+                        </Form.Item>
+                      )}
+
+                      <Form.Item label="其他费用预算（元）" name="otherFeeBudget" style={{ flex: 1, minWidth: 240 }}>
+                        <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入预算" />
+                      </Form.Item>
+                    </Space>
+                  );
+                }}
               </Form.Item>
 
-              <Space size={16} style={{ width: '100%' }} wrap>
-                <Form.Item
-                  label="律师费总额（元）"
-                  name="lawyerFeeTotal"
-                  style={{ flex: 1, minWidth: 240 }}
-                  rules={[
-                    ({ getFieldValue }) => ({
-                      validator(_, value) {
-                        const method = getFieldValue('billingMethod');
-                        if ((method === 'fixed_fee' || method === 'contingency') && (value === undefined || value === null)) {
-                          return Promise.reject(new Error('请填写律师费总额'));
-                        }
-                        if (value !== undefined && value !== null && value <= 0) {
-                          return Promise.reject(new Error('律师费总额需大于0'));
-                        }
-                        return Promise.resolve();
-                      }
-                    })
-                  ]}
-                >
-                  <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入律师费总额" />
-                </Form.Item>
-                <Form.Item
-                  label="预计小时数"
-                  name="estimatedHours"
-                  style={{ flex: 1, minWidth: 240 }}
-                  rules={[
-                    {
-                      validator: (_, value) => {
-                        if (value === undefined || value === null || value === '') {
-                          return Promise.resolve();
-                        }
-                        return value >= 0 ? Promise.resolve() : Promise.reject(new Error('预计小时数需大于等于0'));
-                      }
-                    }
-                  ]}
-                >
-                  <InputNumber style={{ width: '100%' }} min={0} precision={0} placeholder="请输入预计小时数" />
-                </Form.Item>
-                <Form.Item
-                  label="风险代理比例 (%)"
-                  name="contingencyRate"
-                  style={{ flex: 1, minWidth: 240 }}
-                  rules={[
-                    ({ getFieldValue }) => ({
-                      validator(_, value) {
-                        const method = getFieldValue('billingMethod');
-                        if (method === 'contingency') {
-                          if (value === undefined || value === null) {
-                            return Promise.reject(new Error('请填写风险代理比例'));
-                          }
-                          if (value <= 0 || value > 100) {
-                            return Promise.reject(new Error('风险代理比例需在0-100之间'));
-                          }
-                        }
-                        if (value !== undefined && value !== null && (value < 0 || value > 100)) {
-                          return Promise.reject(new Error('风险代理比例需在0-100之间'));
-                        }
-                        return Promise.resolve();
-                      }
-                    })
-                  ]}
-                >
-                  <InputNumber style={{ width: '100%' }} min={0} max={100} precision={2} placeholder="请输入比例，例如30" />
-                </Form.Item>
-                <Form.Item label="其他费用预算（元）" name="otherFeeBudget" style={{ flex: 1, minWidth: 240 }}>
-                  <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入预算" />
-                </Form.Item>
-              </Space>
-
-              <Form.List name="lawyers">
-                {(fields) => (
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    <Title level={5}>律师小时费率</Title>
-                    <Text type="secondary">当收费方式为按小时或混合收费时，需为每位律师配置费率。</Text>
-                    {fields.length === 0 && <Text>请先在上一步添加负责律师。</Text>}
-                    {fields.map((field) => {
-                      const lawyerId = form.getFieldValue(['lawyers', field.name, 'lawyerId']);
-                      if (!lawyerId) {
-                        return null;
-                      }
-                      return (
-                        <Space key={field.key} align="baseline" style={{ width: '100%' }}>
-                          <Text style={{ flex: 1 }}>{lawyerOptionMap.get(lawyerId) ?? '未命名律师'}</Text>
-                          <Form.Item
-                            label="小时费率"
-                            name={[field.name, 'hourlyRate']}
-                            style={{ marginBottom: 0 }}
-                            rules={[
-                              ({ getFieldValue }) => ({
-                                validator(_, value) {
-                                  const method = getFieldValue('billingMethod');
-                                  if ((method === 'hourly' || method === 'hybrid')) {
-                                    if (value === undefined || value === null) {
-                                      return Promise.reject(new Error('请输入小时费率'));
-                                    }
-                                    if (value <= 0) {
-                                      return Promise.reject(new Error('小时费率需大于0'));
-                                    }
-                                  }
-                                  if (value !== undefined && value !== null && value < 0) {
-                                    return Promise.reject(new Error('小时费率需大于0'));
-                                  }
-                                  return Promise.resolve();
-                                }
-                              })
-                            ]}
-                          >
-                            <InputNumber style={{ width: 200 }} min={0} precision={2} addonAfter="元/小时" />
-                          </Form.Item>
+              <Form.Item noStyle shouldUpdate={(prev, next) => prev.billingMethod !== next.billingMethod}>
+                {({ getFieldValue }) => {
+                  const method = getFieldValue('billingMethod');
+                  const showHourlySection = method === 'hourly' || method === 'hybrid';
+                  if (!showHourlySection) {
+                    return null;
+                  }
+                  return (
+                    <Form.List name="lawyers">
+                      {(fields) => (
+                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                          <Title level={5}>律师小时费率</Title>
+                          <Text type="secondary">请为每位负责律师配置费率，作为计费依据。</Text>
+                          {fields.length === 0 && <Text>请先在上一步添加负责律师。</Text>}
+                          {fields.map((field) => {
+                            const lawyerId = form.getFieldValue(['lawyers', field.name, 'lawyerId']);
+                            if (!lawyerId) {
+                              return null;
+                            }
+                            return (
+                              <Space key={field.key} align="baseline" style={{ width: '100%', flexWrap: 'wrap', gap: 12 }}>
+                                <Text style={{ flex: 1, minWidth: 200 }}>{lawyerOptionMap.get(lawyerId) ?? '未命名律师'}</Text>
+                                <Form.Item
+                                  label="小时费率"
+                                  name={[field.name, 'hourlyRate']}
+                                  style={{ marginBottom: 0 }}
+                                  rules={[
+                                    ({ getFieldValue: get }) => ({
+                                      validator(_, value) {
+                                        const currentMethod = get('billingMethod');
+                                        if (currentMethod === 'hourly' || currentMethod === 'hybrid') {
+                                          if (value === undefined || value === null) {
+                                            return Promise.reject(new Error('请输入小时费率'));
+                                          }
+                                          if (value <= 0) {
+                                            return Promise.reject(new Error('小时费率需大于0'));
+                                          }
+                                        }
+                                        if (value !== undefined && value !== null && value < 0) {
+                                          return Promise.reject(new Error('小时费率需大于0'));
+                                        }
+                                        return Promise.resolve();
+                                      }
+                                    })
+                                  ]}
+                                >
+                                  <InputNumber style={{ width: 200 }} min={0} precision={2} addonAfter="元/小时" />
+                                </Form.Item>
+                              </Space>
+                            );
+                          })}
                         </Space>
-                      );
-                    })}
-                  </Space>
-                )}
-              </Form.List>
+                      )}
+                    </Form.List>
+                  );
+                }}
+              </Form.Item>
 
               <Form.Item label="付款计划" name="paymentPlan">
                 <Input.TextArea rows={3} placeholder="可填写预计付款节点、分期安排等" />
@@ -703,23 +903,31 @@ export default function CaseFormDrawer({
                 name="opponentName"
                 rules={[{ required: true, message: '请填写对方当事人名称或姓名' }]}
               >
-                <Input placeholder="请输入对方当事人" />
+                <Input placeholder="请输入对方当事人名称或姓名" />
               </Form.Item>
-              <Form.Item
-                label="当事人类型"
-                name="opponentType"
-                rules={[{ required: true, message: '请选择对方当事人类型' }]}
-              >
-                <Radio.Group>
-                  <Space>
-                    <Radio value="company">企业</Radio>
-                    <Radio value="individual">自然人</Radio>
-                  </Space>
-                </Radio.Group>
-              </Form.Item>
-              <Form.Item label="对方证件号码" name="opponentIdNumber">
-                <Input placeholder="企业填写统一信用代码，自然人填写身份证号码" />
-              </Form.Item>
+              <Space size={16} style={{ width: '100%' }} wrap>
+                <Form.Item
+                  label="对方当事人类型"
+                  name="opponentType"
+                  style={{ flex: 1, minWidth: 240 }}
+                  rules={[{ required: true, message: '请选择对方当事人类型' }]}
+                >
+                  <Select
+                    placeholder="请选择对方当事人类型"
+                    options={[
+                      { label: '企业', value: 'company' },
+                      { label: '自然人', value: 'individual' }
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={opponentIdLabel}
+                  name="opponentIdNumber"
+                  style={{ flex: 1, minWidth: 240 }}
+                >
+                  <Input placeholder={opponentIdPlaceholder} />
+                </Form.Item>
+              </Space>
               <Form.Item label="对方代理律师" name="opponentLawyer">
                 <Input placeholder="请输入对方律所及律师姓名" />
               </Form.Item>

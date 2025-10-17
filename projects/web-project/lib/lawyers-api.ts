@@ -4,7 +4,7 @@ export interface LawyerResponse {
   id: string;
   name: string | null;
   email: string | null;
-  role: 'master' | 'admin' | 'lawyer';
+  role: 'master' | 'admin' | 'sale' | 'lawyer' | 'assistant';
 }
 
 export async function searchLawyers(keyword?: string): Promise<LawyerResponse[]> {

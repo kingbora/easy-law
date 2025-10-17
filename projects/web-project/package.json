@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@ant-design/icons": "^5.3.7",
+  "@ant-design/icons": "^5.3.7",
     "antd": "^5.19.2",
     "better-auth": "1.3.27",
     "dayjs": "^1.11.18",

@@ -8,6 +8,7 @@ export interface UserResponse {
   email: string;
   role: UserRole;
   image: string | null;
+  gender: 'male' | 'female' | null;
   createdAt: string | null;
   updatedAt: string | null;
   initialPassword?: string;
@@ -17,6 +18,7 @@ export interface CreateUserPayload {
   name: string;
   email: string;
   role: UserRole;
+  gender?: 'male' | 'female' | null;
 }
 
 export interface UpdateUserPayload {
@@ -24,6 +26,7 @@ export interface UpdateUserPayload {
   email?: string;
   role?: UserRole;
   image?: string | null;
+  gender?: 'male' | 'female' | null;
 }
 
 export interface CurrentUserResponse extends UserResponse {

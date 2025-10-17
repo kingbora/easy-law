@@ -25,8 +25,8 @@ import { HttpError, ensureRoleAllowed, requireCurrentUser, type CurrentUserRow }
 
 const router = Router();
 
-const CLIENT_READ_ROLES = new Set<UserRole>(['master', 'admin', 'lawyer', 'assistant']);
-const CLIENT_MANAGE_ROLES = new Set<UserRole>(['master', 'admin', 'lawyer']);
+const CLIENT_READ_ROLES = new Set<UserRole>(['master', 'admin', 'sale', 'lawyer', 'assistant']);
+const CLIENT_MANAGE_ROLES = new Set<UserRole>(['master', 'admin', 'sale']);
 const CLIENT_ASSIGN_ALL_ROLES = new Set<UserRole>(['master', 'admin']);
 
 const clientTypeSet = new Set<ClientType>(clientTypeEnum.enumValues);
@@ -64,7 +64,7 @@ interface ClientPayload {
   source?: ClientSource | null;
   sourceRemark?: string | null;
   status?: ClientStatus | null;
-  responsibleLawyerId?: string;
+  maintainerId?: string;
   tags?: string[];
   remark?: string | null;
   individualProfile?: IndividualProfileInput | null;
@@ -126,7 +126,10 @@ const parseClientPayload = (body: unknown): ClientPayload => {
     source: sourceValue ? (sourceValue as ClientSource) : null,
     sourceRemark: normalizeOptionalString(data.sourceRemark),
     status: statusValue ? (statusValue as ClientStatus) : null,
-    responsibleLawyerId: normalizeOptionalString(data.responsibleLawyerId) ?? undefined,
+    maintainerId:
+      normalizeOptionalString((data as Record<string, unknown>).maintainerId) ??
+      normalizeOptionalString(data.responsibleLawyerId) ??
+      undefined,
     tags: normalizeStringArray(data.tags) ?? undefined,
     remark: normalizeOptionalString(data.remark),
     attachments: parseAttachments(data.attachments)
@@ -226,19 +229,36 @@ const deriveGenderFromIdCard = (idCard: string): 'male' | 'female' | null => {
 
 const ensureManageAccessForClient = (currentUser: CurrentUserRow, existing: typeof clients.$inferSelect) => {
   ensureRoleAllowed(currentUser.role, CLIENT_MANAGE_ROLES, '无权限维护客户信息');
-  if (!CLIENT_ASSIGN_ALL_ROLES.has(currentUser.role) && existing.responsibleLawyerId !== currentUser.id) {
+  if (!CLIENT_ASSIGN_ALL_ROLES.has(currentUser.role) && existing.maintainerId !== currentUser.id) {
     throw new HttpError(403, '无权限操作该客户');
   }
 };
 
-const ensureManageTarget = (currentUser: CurrentUserRow, responsibleLawyerId?: string) => {
+const ensureManageTarget = async (currentUser: CurrentUserRow, maintainerId?: string) => {
   ensureRoleAllowed(currentUser.role, CLIENT_MANAGE_ROLES, '无权限维护客户信息');
-  if (!responsibleLawyerId) {
-    throw new HttpError(400, '负责律师不能为空');
+  if (!maintainerId) {
+    throw new HttpError(400, '维护人不能为空');
   }
-  if (!CLIENT_ASSIGN_ALL_ROLES.has(currentUser.role) && responsibleLawyerId !== currentUser.id) {
+
+  if (!CLIENT_ASSIGN_ALL_ROLES.has(currentUser.role) && maintainerId !== currentUser.id) {
     throw new HttpError(403, '仅可维护自己负责的客户');
   }
+
+  const [target] = await db
+    .select({ id: users.id, role: users.role })
+    .from(users)
+    .where(eq(users.id, maintainerId))
+    .limit(1);
+
+  if (!target) {
+    throw new HttpError(400, '维护人不存在');
+  }
+
+  if (target.role !== 'sale') {
+    throw new HttpError(400, '维护人必须为销售角色');
+  }
+
+  return target;
 };
 
 const fetchClientDetail = async (clientId: string, currentUser: CurrentUserRow) => {
@@ -253,15 +273,15 @@ const fetchClientDetail = async (clientId: string, currentUser: CurrentUserRow) 
       source: clients.source,
       sourceRemark: clients.sourceRemark,
       status: clients.status,
-      responsibleLawyerId: clients.responsibleLawyerId,
+  maintainerId: clients.maintainerId,
       tags: clients.tags,
       remark: clients.remark,
       createdAt: clients.createdAt,
       updatedAt: clients.updatedAt,
-      responsibleLawyerName: users.name
+      maintainerName: users.name
     })
     .from(clients)
-    .leftJoin(users, eq(users.id, clients.responsibleLawyerId))
+    .leftJoin(users, eq(users.id, clients.maintainerId))
     .where(eq(clients.id, clientId))
     .limit(1);
 
@@ -269,7 +289,7 @@ const fetchClientDetail = async (clientId: string, currentUser: CurrentUserRow) 
     throw new HttpError(404, '客户不存在');
   }
 
-  if (!CLIENT_ASSIGN_ALL_ROLES.has(currentUser.role) && client.responsibleLawyerId !== currentUser.id) {
+  if (!CLIENT_ASSIGN_ALL_ROLES.has(currentUser.role) && client.maintainerId !== currentUser.id) {
     throw new HttpError(403, '无权限查看该客户');
   }
 
@@ -309,9 +329,9 @@ const fetchClientDetail = async (clientId: string, currentUser: CurrentUserRow) 
     source: client.source,
     sourceRemark: client.sourceRemark,
     status: client.status,
-    responsibleLawyer: {
-      id: client.responsibleLawyerId,
-      name: client.responsibleLawyerName ?? null
+    maintainer: {
+      id: client.maintainerId,
+      name: client.maintainerName ?? null
     },
     tags: client.tags ?? [],
     remark: client.remark,
@@ -379,7 +399,7 @@ router.get('/', async (req: Request, res: Response, next) => {
     }
 
     if (!CLIENT_ASSIGN_ALL_ROLES.has(currentUser.role)) {
-      conditions.push(eq(clients.responsibleLawyerId, currentUser.id));
+      conditions.push(eq(clients.maintainerId, currentUser.id));
     }
 
     const whereClause =
@@ -395,15 +415,15 @@ router.get('/', async (req: Request, res: Response, next) => {
         name: clients.name,
         type: clients.type,
         phone: clients.phone,
-        responsibleLawyerId: clients.responsibleLawyerId,
-        responsibleLawyerName: users.name,
+        maintainerId: clients.maintainerId,
+        maintainerName: users.name,
         status: clients.status,
         tags: clients.tags,
         source: clients.source,
         createdAt: clients.createdAt
       })
       .from(clients)
-      .leftJoin(users, eq(users.id, clients.responsibleLawyerId))
+      .leftJoin(users, eq(users.id, clients.maintainerId))
       .orderBy(desc(clients.createdAt))
       .limit(pageSize)
       .offset((page - 1) * pageSize);
@@ -422,9 +442,9 @@ router.get('/', async (req: Request, res: Response, next) => {
         name: item.name,
         type: item.type,
         phone: item.phone,
-        responsibleLawyer: {
-          id: item.responsibleLawyerId,
-          name: item.responsibleLawyerName ?? null
+        maintainer: {
+          id: item.maintainerId,
+          name: item.maintainerName ?? null
         },
         status: item.status,
         tags: item.tags ?? [],
@@ -465,21 +485,10 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 router.post('/', async (req: Request, res: Response, next) => {
   try {
     const currentUser = await requireCurrentUser(req);
-  const payload = parseClientPayload(req.body);
+    const payload = parseClientPayload(req.body);
 
-    ensureManageTarget(currentUser, payload.responsibleLawyerId);
-
-    const responsibleLawyerId = payload.responsibleLawyerId!;
-
-    const [responsible] = await db
-      .select({ id: users.id, role: users.role })
-      .from(users)
-      .where(eq(users.id, responsibleLawyerId))
-      .limit(1);
-
-    if (!responsible || !['master', 'admin', 'lawyer'].includes(responsible.role)) {
-      throw new HttpError(400, '负责律师无效');
-    }
+    const maintainer = await ensureManageTarget(currentUser, payload.maintainerId);
+    const maintainerId = maintainer.id;
 
     if (payload.type === 'individual' && !payload.individualProfile?.idCardNumber) {
       throw new HttpError(400, '请填写自然人客户身份证号');
@@ -501,7 +510,7 @@ router.post('/', async (req: Request, res: Response, next) => {
           source: payload.source ?? null,
           sourceRemark: payload.sourceRemark ?? null,
           status: payload.status ?? 'active',
-          responsibleLawyerId,
+          maintainerId,
           tags: payload.tags ?? null,
           remark: payload.remark ?? null
         })
@@ -570,7 +579,7 @@ router.put('/:id', async (req: Request, res: Response, next) => {
   try {
     const currentUser = await requireCurrentUser(req);
     const clientId = req.params.id;
-  const payload = parseClientPayload({ ...req.body, responsibleLawyerId: req.body?.responsibleLawyerId ?? undefined });
+    const payload = parseClientPayload(req.body);
 
     const [existing] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
     if (!existing) {
@@ -579,8 +588,9 @@ router.put('/:id', async (req: Request, res: Response, next) => {
 
     ensureManageAccessForClient(currentUser, existing);
 
-    const nextResponsible = payload.responsibleLawyerId || existing.responsibleLawyerId;
-    ensureManageTarget(currentUser, nextResponsible);
+    const nextMaintainerId = payload.maintainerId ?? existing.maintainerId;
+    const maintainer = await ensureManageTarget(currentUser, nextMaintainerId);
+    const maintainerId = maintainer.id;
 
     await db.transaction(async (trx) => {
       const updates: Partial<typeof clients.$inferInsert> = {
@@ -591,7 +601,7 @@ router.put('/:id', async (req: Request, res: Response, next) => {
         source: payload.source ?? existing.source,
         sourceRemark: payload.sourceRemark ?? existing.sourceRemark,
         status: payload.status ?? existing.status,
-        responsibleLawyerId: payload.responsibleLawyerId || existing.responsibleLawyerId,
+        maintainerId,
         tags: payload.tags ?? existing.tags,
         remark: payload.remark ?? existing.remark,
         type: payload.type || existing.type,

@@ -4,18 +4,20 @@ import { Router } from 'express';
 
 import { auth } from '../auth';
 import { db } from '../db/client';
-import { rolePermissions, users, userRoleEnum } from '../db/schema';
+import { rolePermissions, userGenderEnum, users, userRoleEnum } from '../db/schema';
 
 import { HttpError, requireCurrentUser } from './utils/current-user';
 
 type UserRow = typeof users.$inferSelect;
 
 type UserRoleValue = (typeof userRoleEnum.enumValues)[number];
+type UserGenderValue = (typeof userGenderEnum.enumValues)[number];
 
 const router = Router();
 
 const DEFAULT_INITIAL_PASSWORD = 'a@000123';
 const roleSet = new Set<UserRoleValue>(userRoleEnum.enumValues);
+const genderSet = new Set<UserGenderValue>(userGenderEnum.enumValues);
 
 const MANAGER_ROLES = new Set<UserRoleValue>(['master', 'admin']);
 const ADMIN_RESTRICTED_ROLES: UserRoleValue[] = ['master', 'admin'];
@@ -27,6 +29,7 @@ const toUserResponse = (row: UserRow) => ({
   email: row.email,
   role: row.role,
   image: row.image ?? null,
+  gender: row.gender ?? null,
   createdAt: row.createdAt ? row.createdAt.toISOString() : null,
   updatedAt: row.updatedAt ? row.updatedAt.toISOString() : null
 });
@@ -103,7 +106,7 @@ router.post('/', async (req: Request, res: Response, next) => {
     const currentUser = await requireCurrentUser(req);
     ensureTeamAccess(currentUser);
 
-    const { name, email, role } = req.body ?? {};
+  const { name, email, role, gender } = req.body ?? {};
 
     const sanitizedName = typeof name === 'string' ? name.trim() : '';
     const sanitizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -122,6 +125,21 @@ router.post('/', async (req: Request, res: Response, next) => {
     }
 
     ensureAdminCanAssignRole(currentUser, sanitizedRole);
+
+    let normalizedGender: UserGenderValue | null = null;
+    if (typeof gender === 'string') {
+      const trimmedGender = gender.trim().toLowerCase();
+      if (trimmedGender) {
+        if (!genderSet.has(trimmedGender as UserGenderValue)) {
+          return res.status(400).json({ message: '性别取值不合法' });
+        }
+        normalizedGender = trimmedGender as UserGenderValue;
+      }
+    } else if (gender === null || gender === undefined) {
+      normalizedGender = null;
+    } else if (gender !== undefined) {
+      return res.status(400).json({ message: '性别取值不合法' });
+    }
 
     const existing = await db
       .select({ id: users.id })
@@ -145,7 +163,7 @@ router.post('/', async (req: Request, res: Response, next) => {
 
     const [created] = await db
       .update(users)
-      .set({ role: sanitizedRole, updatedAt: new Date() })
+      .set({ role: sanitizedRole, gender: normalizedGender, updatedAt: new Date() })
       .where(eq(users.email, sanitizedEmail))
       .returning();
 
@@ -179,8 +197,8 @@ router.put('/:id', async (req: Request, res: Response, next) => {
     const currentUser = await requireCurrentUser(req);
     ensureTeamAccess(currentUser);
 
-    const { id } = req.params;
-    const { name, email, role, image } = req.body ?? {};
+  const { id } = req.params;
+  const { name, email, role, image, gender } = req.body ?? {};
 
     if (!id) {
       return res.status(400).json({ message: '缺少成员ID' });
@@ -236,6 +254,22 @@ router.put('/:id', async (req: Request, res: Response, next) => {
       updateData.image = image;
     } else if (image === null) {
       updateData.image = null;
+    }
+
+    if (typeof gender === 'string') {
+      const trimmedGender = gender.trim().toLowerCase();
+      if (trimmedGender) {
+        if (!genderSet.has(trimmedGender as UserGenderValue)) {
+          return res.status(400).json({ message: '性别取值不合法' });
+        }
+        updateData.gender = trimmedGender as UserGenderValue;
+      } else {
+        updateData.gender = null;
+      }
+    } else if (gender === null) {
+      updateData.gender = null;
+    } else if (gender !== undefined) {
+      return res.status(400).json({ message: '性别取值不合法' });
     }
 
     if (Object.keys(updateData).length === 0) {

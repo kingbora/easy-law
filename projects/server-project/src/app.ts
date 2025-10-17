@@ -9,8 +9,11 @@ import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
 import caseSettingsRouter from './routes/case-settings';
 import casesRouter from './routes/cases';
 import clientsRouter from './routes/clients';
+import dashboardRouter from './routes/dashboard';
 import healthRouter from './routes/health';
 import lawyersRouter from './routes/lawyers';
+import maintainersRouter from './routes/maintainers';
+import permissionsRouter from './routes/permissions';
 import usersRouter from './routes/users';
 
 const app = express();
@@ -35,8 +38,11 @@ app.use('/health', healthRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/clients', clientsRouter);
 app.use('/api/lawyers', lawyersRouter);
+app.use('/api/maintainers', maintainersRouter);
 app.use('/api/cases', casesRouter);
+app.use('/api/dashboard', dashboardRouter);
 app.use('/api/case-settings', caseSettingsRouter);
+app.use('/api/permissions', permissionsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

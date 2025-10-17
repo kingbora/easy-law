@@ -24,6 +24,7 @@ interface TeamMember {
   email: string;
   joinDate: string;
   image?: string | null;
+  gender: 'male' | 'female' | null;
   initialPassword?: string;
 }
 
@@ -53,6 +54,11 @@ const ROLE_COLOR_MAP: Record<UserRole, string> = {
   assistant: 'blue'
 };
 
+const GENDER_LABEL_MAP: Record<'male' | 'female', string> = {
+  male: '男',
+  female: '女'
+};
+
 const ROLE_OPTIONS = (Object.entries(ROLE_LABEL_MAP) as Array<[UserRole, string]>).map(([value, label]) => ({
   value,
   label
@@ -66,6 +72,7 @@ function mapUserResponse(user: UserResponse, fallbackPassword?: string): TeamMem
     email: user.email,
     joinDate: user.createdAt ? dayjs(user.createdAt).format('YYYY-MM-DD') : '',
     image: user.image,
+    gender: user.gender ?? null,
     initialPassword: user.initialPassword ?? fallbackPassword
   };
 }
@@ -216,7 +223,8 @@ export default function TeamManagementPage() {
         const payload = {
           name: values.name.trim(),
           email: values.email.trim(),
-          role: values.role as UserRole
+          role: values.role as UserRole,
+          gender: values.gender ?? null
         };
 
         if (
@@ -298,6 +306,11 @@ export default function TeamManagementPage() {
         dataIndex: 'email'
       },
       {
+        title: '性别',
+        dataIndex: 'gender',
+        render: (gender: TeamMember['gender']) => (gender ? GENDER_LABEL_MAP[gender] : '—')
+      },
+      {
         title: '加入时间',
         dataIndex: 'joinDate'
       },
@@ -328,7 +341,7 @@ export default function TeamManagementPage() {
     if (!modalState.open || modalState.mode === 'create' || !modalState.record) {
       return undefined;
     }
-    const { name, role, email, joinDate, initialPassword } = modalState.record;
+    const { name, role, email, joinDate, gender, initialPassword } = modalState.record;
     return {
       id: modalState.record.id,
       name,
@@ -336,6 +349,7 @@ export default function TeamManagementPage() {
       roleLabel: ROLE_LABEL_MAP[role],
       email,
       joinDate,
+      gender,
       initialPassword
     };
   }, [modalState]);

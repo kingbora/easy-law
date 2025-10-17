@@ -44,7 +44,7 @@ import {
   CLIENT_TYPE_LABELS,
   CLIENT_TYPE_OPTIONS
 } from '@/lib/clients-data';
-import { searchLawyers, type LawyerResponse } from '@/lib/lawyers-api';
+import { searchMaintainers, type MaintainerResponse } from '@/lib/maintainers-api';
 
 import { useDashboardHeaderAction } from '../../header-context';
 
@@ -64,7 +64,7 @@ type ModalState =
   | { open: true; mode: 'create'; clientId?: undefined }
   | { open: true; mode: 'view' | 'edit'; clientId: string };
 
-interface LawyerOption {
+interface MaintainerOption {
   label: string;
   value: string;
 }
@@ -83,8 +83,8 @@ export default function MyClientsPage() {
   const [selectedClient, setSelectedClient] = useState<ClientDetail | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
-  const [lawyerOptions, setLawyerOptions] = useState<LawyerOption[]>([]);
-  const [lawyerLoading, setLawyerLoading] = useState(false);
+  const [maintainerOptions, setMaintainerOptions] = useState<MaintainerOption[]>([]);
+  const [maintainerLoading, setMaintainerLoading] = useState(false);
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -117,29 +117,32 @@ export default function MyClientsPage() {
     void loadClients();
   }, [loadClients]);
 
-  const ensureLawyerOption = useCallback((lawyer: { id: string; name: string | null } | null | undefined) => {
-    if (!lawyer?.id) {
+  const ensureMaintainerOption = useCallback((maintainer: { id: string; name: string | null } | null | undefined) => {
+    if (!maintainer?.id) {
       return;
     }
-    setLawyerOptions((prev) => {
-      if (prev.some((option) => option.value === lawyer.id)) {
+    setMaintainerOptions((prev) => {
+      if (prev.some((option) => option.value === maintainer.id)) {
         return prev;
       }
-      const label = lawyer.name && lawyer.name.trim().length > 0 ? lawyer.name : '未命名律师';
-      return [...prev, { value: lawyer.id, label }];
+      const label = maintainer.name && maintainer.name.trim().length > 0 ? maintainer.name : '未命名维护人';
+      return [...prev, { value: maintainer.id, label }];
     });
   }, []);
 
-  const fetchLawyerOptions = useCallback(async (keyword?: string) => {
-    setLawyerLoading(true);
+  const fetchMaintainerOptions = useCallback(async (keyword?: string) => {
+    setMaintainerLoading(true);
     try {
-      const list = await searchLawyers(keyword);
-      const fetched = list.map((lawyer: LawyerResponse) => ({
-        value: lawyer.id,
-        label: lawyer.name && lawyer.name.trim().length > 0 ? lawyer.name : lawyer.email ?? '未命名律师'
+      const list = await searchMaintainers(keyword);
+      const fetched = list.map((maintainer: MaintainerResponse) => ({
+        value: maintainer.id,
+        label:
+          maintainer.name && maintainer.name.trim().length > 0
+            ? maintainer.name
+            : maintainer.email ?? '未命名维护人'
       }));
-      setLawyerOptions((prev) => {
-        const merged = new Map<string, LawyerOption>();
+      setMaintainerOptions((prev) => {
+        const merged = new Map<string, MaintainerOption>();
         fetched.forEach((option) => {
           merged.set(option.value, option);
         });
@@ -151,25 +154,25 @@ export default function MyClientsPage() {
         return Array.from(merged.values());
       });
     } catch (error) {
-      const errorMessage = error instanceof ApiError ? error.message : '加载律师列表失败，请稍后重试';
+      const errorMessage = error instanceof ApiError ? error.message : '加载维护人列表失败，请稍后重试';
       message.error(errorMessage);
     } finally {
-      setLawyerLoading(false);
+      setMaintainerLoading(false);
     }
   }, []);
 
-  const handleSearchLawyers = useCallback(
+  const handleSearchMaintainers = useCallback(
     (keyword: string) => {
-      void fetchLawyerOptions(keyword);
+      void fetchMaintainerOptions(keyword);
     },
-    [fetchLawyerOptions]
+    [fetchMaintainerOptions]
   );
 
   const openCreateModal = useCallback(() => {
     setSelectedClient(null);
     setModalState({ open: true, mode: 'create' });
-    void fetchLawyerOptions();
-  }, [fetchLawyerOptions]);
+    void fetchMaintainerOptions();
+  }, [fetchMaintainerOptions]);
 
   const closeModal = useCallback(() => {
     setModalState({ open: false });
@@ -182,9 +185,9 @@ export default function MyClientsPage() {
       try {
         const detail = await fetchClientDetail(id);
         setSelectedClient(detail);
-        ensureLawyerOption(detail.responsibleLawyer);
+        ensureMaintainerOption(detail.maintainer);
         setModalState({ open: true, mode, clientId: id });
-        void fetchLawyerOptions();
+        void fetchMaintainerOptions();
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '获取客户详情失败，请稍后重试';
         message.error(errorMessage);
@@ -192,7 +195,7 @@ export default function MyClientsPage() {
         hide();
       }
     },
-    [ensureLawyerOption, fetchLawyerOptions]
+    [ensureMaintainerOption, fetchMaintainerOptions]
   );
 
   const handleModeChange = useCallback(
@@ -215,7 +218,7 @@ export default function MyClientsPage() {
           const updated = await updateClient(modalState.clientId, payload);
           message.success('客户信息已更新');
           setSelectedClient(updated);
-          ensureLawyerOption(updated.responsibleLawyer);
+          ensureMaintainerOption(updated.maintainer);
           setModalState({ open: true, mode: 'view', clientId: updated.id });
           await loadClients();
         } else {
@@ -231,7 +234,7 @@ export default function MyClientsPage() {
         setSubmitting(false);
       }
     },
-    [closeModal, ensureLawyerOption, loadClients, modalState]
+    [closeModal, ensureMaintainerOption, loadClients, modalState]
   );
 
   const handleDeleteClient = useCallback(
@@ -327,9 +330,9 @@ export default function MyClientsPage() {
         render: (type: ClientType) => CLIENT_TYPE_LABELS[type]
       },
       {
-        title: '负责律师',
-        dataIndex: ['responsibleLawyer', 'name'],
-        render: (_: unknown, record) => record.responsibleLawyer?.name ?? '未指定'
+        title: '维护人',
+        dataIndex: ['maintainer', 'name'],
+        render: (_: unknown, record) => record.maintainer?.name ?? '未指定'
       },
       {
         title: '联系电话',
@@ -392,7 +395,7 @@ export default function MyClientsPage() {
         )
       }
     ],
-    [deletingIds, handleDeleteClient, handleEditClient, handleViewClient]
+  [deletingIds, handleDeleteClient, handleEditClient, handleViewClient]
   );
 
   return (
@@ -453,9 +456,9 @@ export default function MyClientsPage() {
           onSubmit={handleSubmit}
           onModeChange={handleModeChange}
           confirmLoading={submitting}
-          lawyerOptions={lawyerOptions}
-          lawyerLoading={lawyerLoading}
-          onSearchLawyers={handleSearchLawyers}
+          maintainerOptions={maintainerOptions}
+          maintainerLoading={maintainerLoading}
+          onSearchMaintainers={handleSearchMaintainers}
         />
       ) : null}
     </Space>

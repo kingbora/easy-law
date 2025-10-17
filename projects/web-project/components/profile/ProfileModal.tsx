@@ -12,6 +12,7 @@ interface ProfileModalProps {
     name?: string | null;
     email?: string | null;
     image?: string | null;
+    gender?: 'male' | 'female' | null;
   };
   onCancel: () => void;
   onSubmit: (values: { name: string; image?: string | null }) => Promise<void> | void;
@@ -50,7 +51,7 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
     form.setFieldsValue({
       name: initialValues?.name ?? ''
     });
-    setAvatarPreview(initialValues?.image ?? undefined);
+    setAvatarPreview(initialValues?.image ?? (initialValues?.gender === 'female' ? '/images/female.png' : '/images/male.png'));
     setFileList([]);
   }, [form, initialValues, open]);
 
@@ -101,7 +102,7 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
       onCancel={onCancel}
       onOk={handleOk}
       confirmLoading={confirmLoading || uploading}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={false}
     >
       <Form form={form} layout="vertical">

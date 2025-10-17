@@ -22,6 +22,7 @@ export const clientTypeEnum = pgEnum('client_type', ['individual', 'company']);
 export const clientStatusEnum = pgEnum('client_status', ['potential', 'active', 'dormant', 'lost']);
 export const clientSourceEnum = pgEnum('client_source', ['referral', 'website', 'offline_event', 'other']);
 export const clientGenderEnum = pgEnum('client_gender', ['male', 'female']);
+export const userGenderEnum = pgEnum('user_gender', ['male', 'female']);
 export const caseStatusEnum = pgEnum('case_status', ['consultation', 'entrusted', 'in_progress', 'closed', 'terminated']);
 export const caseBillingMethodEnum = pgEnum('case_billing_method', ['fixed_fee', 'hourly', 'contingency', 'hybrid']);
 
@@ -33,6 +34,7 @@ export const users = pgTable(
     emailVerified: boolean('email_verified').default(false).notNull(),
     name: text('name'),
     image: text('image'),
+    gender: userGenderEnum('gender'),
     role: userRoleEnum('role').default('assistant').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
@@ -77,10 +79,10 @@ export const clients = pgTable(
     source: clientSourceEnum('source'),
     sourceRemark: text('source_remark'),
     status: clientStatusEnum('status').notNull().default('active'),
-    responsibleLawyerId: text('responsible_lawyer_id')
+    maintainerId: text('maintainer_id')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
-  tags: text('tags').array(),
+    tags: text('tags').array(),
     remark: text('remark'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
@@ -89,7 +91,7 @@ export const clients = pgTable(
     index('clients_name_idx').on(sql`to_tsvector('simple', ${table.name})`),
     index('clients_type_idx').on(table.type),
     index('clients_source_idx').on(table.source),
-    index('clients_responsible_idx').on(table.responsibleLawyerId)
+    index('clients_maintainer_idx').on(table.maintainerId)
   ]
 );
 
@@ -191,8 +193,7 @@ export const cases = pgTable(
     hearingDate: date('hearing_date'),
     evidenceDeadline: date('evidence_deadline'),
     appealDeadline: date('appeal_deadline'),
-    disputedAmount: numeric('disputed_amount', { precision: 16, scale: 2 }),
-    materialsChecklist: text('materials_checklist'),
+  disputedAmount: numeric('disputed_amount', { precision: 16, scale: 2 }),
     billingMethod: caseBillingMethodEnum('billing_method').notNull(),
     lawyerFeeTotal: numeric('lawyer_fee_total', { precision: 16, scale: 2 }),
     estimatedHours: integer('estimated_hours'),
@@ -216,6 +217,23 @@ export const cases = pgTable(
     index('cases_status_idx').on(table.status),
     index('cases_created_idx').on(table.createdAt)
   ]
+);
+
+export const caseMaterialFiles = pgTable(
+  'case_material_files',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    caseId: uuid('case_id')
+      .notNull()
+      .references(() => cases.id, { onDelete: 'cascade' }),
+    filename: text('filename').notNull(),
+    fileType: text('file_type'),
+    fileSize: integer('file_size'),
+    fileData: text('file_data').notNull(),
+    uploadedBy: text('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }).defaultNow()
+  },
+  (table) => [index('case_material_files_case_idx').on(table.caseId)]
 );
 
 export const caseLawyers = pgTable(
@@ -296,6 +314,7 @@ export type ClientType = typeof clientTypeEnum.enumValues[number];
 export type ClientStatus = typeof clientStatusEnum.enumValues[number];
 export type ClientSource = typeof clientSourceEnum.enumValues[number];
 export type ClientGender = typeof clientGenderEnum.enumValues[number];
+export type UserGender = typeof userGenderEnum.enumValues[number];
 export type CaseTypeRow = typeof caseTypes.$inferSelect;
 export type CaseCategoryRow = typeof caseCategories.$inferSelect;
 export type CaseRow = typeof cases.$inferSelect;

@@ -167,7 +167,7 @@ const CaseTypeModal = ({ open, title, loading, initialValues, disableName, onSub
       confirmLoading={loading}
       okText="保存"
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
       width={640}
       maskClosable={false}
     >

@@ -41,6 +41,12 @@ const PERMISSION_DEFINITIONS = [
     description: '访问案件设置配置页面'
   },
   {
+    code: 'menu.settings.permissions',
+    name: '权限管理菜单',
+    category: 'menu' as const,
+    description: '访问权限管理配置页面'
+  },
+  {
     code: 'action.team.read',
     name: '团队管理查看',
     category: 'action' as const,
@@ -87,6 +93,12 @@ const PERMISSION_DEFINITIONS = [
     name: '案件设置管理',
     category: 'action' as const,
     description: '创建、更新或删除案件类型及案由配置'
+  },
+  {
+    code: 'action.permissions.manage',
+    name: '权限配置管理',
+    category: 'action' as const,
+    description: '调整各角色的权限集合'
   }
 ];
 

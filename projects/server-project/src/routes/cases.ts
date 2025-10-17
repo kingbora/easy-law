@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { and, asc, desc, eq, ilike, inArray, or } from 'drizzle-orm';
 import { sql, type SQL } from 'drizzle-orm';
 import { Router, type Request, type Response } from 'express';
@@ -7,6 +9,7 @@ import {
   caseBillingMethodEnum,
   caseCategories,
   caseLawyers,
+  caseMaterialFiles,
   caseStatusEnum,
   caseTypes,
   cases,
@@ -50,7 +53,6 @@ interface CasePayload {
   evidenceDeadline?: string | null;
   appealDeadline?: string | null;
   disputedAmount?: string | null;
-  materialsChecklist?: string | null;
   billingMethod: CaseBillingMethod;
   lawyerFeeTotal?: string | null;
   estimatedHours?: number | null;
@@ -63,6 +65,19 @@ interface CasePayload {
   opponentLawyer?: string | null;
   thirdParty?: string | null;
   lawyers: CaseLawyerPayload[];
+  materials?: CaseMaterialsPayload;
+}
+
+interface CaseMaterialUpload {
+  filename: string;
+  fileType: string | null;
+  fileSize: number | null;
+  base64Data: string;
+}
+
+interface CaseMaterialsPayload {
+  keepIds: string[];
+  uploads: CaseMaterialUpload[];
 }
 
 interface CaseLawyerResponse {
@@ -104,7 +119,7 @@ interface CaseDetailResponse extends CaseListItemResponse {
   evidenceDeadline: string | null;
   appealDeadline: string | null;
   disputedAmount: string | null;
-  materialsChecklist: string | null;
+  materials: CaseMaterialResponse[];
   billing: {
     lawyerFeeTotal: string | null;
     estimatedHours: number | null;
@@ -119,6 +134,16 @@ interface CaseDetailResponse extends CaseListItemResponse {
     lawyer: string | null;
     thirdParty: string | null;
   };
+}
+
+interface CaseMaterialResponse {
+  id: string;
+  filename: string;
+  fileType: string | null;
+  fileSize: number | null;
+  downloadUrl: string;
+  uploadedAt: string | null;
+  uploadedBy: string | null;
 }
 
 const normalizeString = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
@@ -270,6 +295,64 @@ const parseCaseLawyers = (value: unknown): CaseLawyerPayload[] => {
   return sanitized;
 };
 
+const parseCaseMaterials = (value: unknown): CaseMaterialsPayload | undefined => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new HttpError(400, '附件参数格式不正确');
+  }
+
+  const keepIds: string[] = [];
+  const uploads: CaseMaterialUpload[] = [];
+
+  for (const item of value) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const id = normalizeOptionalString(record.id);
+    const base64Raw = record.base64Data;
+    const filename = normalizeString(record.filename);
+    const fileType = normalizeOptionalString(record.fileType);
+    const fileSizeRaw = record.fileSize;
+
+    let fileSize: number | null = null;
+    if (typeof fileSizeRaw === 'number' && Number.isFinite(fileSizeRaw) && fileSizeRaw >= 0) {
+      fileSize = Math.trunc(fileSizeRaw);
+    } else if (typeof fileSizeRaw === 'string') {
+      const parsed = Number.parseInt(fileSizeRaw, 10);
+      if (!Number.isNaN(parsed) && parsed >= 0) {
+        fileSize = parsed;
+      }
+    }
+
+    if (typeof base64Raw === 'string') {
+      const normalized = base64Raw.replace(/^data:[^;]+;base64,/, '').trim();
+      if (!normalized) {
+        throw new HttpError(400, '附件内容无效');
+      }
+      if (!filename) {
+        throw new HttpError(400, '附件缺少文件名');
+      }
+      uploads.push({
+        filename,
+        fileType: fileType ?? null,
+        fileSize,
+        base64Data: normalized
+      });
+      continue;
+    }
+
+    if (id) {
+      keepIds.push(id);
+    }
+  }
+
+  return { keepIds, uploads };
+};
+
 const parseCasePayload = (body: unknown): CasePayload => {
   if (!body || typeof body !== 'object') {
     throw new HttpError(400, '请求体格式不正确');
@@ -317,6 +400,7 @@ const parseCasePayload = (body: unknown): CasePayload => {
   }
 
   const lawyers = parseCaseLawyers(data.lawyers);
+  const materials = parseCaseMaterials(data.materials);
 
   const payload: CasePayload = {
     name,
@@ -331,7 +415,6 @@ const parseCasePayload = (body: unknown): CasePayload => {
     evidenceDeadline: parseDateString(data.evidenceDeadline, '举证截止日'),
     appealDeadline: parseDateString(data.appealDeadline, '上诉截止日'),
     disputedAmount: parseNumericString(data.disputedAmount, '标的额'),
-    materialsChecklist: normalizeOptionalString(data.materialsChecklist),
     billingMethod: billingMethodRaw as CaseBillingMethod,
     lawyerFeeTotal: parseMoneyString(data.lawyerFeeTotal, '律师费总额'),
     estimatedHours: data.estimatedHours === undefined ? null : parseEstimatedHours(data.estimatedHours),
@@ -343,7 +426,8 @@ const parseCasePayload = (body: unknown): CasePayload => {
     opponentIdNumber: normalizeOptionalString(data.opponentIdNumber),
     opponentLawyer: normalizeOptionalString(data.opponentLawyer),
     thirdParty: normalizeOptionalString(data.thirdParty),
-    lawyers
+    lawyers,
+    materials
   };
 
   return payload;
@@ -394,7 +478,8 @@ const buildCaseDetail = (
     caseTypeName: string;
     caseCategoryName: string;
   },
-  lawyers: CaseLawyerResponse[]
+  lawyers: CaseLawyerResponse[],
+  materials: CaseMaterialResponse[]
 ): CaseDetailResponse => ({
   id: base.case.id,
   name: base.case.name,
@@ -423,7 +508,7 @@ const buildCaseDetail = (
   evidenceDeadline: formatDate(base.case.evidenceDeadline),
   appealDeadline: formatDate(base.case.appealDeadline),
   disputedAmount: formatNumeric(base.case.disputedAmount),
-  materialsChecklist: base.case.materialsChecklist ?? null,
+  materials,
   billing: {
     lawyerFeeTotal: formatNumeric(base.case.lawyerFeeTotal),
     estimatedHours: base.case.estimatedHours ?? null,
@@ -505,8 +590,8 @@ const ensureReferences = async (payload: CasePayload) => {
 };
 
 const validateBilling = (payload: CasePayload) => {
-  if ((payload.billingMethod === 'fixed_fee' || payload.billingMethod === 'contingency') && !payload.lawyerFeeTotal) {
-    throw new HttpError(400, '请选择或填写律师费总额');
+  if ((payload.billingMethod === 'fixed_fee') && !payload.lawyerFeeTotal) {
+    throw new HttpError(400, '请填写律师费总额');
   }
   if (payload.billingMethod === 'contingency' && !payload.contingencyRate) {
     throw new HttpError(400, '请输入风险代理比例');
@@ -574,7 +659,30 @@ const fetchCaseDetail = async (caseId: string): Promise<CaseDetailResponse> => {
 
   const lawyers = mapLawyerRows(lawyersRows as Array<CaseLawyerRow & { name: string | null; email: string | null }>);
 
-  return buildCaseDetail(record, lawyers);
+  const materialsRows = await db
+    .select({
+      id: caseMaterialFiles.id,
+      filename: caseMaterialFiles.filename,
+      fileType: caseMaterialFiles.fileType,
+      fileSize: caseMaterialFiles.fileSize,
+      uploadedAt: caseMaterialFiles.uploadedAt,
+      uploadedBy: caseMaterialFiles.uploadedBy
+    })
+    .from(caseMaterialFiles)
+    .where(eq(caseMaterialFiles.caseId, caseId))
+    .orderBy(desc(caseMaterialFiles.uploadedAt), desc(caseMaterialFiles.id));
+
+  const materials: CaseMaterialResponse[] = materialsRows.map((item) => ({
+    id: item.id,
+    filename: item.filename,
+    fileType: item.fileType ?? null,
+    fileSize: item.fileSize ?? null,
+    downloadUrl: `/api/cases/${caseId}/materials/${item.id}/download`,
+    uploadedAt: item.uploadedAt?.toISOString() ?? null,
+    uploadedBy: item.uploadedBy ?? null
+  }));
+
+  return buildCaseDetail(record, lawyers, materials);
 };
 
 router.get('/', async (req: Request, res: Response, next) => {
@@ -755,6 +863,47 @@ router.get('/:id', async (req: Request, res: Response, next) => {
   }
 });
 
+router.get('/:id/materials/:materialId/download', async (req: Request, res: Response, next) => {
+  try {
+    const currentUser = await requireCurrentUser(req);
+    ensureRoleAllowed(currentUser.role, CASE_READ_ROLES, '无权限查看案件信息');
+
+    const caseId = req.params.id;
+    const materialId = req.params.materialId;
+
+    const [material] = await db
+      .select({
+        id: caseMaterialFiles.id,
+        caseId: caseMaterialFiles.caseId,
+        filename: caseMaterialFiles.filename,
+        fileType: caseMaterialFiles.fileType,
+        fileData: caseMaterialFiles.fileData
+      })
+      .from(caseMaterialFiles)
+      .where(and(eq(caseMaterialFiles.caseId, caseId), eq(caseMaterialFiles.id, materialId)))
+      .limit(1);
+
+    if (!material) {
+      throw new HttpError(404, '附件不存在');
+    }
+
+    const buffer = Buffer.from(material.fileData, 'base64');
+    const mimeType = material.fileType ?? 'application/octet-stream';
+    const encodedFilename = encodeURIComponent(material.filename);
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Content-Length', buffer.byteLength.toString());
+    res.send(buffer);
+  } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
 router.post('/', async (req: Request, res: Response, next) => {
   try {
     const currentUser = await requireCurrentUser(req);
@@ -781,7 +930,6 @@ router.post('/', async (req: Request, res: Response, next) => {
           evidenceDeadline: payload.evidenceDeadline ?? null,
           appealDeadline: payload.appealDeadline ?? null,
           disputedAmount: payload.disputedAmount ?? null,
-          materialsChecklist: payload.materialsChecklist ?? null,
           billingMethod: payload.billingMethod,
           lawyerFeeTotal: payload.lawyerFeeTotal ?? null,
           estimatedHours: payload.estimatedHours ?? null,
@@ -810,6 +958,25 @@ router.post('/', async (req: Request, res: Response, next) => {
           hourlyRate: lawyer.hourlyRate ?? null
         }))
       );
+
+      if (payload.materials) {
+        if (payload.materials.keepIds.length > 0) {
+          throw new HttpError(400, '附件参数不合法');
+        }
+        if (payload.materials.uploads.length > 0) {
+          await trx.insert(caseMaterialFiles).values(
+            payload.materials.uploads.map((item) => ({
+              id: randomUUID(),
+              caseId: inserted.id,
+              filename: item.filename,
+              fileType: item.fileType,
+              fileSize: item.fileSize ?? null,
+              fileData: item.base64Data,
+              uploadedBy: currentUser.id
+            }))
+          );
+        }
+      }
 
       return inserted.id;
     });
@@ -864,7 +1031,6 @@ router.put('/:id', async (req: Request, res: Response, next) => {
           evidenceDeadline: payload.evidenceDeadline ?? null,
           appealDeadline: payload.appealDeadline ?? null,
           disputedAmount: payload.disputedAmount ?? null,
-          materialsChecklist: payload.materialsChecklist ?? null,
           billingMethod: payload.billingMethod,
           lawyerFeeTotal: payload.lawyerFeeTotal ?? null,
           estimatedHours: payload.estimatedHours ?? null,
@@ -919,10 +1085,78 @@ router.put('/:id', async (req: Request, res: Response, next) => {
           })
           .where(and(eq(caseLawyers.caseId, caseId), eq(caseLawyers.lawyerId, lawyer.lawyerId)));
       }
+
+      if (payload.materials) {
+        const existingMaterials = await trx
+          .select({ id: caseMaterialFiles.id })
+          .from(caseMaterialFiles)
+          .where(eq(caseMaterialFiles.caseId, caseId));
+
+        const existingIds = new Set(existingMaterials.map((item) => item.id));
+        const keepIds = new Set(payload.materials.keepIds);
+
+        for (const id of keepIds) {
+          if (!existingIds.has(id)) {
+            throw new HttpError(400, '附件参数不合法');
+          }
+        }
+
+        const toDelete = [...existingIds].filter((id) => !keepIds.has(id));
+        if (toDelete.length > 0) {
+          await trx
+            .delete(caseMaterialFiles)
+            .where(and(eq(caseMaterialFiles.caseId, caseId), inArray(caseMaterialFiles.id, toDelete)));
+        }
+
+        if (payload.materials.uploads.length > 0) {
+          await trx.insert(caseMaterialFiles).values(
+            payload.materials.uploads.map((item) => ({
+              id: randomUUID(),
+              caseId,
+              filename: item.filename,
+              fileType: item.fileType,
+              fileSize: item.fileSize ?? null,
+              fileData: item.base64Data,
+              uploadedBy: currentUser.id
+            }))
+          );
+        }
+      }
     });
 
     const detail = await fetchCaseDetail(caseId);
     res.json(detail);
+  } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.delete('/:id', async (req: Request, res: Response, next) => {
+  try {
+    const currentUser = await requireCurrentUser(req);
+    ensureRoleAllowed(currentUser.role, CASE_MANAGE_ROLES, '无权限维护案件信息');
+
+    const caseId = req.params.id;
+
+    const existing = await db
+      .select({ id: cases.id })
+      .from(cases)
+      .where(eq(cases.id, caseId))
+      .limit(1);
+
+    if (existing.length === 0) {
+      throw new HttpError(404, '案件不存在');
+    }
+
+    await ensureManageAuthority(currentUser, caseId);
+
+    await db.delete(cases).where(eq(cases.id, caseId));
+
+    res.status(204).send();
   } catch (error) {
     if (error instanceof HttpError) {
       res.status(error.status).json({ message: error.message });

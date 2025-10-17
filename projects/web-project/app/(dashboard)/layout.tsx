@@ -9,6 +9,7 @@ import {
   LogoutOutlined,
   MailOutlined,
   SettingOutlined,
+  SafetyCertificateOutlined,
   RightOutlined,
   SolutionOutlined,
   TeamOutlined,
@@ -27,6 +28,7 @@ import { fetchCurrentUser, updateUser, type UserRole } from '@/lib/users-api';
 
 import { DashboardHeaderActionProvider } from './header-context';
 import styles from './layout.module.scss';
+import Image from 'next/image';
 
 const { Header, Sider, Content } = Layout;
 
@@ -36,7 +38,8 @@ const pathKeyMap: Record<string, string> = {
   '/clients/my': 'clients-my',
   '/team': 'team',
   '/settings/email': 'settings-email',
-  '/settings/case': 'settings-case'
+  '/settings/case': 'settings-case',
+  '/settings/permissions': 'settings-permissions'
 };
 
 const breadcrumbMap: Record<string, string[]> = {
@@ -45,7 +48,8 @@ const breadcrumbMap: Record<string, string[]> = {
   '/team': ['团队管理'],
   '/profile': ['个人资料'],
   '/settings/email': ['平台设置', '邮箱认证'],
-  '/settings/case': ['平台设置', '案件设置']
+  '/settings/case': ['平台设置', '案件设置'],
+  '/settings/permissions': ['平台设置', '权限管理']
 };
 
 interface SessionUser {
@@ -54,6 +58,7 @@ interface SessionUser {
   email?: string | null;
   image?: string | null;
   role?: UserRole | null;
+  gender?: 'male' | 'female' | null;
   permissions?: string[];
 }
 
@@ -69,6 +74,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [headerAction, setHeaderAction] = useState<ReactNode | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [siderCollapsed, setSiderCollapsed] = useState(false);
   const blockedWarningShown = useRef(false);
 
   useEffect(() => {
@@ -91,6 +97,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           email: rawUser.email,
           image: rawUser.image ?? null,
           role: null,
+          gender: null,
           permissions: undefined
         };
 
@@ -105,6 +112,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             email: detail.email ?? nextUser.email,
             image: detail.image ?? nextUser.image ?? null,
             role: detail.role,
+            gender: detail.gender ?? nextUser.gender ?? null,
             permissions: detail.permissions
           };
         } catch (error) {
@@ -190,6 +198,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           key: 'settings-case',
           icon: <FolderOpenOutlined />,
           label: <Link href="/settings/case">案件设置</Link>
+        });
+      }
+
+      if (hasPermission('menu.settings.permissions')) {
+        settingsChildren.push({
+          key: 'settings-permissions',
+          icon: <SafetyCertificateOutlined />,
+          label: <Link href="/settings/permissions">权限管理</Link>
         });
       }
 
@@ -341,16 +357,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   ];
 
   const avatarInitial = useMemo(() => {
-    const source = user?.name ?? user?.email ?? '';
-    return source ? source.trim().charAt(0).toUpperCase() : null;
+    return user?.gender === 'female' ? '/images/female.png' : '/images/male.png';
   }, [user]);
 
   const avatar = user?.image ? (
     <Avatar src={user.image} size={36} className={styles.avatarButton} />
   ) : avatarInitial ? (
-    <Avatar size={36} className={styles.avatarButton}>
-      {avatarInitial}
-    </Avatar>
+    <Avatar src={avatarInitial} size={36} className={styles.avatarButton} />
   ) : (
     <Avatar size={36} icon={<UserOutlined />} className={styles.avatarButton} />
   );
@@ -358,8 +371,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <DashboardHeaderActionProvider setAction={setHeaderAction}>
       <Layout className={styles.layout} hasSider>
-        <Sider width={220} className={styles.sidebar} breakpoint="lg" collapsedWidth={64} theme="light">
-          <div className={styles.logo}>Easy Law</div>
+        <Sider
+          width={220}
+          className={styles.sidebar}
+          breakpoint="lg"
+          collapsedWidth={64}
+          theme="light"
+          onCollapse={(collapsed) => setSiderCollapsed(collapsed)}
+          onBreakpoint={(broken) => setSiderCollapsed(broken)}
+        >
+          <div className={styles.logo}>
+            <Image
+              priority
+              src={siderCollapsed ? '/images/logo-icon.png' : '/images/logo.jpg'}
+              width={siderCollapsed ? 32 : 120}
+              height={siderCollapsed ? 32 : 50}
+              alt="simple law"
+            />
+          </div>
           <Menu
             mode="inline"
             items={menuItems}
