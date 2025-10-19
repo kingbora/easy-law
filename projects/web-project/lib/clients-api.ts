@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import type { CaseStatus } from './cases-api';
 
 export type ClientType = 'individual' | 'company';
 export type ClientStatus = 'potential' | 'active' | 'dormant' | 'lost';
@@ -105,6 +106,19 @@ export interface ClientPayload {
   }>;
 }
 
+export interface ClientRelatedCase {
+  id: string;
+  name: string;
+  status: CaseStatus;
+  caseTypeName: string;
+  caseCategoryName: string;
+}
+
+export interface ClientRelatedCasesResponse {
+  clientId: string;
+  cases: ClientRelatedCase[];
+}
+
 const buildQueryString = (params: FetchClientsParams) => {
   const searchParams = new URLSearchParams();
   if (params.page) {
@@ -150,6 +164,10 @@ export async function updateClient(id: string, payload: ClientPayload): Promise<
     method: 'PUT',
     body: payload
   });
+}
+
+export async function fetchClientRelatedCases(id: string): Promise<ClientRelatedCasesResponse> {
+  return apiFetch<ClientRelatedCasesResponse>(`/api/clients/${id}/related-cases`);
 }
 
 export async function deleteClient(id: string): Promise<void> {

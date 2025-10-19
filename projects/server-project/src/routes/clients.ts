@@ -6,6 +6,9 @@ import { Router } from 'express';
 
 import { db } from '../db/client';
 import {
+  caseCategories,
+  caseTypes,
+  cases,
   clientAttachments,
   clientCompanies,
   clients,
@@ -681,8 +684,66 @@ router.delete('/:id', async (req: Request, res: Response, next) => {
 
     ensureManageAccessForClient(currentUser, existing);
 
+    const [relatedCase] = await db
+      .select({ id: cases.id })
+      .from(cases)
+      .where(eq(cases.clientId, clientId))
+      .limit(1);
+
+    if (relatedCase) {
+      res.status(409).json({
+        message: '该客户仍有关联案件，删除前请先删除相关案件。'
+      });
+      return;
+    }
+
     await db.delete(clients).where(eq(clients.id, clientId));
     res.status(204).send();
+  } catch (error) {
+    if (error instanceof HttpError) {
+      res.status(error.status).json({ message: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.get('/:id/related-cases', async (req: Request, res: Response, next) => {
+  try {
+    const currentUser = await requireCurrentUser(req);
+    const clientId = req.params.id;
+
+    const [existing] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
+    if (!existing) {
+      throw new HttpError(404, '客户不存在');
+    }
+
+    ensureManageAccessForClient(currentUser, existing);
+
+    const related = await db
+      .select({
+        id: cases.id,
+        name: cases.name,
+        status: cases.status,
+        caseTypeName: caseTypes.name,
+        caseCategoryName: caseCategories.name
+      })
+      .from(cases)
+      .innerJoin(caseTypes, eq(caseTypes.id, cases.caseTypeId))
+      .innerJoin(caseCategories, eq(caseCategories.id, cases.caseCategoryId))
+      .where(eq(cases.clientId, clientId))
+      .orderBy(desc(cases.createdAt));
+
+    res.json({
+      clientId,
+      cases: related.map((item) => ({
+        id: item.id,
+        name: item.name,
+        status: item.status,
+        caseTypeName: item.caseTypeName,
+        caseCategoryName: item.caseCategoryName
+      }))
+    });
   } catch (error) {
     if (error instanceof HttpError) {
       res.status(error.status).json({ message: error.message });

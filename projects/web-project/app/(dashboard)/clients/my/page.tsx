@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
+  Alert,
   Button,
   Card,
   Form,
   Input,
-  Popconfirm,
+  List,
+  Modal,
   Select,
   Space,
+  Spin,
   Table,
   Tag,
   Tooltip,
@@ -27,11 +30,13 @@ import {
   deleteClient,
   fetchClientDetail,
   fetchClients,
+  fetchClientRelatedCases,
   updateClient,
   type ClientDetail,
   type ClientListItem,
   type ClientPayload,
   type ClientSource,
+  type ClientRelatedCase,
   type ClientStatus,
   type ClientType
 } from '@/lib/clients-api';
@@ -44,6 +49,7 @@ import {
   CLIENT_TYPE_LABELS,
   CLIENT_TYPE_OPTIONS
 } from '@/lib/clients-data';
+import { CASE_STATUS_LABELS } from '@/lib/cases-constants';
 import { searchMaintainers, type MaintainerResponse } from '@/lib/maintainers-api';
 
 import { useDashboardHeaderAction } from '../../header-context';
@@ -69,6 +75,24 @@ interface MaintainerOption {
   value: string;
 }
 
+type DeleteModalState = {
+  open: boolean;
+  clientId: string | null;
+  clientName: string;
+  loading: boolean;
+  relatedCases: ClientRelatedCase[] | null;
+  deleting: boolean;
+};
+
+const createInitialDeleteModalState = (): DeleteModalState => ({
+  open: false,
+  clientId: null,
+  clientName: '',
+  loading: false,
+  relatedCases: null,
+  deleting: false
+});
+
 const formatDateTime = (value: string | null) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-');
 
 export default function MyClientsPage() {
@@ -82,9 +106,13 @@ export default function MyClientsPage() {
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [selectedClient, setSelectedClient] = useState<ClientDetail | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
+  const [deleteModalState, setDeleteModalState] = useState<DeleteModalState>(createInitialDeleteModalState);
   const [maintainerOptions, setMaintainerOptions] = useState<MaintainerOption[]>([]);
   const [maintainerLoading, setMaintainerLoading] = useState(false);
+
+  const resetDeleteModalState = useCallback(() => {
+    setDeleteModalState(createInitialDeleteModalState());
+  }, []);
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -237,29 +265,70 @@ export default function MyClientsPage() {
     [closeModal, ensureMaintainerOption, loadClients, modalState]
   );
 
-  const handleDeleteClient = useCallback(
-    async (id: string) => {
-      setDeletingIds((prev) => ({ ...prev, [id]: true }));
-      try {
-        await deleteClient(id);
-        message.success('客户已删除');
-        if (modalState.open && modalState.clientId === id) {
-          closeModal();
+  const openDeleteClientModal = useCallback(
+    (record: TableRecord) => {
+      setDeleteModalState({
+        open: true,
+        clientId: record.id,
+        clientName: record.name,
+        loading: true,
+        relatedCases: null,
+        deleting: false
+      });
+
+      void (async () => {
+        try {
+          const response = await fetchClientRelatedCases(record.id);
+          setDeleteModalState((prev) => {
+            if (!prev.open || prev.clientId !== record.id) {
+              return prev;
+            }
+            return {
+              ...prev,
+              loading: false,
+              relatedCases: response.cases
+            };
+          });
+        } catch (error) {
+          const errorMessage = error instanceof ApiError ? error.message : '检测关联案件失败，请稍后重试';
+          message.error(errorMessage);
+          resetDeleteModalState();
         }
-        await loadClients();
-      } catch (error) {
-        const errorMessage = error instanceof ApiError ? error.message : '删除失败，请稍后重试';
-        message.error(errorMessage);
-      } finally {
-        setDeletingIds((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-      }
+      })();
     },
-    [closeModal, loadClients, modalState]
+    [resetDeleteModalState]
   );
+
+  const handleDeleteClient = useCallback(async () => {
+    if (!deleteModalState.clientId) {
+      return;
+    }
+
+    setDeleteModalState((prev) => ({ ...prev, deleting: true }));
+    const targetId = deleteModalState.clientId;
+    try {
+      await deleteClient(targetId);
+      message.success('客户已删除');
+
+      setModalState((prev) => {
+        if (!prev.open || !('clientId' in prev) || !prev.clientId) {
+          return prev;
+        }
+        if (prev.clientId === targetId) {
+          return { open: false };
+        }
+        return prev;
+      });
+      setSelectedClient((prev) => (prev && prev.id === targetId ? null : prev));
+
+      resetDeleteModalState();
+      await loadClients();
+    } catch (error) {
+      const errorMessage = error instanceof ApiError ? error.message : '删除失败，请稍后重试';
+      message.error(errorMessage);
+      setDeleteModalState((prev) => ({ ...prev, deleting: false }));
+    }
+  }, [deleteModalState.clientId, loadClients, resetDeleteModalState]);
 
   const handleTableChange = useCallback((nextPagination: TablePaginationConfig) => {
     setPagination((prev) => ({
@@ -312,6 +381,9 @@ export default function MyClientsPage() {
     },
     [openClientModal]
   );
+
+  const deleteCheckingClientId = deleteModalState.open && deleteModalState.loading ? deleteModalState.clientId : null;
+  const deleteInProgress = deleteModalState.deleting;
 
   const columns = useMemo<ColumnsType<TableRecord>>(
     () => [
@@ -379,24 +451,53 @@ export default function MyClientsPage() {
                 编辑
               </Button>
             </Tooltip>
-            <Popconfirm
-              title="确认删除该客户？"
-              description="删除后将无法恢复，请确认。"
-              okText="删除"
-              cancelText="取消"
-              okType="danger"
-              onConfirm={() => handleDeleteClient(record.id)}
-            >
-              <Button type="link" danger loading={Boolean(deletingIds[record.id])}>
+            <Tooltip title="删除前将自动检测关联案件">
+              <Button
+                type="link"
+                danger
+                onClick={() => openDeleteClientModal(record)}
+                loading={deleteCheckingClientId === record.id}
+                disabled={deleteInProgress}
+              >
                 删除
               </Button>
-            </Popconfirm>
+            </Tooltip>
           </Space>
         )
       }
     ],
-  [deletingIds, handleDeleteClient, handleEditClient, handleViewClient]
+    [
+      deleteCheckingClientId,
+      deleteInProgress,
+      handleEditClient,
+      handleViewClient,
+      openDeleteClientModal
+    ]
   );
+
+  const deleteModalHasCases = (deleteModalState.relatedCases?.length ?? 0) > 0;
+  const deleteModalFooter = deleteModalState.loading
+    ? null
+    : deleteModalHasCases
+      ? [
+          <Button key="acknowledge" type="primary" onClick={resetDeleteModalState} disabled={deleteModalState.deleting}>
+            我知道了
+          </Button>
+        ]
+      : [
+          <Button key="cancel" onClick={resetDeleteModalState} disabled={deleteModalState.deleting}>
+            取消
+          </Button>,
+          <Button
+            key="confirm"
+            type="primary"
+            danger
+            loading={deleteModalState.deleting}
+            onClick={handleDeleteClient}
+          >
+            删除
+          </Button>
+        ];
 
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
@@ -446,6 +547,58 @@ export default function MyClientsPage() {
           onChange={handleTableChange}
         />
       </Card>
+
+      <Modal
+        title={deleteModalState.clientName ? `删除客户：${deleteModalState.clientName}` : '删除客户'}
+        open={deleteModalState.open}
+        onCancel={() => {
+          if (deleteModalState.deleting) {
+            return;
+          }
+          resetDeleteModalState();
+        }}
+        footer={deleteModalFooter}
+        maskClosable={!deleteModalState.deleting && !deleteModalState.loading}
+        closable={!deleteModalState.deleting}
+        destroyOnClose
+      >
+        {deleteModalState.loading ? (
+          <Space align="center" size={16}>
+            <Spin />
+            <span>案件关联检索中，请稍后...</span>
+          </Space>
+        ) : deleteModalHasCases ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Alert
+              type="warning"
+              showIcon
+              message="检测到关联案件"
+              description="仅当关联案件全部删除后，才能删除该客户。"
+            />
+            <List
+              size="small"
+              dataSource={deleteModalState.relatedCases ?? []}
+              style={{ maxHeight: 260, overflowY: 'auto' }}
+              renderItem={(item) => (
+                <List.Item key={item.id}>
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <strong>{item.name}</strong>
+                    <span>案由：{item.caseTypeName} / {item.caseCategoryName}</span>
+                    <span>案件状态：{CASE_STATUS_LABELS[item.status]}</span>
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </Space>
+        ) : (
+          <Alert
+            type="warning"
+            showIcon
+            message="确认删除该客户？"
+            description="删除后将无法恢复，请谨慎操作。"
+          />
+        )}
+      </Modal>
 
       {modalState.open ? (
         <ClientModal
