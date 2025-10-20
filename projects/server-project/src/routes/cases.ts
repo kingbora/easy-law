@@ -27,7 +27,7 @@ import { HttpError, ensureRoleAllowed, requireCurrentUser, type CurrentUserRow }
 
 const router = Router();
 
-const CASE_READ_ROLES = new Set<UserRole>(['master', 'admin', 'lawyer', 'assistant']);
+const CASE_READ_ROLES = new Set<UserRole>(['master', 'admin', 'lawyer', 'assistant', 'administrative']);
 const CASE_MANAGE_ROLES = new Set<UserRole>(['master', 'admin', 'lawyer']);
 
 const caseStatusSet = new Set(caseStatusEnum.enumValues);

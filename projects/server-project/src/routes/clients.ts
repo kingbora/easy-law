@@ -28,7 +28,7 @@ import { HttpError, ensureRoleAllowed, requireCurrentUser, type CurrentUserRow }
 
 const router = Router();
 
-const CLIENT_READ_ROLES = new Set<UserRole>(['master', 'admin', 'sale', 'lawyer', 'assistant']);
+const CLIENT_READ_ROLES = new Set<UserRole>(['master', 'admin', 'sale', 'lawyer', 'assistant', 'administrative']);
 const CLIENT_MANAGE_ROLES = new Set<UserRole>(['master', 'admin', 'sale']);
 const CLIENT_ASSIGN_ALL_ROLES = new Set<UserRole>(['master', 'admin']);
 

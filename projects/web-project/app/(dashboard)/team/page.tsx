@@ -13,7 +13,17 @@ import TeamMemberModal, {
   type TeamMemberModalResult
 } from '@/components/team/TeamMemberModal';
 import { ApiError } from '@/lib/api-client';
-import { createUser, deleteUser, fetchCurrentUser, fetchUsers, updateUser, type UserResponse, type UserRole } from '@/lib/users-api';
+import {
+  createUser,
+  deleteUser,
+  fetchCurrentUser,
+  fetchUsers,
+  updateUser,
+  type UserDepartment,
+  type UserResponse,
+  type UserRole,
+  type UserSupervisorInfo
+} from '@/lib/users-api';
 
 import { useDashboardHeaderAction } from '../header-context';
 
@@ -26,6 +36,8 @@ interface TeamMember {
   image?: string | null;
   gender: 'male' | 'female' | null;
   initialPassword?: string;
+  department: UserDepartment | null;
+  supervisor: UserSupervisorInfo | null;
 }
 
 type Filters = {
@@ -43,7 +55,8 @@ const ROLE_LABEL_MAP: Record<UserRole, string> = {
   admin: '管理员',
   sale: '销售',
   lawyer: '律师',
-  assistant: '助理'
+  assistant: '助理',
+  administrative: '行政'
 };
 
 const ROLE_COLOR_MAP: Record<UserRole, string> = {
@@ -51,12 +64,23 @@ const ROLE_COLOR_MAP: Record<UserRole, string> = {
   admin: 'geekblue',
   sale: 'purple',
   lawyer: 'green',
-  assistant: 'blue'
+  assistant: 'blue',
+  administrative: 'orange'
 };
 
 const GENDER_LABEL_MAP: Record<'male' | 'female', string> = {
   male: '男',
   female: '女'
+};
+
+const DEPARTMENT_LABEL_MAP: Record<UserDepartment, string> = {
+  work_injury: '工伤部门',
+  insurance: '保险部门'
+};
+
+const DEPARTMENT_COLOR_MAP: Record<UserDepartment, string> = {
+  work_injury: 'geekblue',
+  insurance: 'gold'
 };
 
 const ROLE_OPTIONS = (Object.entries(ROLE_LABEL_MAP) as Array<[UserRole, string]>).map(([value, label]) => ({
@@ -73,7 +97,9 @@ function mapUserResponse(user: UserResponse, fallbackPassword?: string): TeamMem
     joinDate: user.createdAt ? dayjs(user.createdAt).format('YYYY-MM-DD') : '',
     image: user.image,
     gender: user.gender ?? null,
-    initialPassword: user.initialPassword ?? fallbackPassword
+    initialPassword: user.initialPassword ?? fallbackPassword,
+    department: user.department ?? null,
+    supervisor: user.supervisor ?? null
   };
 }
 
@@ -224,7 +250,9 @@ export default function TeamManagementPage() {
           name: values.name.trim(),
           email: values.email.trim(),
           role: values.role as UserRole,
-          gender: values.gender ?? null
+          gender: values.gender ?? null,
+          department: values.department ?? null,
+          supervisorId: values.supervisorId ?? null
         };
 
         if (
@@ -302,6 +330,16 @@ export default function TeamManagementPage() {
         render: (role: UserRole) => <Tag color={ROLE_COLOR_MAP[role]}>{ROLE_LABEL_MAP[role]}</Tag>
       },
       {
+        title: '所属部门',
+        dataIndex: 'department',
+        render: (department: TeamMember['department']) =>
+          department ? (
+            <Tag color={DEPARTMENT_COLOR_MAP[department]}>{DEPARTMENT_LABEL_MAP[department]}</Tag>
+          ) : (
+            '—'
+          )
+      },
+      {
         title: '成员邮箱',
         dataIndex: 'email'
       },
@@ -309,6 +347,11 @@ export default function TeamManagementPage() {
         title: '性别',
         dataIndex: 'gender',
         render: (gender: TeamMember['gender']) => (gender ? GENDER_LABEL_MAP[gender] : '—')
+      },
+      {
+        title: '直属上级',
+        dataIndex: ['supervisor', 'name'],
+        render: (_: unknown, record) => record.supervisor?.name ?? '—'
       },
       {
         title: '加入时间',
@@ -341,7 +384,7 @@ export default function TeamManagementPage() {
     if (!modalState.open || modalState.mode === 'create' || !modalState.record) {
       return undefined;
     }
-    const { name, role, email, joinDate, gender, initialPassword } = modalState.record;
+    const { name, role, email, joinDate, gender, initialPassword, department, supervisor } = modalState.record;
     return {
       id: modalState.record.id,
       name,
@@ -350,9 +393,22 @@ export default function TeamManagementPage() {
       email,
       joinDate,
       gender,
-      initialPassword
+      initialPassword,
+      department,
+      supervisor
     };
   }, [modalState]);
+
+  const supervisorOptions = useMemo(
+    () =>
+      members
+        .filter((member) => member.role === 'lawyer')
+        .map((member) => ({
+          value: member.id,
+          label: member.name || member.email || '未命名律师'
+        })),
+    [members]
+  );
 
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
@@ -400,6 +456,7 @@ export default function TeamManagementPage() {
           open
           mode={modalState.mode}
           roles={modalRoleOptions}
+          supervisors={supervisorOptions}
           initialValues={modalInitialValues}
           onCancel={closeModal}
           onSubmit={handleSubmit}

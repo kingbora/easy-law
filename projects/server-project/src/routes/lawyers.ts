@@ -10,7 +10,7 @@ import { HttpError, ensureRoleAllowed, requireCurrentUser } from './utils/curren
 
 const router = Router();
 
-const LAWYER_VISIBLE_ROLES = new Set<UserRole>(['master', 'admin', 'lawyer', 'assistant']);
+const LAWYER_VISIBLE_ROLES = new Set<UserRole>(['master', 'admin', 'lawyer', 'assistant', 'administrative']);
 
 const normalizeOptionalString = (value: unknown) => (typeof value === 'string' ? value.trim() || null : null);
 

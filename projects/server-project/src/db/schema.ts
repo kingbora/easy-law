@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   date,
+  foreignKey,
   index,
   integer,
   numeric,
@@ -14,7 +15,8 @@ import {
   uuid
 } from 'drizzle-orm/pg-core';
 
-export const userRoleEnum = pgEnum('user_role', ['master', 'admin', 'sale', 'lawyer', 'assistant']);
+export const userRoleEnum = pgEnum('user_role', ['master', 'admin', 'sale', 'lawyer', 'assistant', 'administrative']);
+export const userDepartmentEnum = pgEnum('user_department', ['work_injury', 'insurance']);
 
 export const permissionCategoryEnum = pgEnum('permission_category', ['menu', 'action']);
 
@@ -36,11 +38,20 @@ export const users = pgTable(
     image: text('image'),
     gender: userGenderEnum('gender'),
     role: userRoleEnum('role').default('assistant').notNull(),
+    department: userDepartmentEnum('department'),
+    supervisorId: text('supervisor_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
     password: text('password')
   },
-  (table) => [uniqueIndex('users_email_idx').on(table.email)]
+  (table) => [
+    uniqueIndex('users_email_idx').on(table.email),
+    foreignKey({
+      columns: [table.supervisorId],
+      foreignColumns: [table.id],
+      name: 'users_supervisor_id_users_id_fk'
+    }).onDelete('set null')
+  ]
 );
 
 export const permissions = pgTable(

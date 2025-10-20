@@ -1,6 +1,12 @@
 import { apiFetch } from './api-client';
 
-export type UserRole = 'master' | 'admin' | 'sale' | 'lawyer' | 'assistant';
+export type UserRole = 'master' | 'admin' | 'sale' | 'lawyer' | 'assistant' | 'administrative';
+export type UserDepartment = 'work_injury' | 'insurance';
+
+export interface UserSupervisorInfo {
+  id: string;
+  name: string | null;
+}
 
 export interface UserResponse {
   id: string;
@@ -9,6 +15,8 @@ export interface UserResponse {
   role: UserRole;
   image: string | null;
   gender: 'male' | 'female' | null;
+  department: UserDepartment | null;
+  supervisor: UserSupervisorInfo | null;
   createdAt: string | null;
   updatedAt: string | null;
   initialPassword?: string;
@@ -19,6 +27,8 @@ export interface CreateUserPayload {
   email: string;
   role: UserRole;
   gender?: 'male' | 'female' | null;
+  department?: UserDepartment | null;
+  supervisorId?: string | null;
 }
 
 export interface UpdateUserPayload {
@@ -27,6 +37,8 @@ export interface UpdateUserPayload {
   role?: UserRole;
   image?: string | null;
   gender?: 'male' | 'female' | null;
+  department?: UserDepartment | null;
+  supervisorId?: string | null;
 }
 
 export interface CurrentUserResponse extends UserResponse {

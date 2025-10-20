@@ -130,7 +130,8 @@ const ROLE_PERMISSION_MAP: Record<UserRole, string[]> = {
     'action.cases.read',
     'action.cases.manage'
   ],
-  assistant: ['menu.dashboard', 'menu.clients', 'menu.cases', 'action.clients.read', 'action.cases.read']
+  assistant: ['menu.dashboard', 'menu.clients', 'menu.cases', 'action.clients.read', 'action.cases.read'],
+  administrative: ['menu.dashboard', 'menu.clients', 'menu.cases', 'action.clients.read', 'action.cases.read']
 };
 
 export const ensureDefaultPermissions = async () => {

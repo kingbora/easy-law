@@ -14,6 +14,8 @@ export interface TeamMemberModalResult {
   email: string;
   password?: string;
   gender?: 'male' | 'female' | null;
+  department?: 'work_injury' | 'insurance' | null;
+  supervisorId?: string | null;
 }
 
 export interface TeamMemberModalDetail extends TeamMemberModalResult {
@@ -21,6 +23,7 @@ export interface TeamMemberModalDetail extends TeamMemberModalResult {
   joinDate?: string;
   initialPassword?: string;
   roleLabel?: string;
+  supervisor?: { id: string; name: string | null } | null;
 }
 
 type TeamMemberModalMode = 'create' | 'edit' | 'view';
@@ -30,10 +33,16 @@ interface RoleOption {
   value: string;
 }
 
+interface SupervisorOption {
+  label: string;
+  value: string;
+}
+
 interface TeamMemberModalProps {
   open: boolean;
   mode: TeamMemberModalMode;
   roles: RoleOption[];
+  supervisors: SupervisorOption[];
   initialValues?: TeamMemberModalDetail;
   onCancel: () => void;
   onSubmit?: (values: TeamMemberModalResult) => void;
@@ -47,6 +56,8 @@ interface TeamMemberFormState {
   email: string;
   joinDate: string;
   gender: 'male' | 'female' | null;
+  department: 'work_injury' | 'insurance' | null;
+  supervisorId: string | null;
 }
 
 const { Paragraph, Title } = Typography;
@@ -61,10 +72,21 @@ const GENDER_LABEL_MAP: Record<'male' | 'female', string> = {
   female: '女'
 };
 
+const DEPARTMENT_OPTIONS = [
+  { label: '工伤部门', value: 'work_injury' as const },
+  { label: '保险部门', value: 'insurance' as const }
+];
+
+const DEPARTMENT_LABEL_MAP: Record<'work_injury' | 'insurance', string> = {
+  work_injury: '工伤部门',
+  insurance: '保险部门'
+};
+
 export default function TeamMemberModal({
   open,
   mode,
   roles,
+  supervisors,
   initialValues,
   onCancel,
   onSubmit,
@@ -76,7 +98,9 @@ export default function TeamMemberModal({
     role: roles[0]?.value ?? '',
     email: '',
     joinDate: dayjs().format('YYYY-MM-DD'),
-    gender: null
+    gender: null,
+    department: null,
+    supervisorId: null
   });
 
   const title = useMemo(() => {
@@ -105,9 +129,31 @@ export default function TeamMemberModal({
       role: baseRole,
       email: initialValues?.email ?? '',
       joinDate: baseJoinDate,
-      gender: initialValues?.gender ?? null
+      gender: initialValues?.gender ?? null,
+      department: initialValues?.department ?? null,
+      supervisorId: initialValues?.supervisor?.id ?? null
     });
-  }, [initialValues?.email, initialValues?.gender, initialValues?.id, initialValues?.joinDate, initialValues?.name, initialValues?.role, mode, open, roles]);
+  }, [initialValues?.department, initialValues?.email, initialValues?.gender, initialValues?.id, initialValues?.joinDate, initialValues?.name, initialValues?.role, initialValues?.supervisor?.id, mode, open, roles]);
+
+  const departmentDisabled = formValues.role === 'master';
+  const supervisorDisabled = formValues.role === 'master';
+
+  const availableSupervisorOptions = useMemo(() => {
+    const filtered = supervisors.filter((option) => option.value !== (initialValues?.id ?? ''));
+    if (initialValues?.supervisor?.id) {
+      const exists = filtered.some((option) => option.value === initialValues.supervisor!.id);
+      if (!exists) {
+        return [
+          ...filtered,
+          {
+            value: initialValues.supervisor.id,
+            label: initialValues.supervisor.name ?? '未命名律师'
+          }
+        ];
+      }
+    }
+    return filtered;
+  }, [initialValues?.id, initialValues?.supervisor, supervisors]);
 
   const handleSubmit = async () => {
     if (!onSubmit) {
@@ -115,7 +161,9 @@ export default function TeamMemberModal({
       return;
     }
 
-  const { name, role, email, gender } = formValues;
+    const { name, role, email, gender, department, supervisorId } = formValues;
+
+    const requiresDepartment = role !== 'master';
 
     if (!name.trim()) {
       message.error('请输入成员名称');
@@ -138,12 +186,19 @@ export default function TeamMemberModal({
       return;
     }
 
+    if (requiresDepartment && !department) {
+      message.error('请选择所属部门');
+      return;
+    }
+
     const payload: TeamMemberModalResult = {
       name: name.trim(),
       role,
       email: email.trim(),
       password: mode === 'create' ? DEFAULT_INITIAL_PASSWORD : undefined,
-      gender
+      gender,
+      department: requiresDepartment ? department ?? null : null,
+      supervisorId: supervisorDisabled ? null : supervisorId ?? null
     };
     onSubmit(payload);
   };
@@ -226,7 +281,28 @@ export default function TeamMemberModal({
                 onChange={(value) =>
                   setFormValues((prev) => ({
                     ...prev,
-                    role: value
+                    role: value,
+                    department: value === 'master' ? null : prev.department,
+                    supervisorId: value === 'master' ? null : prev.supervisorId
+                  }))
+                }
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="所属部门">
+            {mode === 'view' ? (
+              initialValues?.department ? DEPARTMENT_LABEL_MAP[initialValues.department] : '—'
+            ) : (
+              <Select
+                allowClear={!departmentDisabled}
+                disabled={departmentDisabled}
+                value={formValues.department ?? undefined}
+                options={DEPARTMENT_OPTIONS}
+                placeholder={departmentDisabled ? '超级管理员无需选择' : '请选择所属部门'}
+                onChange={(value) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    department: (value ?? null) as 'work_injury' | 'insurance' | null
                   }))
                 }
               />
@@ -243,6 +319,25 @@ export default function TeamMemberModal({
                   setFormValues((prev) => ({
                     ...prev,
                     email: event.target.value
+                  }))
+                }
+              />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="直属上级">
+            {mode === 'view' ? (
+              initialValues?.supervisor?.name ?? '—'
+            ) : (
+              <Select
+                allowClear
+                disabled={supervisorDisabled}
+                options={availableSupervisorOptions}
+                value={formValues.supervisorId ?? undefined}
+                placeholder={supervisorDisabled ? '超级管理员无需选择' : '请选择直属上级（可选）'}
+                onChange={(value) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    supervisorId: (value ?? null) as string | null
                   }))
                 }
               />
