@@ -7,9 +7,6 @@ import {
   FolderOpenOutlined,
   HomeOutlined,
   LogoutOutlined,
-  MailOutlined,
-  SettingOutlined,
-  SafetyCertificateOutlined,
   RightOutlined,
   SolutionOutlined,
   TeamOutlined,
@@ -36,20 +33,14 @@ const pathKeyMap: Record<string, string> = {
   '/': 'overview',
   '/cases/my': 'cases-my',
   '/clients/my': 'clients-my',
-  '/team': 'team',
-  '/settings/email': 'settings-email',
-  '/settings/case': 'settings-case',
-  '/settings/permissions': 'settings-permissions'
+  '/team': 'team'
 };
 
 const breadcrumbMap: Record<string, string[]> = {
   '/cases/my': ['案件管理', '我的案件'],
   '/clients/my': ['客户管理', '我的客户'],
   '/team': ['团队管理'],
-  '/profile': ['个人资料'],
-  '/settings/email': ['平台设置', '邮箱认证'],
-  '/settings/case': ['平台设置', '案件设置'],
-  '/settings/permissions': ['平台设置', '权限管理']
+  '/profile': ['个人资料']
 };
 
 interface SessionUser {
@@ -188,41 +179,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         icon: <TeamOutlined />,
         label: <Link href="/team">团队管理</Link>
       });
-    }
-
-    if (hasPermission('menu.settings')) {
-      const settingsChildren: MenuProps['items'] = [];
-
-      if (hasPermission('menu.settings.case')) {
-        settingsChildren.push({
-          key: 'settings-case',
-          icon: <FolderOpenOutlined />,
-          label: <Link href="/settings/case">案件设置</Link>
-        });
-      }
-
-      if (hasPermission('menu.settings.permissions')) {
-        settingsChildren.push({
-          key: 'settings-permissions',
-          icon: <SafetyCertificateOutlined />,
-          label: <Link href="/settings/permissions">权限管理</Link>
-        });
-      }
-
-      settingsChildren.push({
-        key: 'settings-email',
-        icon: <MailOutlined />,
-        label: <Link href="/settings/email">邮箱认证</Link>
-      });
-
-      if (settingsChildren.length > 0) {
-        items.push({
-          key: 'settings',
-          icon: <SettingOutlined />,
-          label: '平台设置',
-          children: settingsChildren
-        });
-      }
     }
 
     return items;
