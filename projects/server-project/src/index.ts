@@ -1,19 +1,10 @@
+import 'dotenv/config';
 import app from './app';
-import env from './config/env';
 import { sql } from './db/client';
-import { runMigrationsAndSeeds } from './startup/migrate-and-seed';
 
 const bootstrap = async () => {
-  try {
-    await sql`select 1`;
-    await runMigrationsAndSeeds();
-  } catch (error) {
-    console.error('Startup checks failed', error);
-    process.exit(1);
-  }
-
-  app.listen(env.port, env.host, () => {
-    console.warn(`🚀 Server ready at http://${env.host}:${env.port}`);
+  app.listen(process.env.PORT || '4000', () => {
+    console.warn(`🚀 Server ready at http://localhost:${process.env.PORT}`);
   });
 };
 

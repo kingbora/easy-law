@@ -1,8 +1,8 @@
+import { getSessionCookie } from 'better-auth/cookies';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
-const AUTH_BASE_URL = (process.env.NEXT_PUBLIC_AUTH_BASE_URL ?? 'http://localhost:4000/api/auth').replace(/\/$/, '');
+const PUBLIC_PATHS = ['/login'];
 
 const isPublicPath = (pathname: string) =>
   PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -19,34 +19,10 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    const sessionResponse = await fetch(`${AUTH_BASE_URL}/get-session`, {
-      headers: {
-        cookie: request.headers.get('cookie') ?? '',
-        accept: 'application/json',
-        'user-agent': request.headers.get('user-agent') ?? ''
-      },
-      cache: 'no-store',
-      redirect: 'manual'
-    });
+    const sessionCookie = getSessionCookie(request);
 
-    if (sessionResponse.ok) {
-      const result = await sessionResponse.json().catch(() => null);
-      const session = result?.session;
-      const user = result?.user;
-
-      if (session && user) {
-        const response = NextResponse.next();
-        const setCookie = sessionResponse.headers.get('set-cookie');
-        if (setCookie) {
-          const cookies = setCookie.split(/,(?=\s*[A-Za-z0-9_-]+=)/);
-          cookies.forEach((cookie) => {
-            if (cookie) {
-              response.headers.append('set-cookie', cookie.trim());
-            }
-          });
-        }
-        return response;
-      }
+    if (sessionCookie) {
+        return NextResponse.next();
     }
   } catch {
     // ignore network failures and fall back to redirect below

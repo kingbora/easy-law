@@ -2,10 +2,9 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { localization } from 'better-auth-localization';
 
-import env from '../config/env';
 import { db } from '../db/client';
-import * as schema from '../db/schema';
-const isProduction = env.nodeEnv === 'production';
+import { users, accounts, sessions, verifications } from '../db/schema/auth-schema';
+const isProduction = process.env.NODE_ENV === 'production';
 const baseURL =
   isProduction 
       ? 'https://easy-lay.top' 
@@ -24,14 +23,14 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema: {
-      ...schema,
-      user: schema.users
+      verification: verifications,
+      session: sessions,
+      account: accounts,
+      user: users,
     },
-    usePlural: true
   }),
   emailAndPassword: {
-    enabled: true,
-    autoSignIn: true
+    enabled: true
   },
   session: {
     cookieCache: {
@@ -39,12 +38,4 @@ export const auth = betterAuth({
       maxAge: 60 * 60
     }
   },
-  advanced: {
-    useSecureCookies: isProduction,
-    cookieAttributes: {
-      path: '/',
-      sameSite: 'lax',
-      secure: isProduction
-    }
-  }
 });

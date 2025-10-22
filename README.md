@@ -4,8 +4,8 @@ This repository is a pnpm-powered monorepo that hosts the Easy Law projects and 
 
 ## Structure
 
-- `projects/server-project` – TypeScript + Express service with CORS, graceful error handling, and a `/health` endpoint.
-- `projects/web-project` – Next.js 14 application styled with Ant Design and SCSS modules.
+- `projects/server-project` – TypeScript + Express authentication service powered by Better Auth.
+- `projects/web-project` – Next.js 14 login experience styled with Ant Design and SCSS modules.
 - `packages/eslint-config` – Shared ESLint configuration consumed by all packages.
 
 ## Getting Started
@@ -26,19 +26,6 @@ pnpm lint                                       # run lint across the workspace
 
 Husky + lint-staged automatically run ESLint on staged files before each commit.
 
-## Health Check
+## Authentication Only
 
-After starting the server project, verify the health endpoint:
-
-```powershell
-Invoke-RestMethod -Uri http://localhost:4000/health
-```
-
-It should respond with:
-
-```json
-{
-  "status": "ok",
-  "timestamp": "..."
-}
-```
+The server now 仅提供 `/api/auth` 相关登录鉴权接口，前端只保留登录页面。

@@ -2,7 +2,6 @@
 
 import { LockOutlined, MailOutlined } from '@ant-design/icons';
 import { Alert, Button, Form, Input, Typography, message } from 'antd';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
@@ -71,19 +70,8 @@ const LoginPage = () => {
           登录
         </Button>
       </Form>
-      <Paragraph
-        style={{
-          marginTop: 16,
-          display: 'flex',
-          justifyContent: 'space-between'
-        }}
-      >
-        <Link href={redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : '/register'}>
-          注册账号？
-        </Link>
-        <Link href={redirectParam ? `/forgot-password?redirect=${encodeURIComponent(redirectParam)}` : '/forgot-password'}>
-          忘记密码？
-        </Link>
+      <Paragraph type="secondary" style={{ marginTop: 16, textAlign: 'center' }}>
+        如需开通账号，请联系系统管理员。
       </Paragraph>
     </AuthShell>
   );

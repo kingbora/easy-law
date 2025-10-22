@@ -8,12 +8,18 @@
     "dev:web": "pnpm --filter web-project dev",
     "dev:app": "pnpm --filter app-project dev",
     "dev:server": "pnpm --filter server-project dev",
+    "db:reset": "pnpm --filter server-project reset-db",
+    "db:seed": "pnpm --filter server-project seed:super-admin",
+    "db:generate": "pnpm --filter server-project db:generate",
+    "db:push": "pnpm --filter server-project db:push",
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "lint": "pnpm -r lint",
+    "clean": "pnpm -r clean && rimraf node_modules",
     "lint-staged": "lint-staged"
   },
   "devDependencies": {
+    "rimraf": "^6.0.1",
     "eslint": "^8.57.0",
     "husky": "^9.0.11",
     "lint-staged": "^15.2.2"

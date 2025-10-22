@@ -4,18 +4,11 @@ import cors from 'cors';
 import express from 'express';
 
 import { auth } from './auth';
-import env from './config/env';
 import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
-import casesRouter from './routes/cases';
-import clientsRouter from './routes/clients';
-import healthRouter from './routes/health';
-import lawyersRouter from './routes/lawyers';
-import maintainersRouter from './routes/maintainers';
-import usersRouter from './routes/users';
 
 const app = express();
-
-const allowedOrigins = env.corsOrigin
+const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
+const allowedOrigins = corsOrigin
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -30,13 +23,6 @@ app.all('/api/auth/*', toNodeHandler(auth));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-app.use('/health', healthRouter);
-app.use('/api/users', usersRouter);
-app.use('/api/clients', clientsRouter);
-app.use('/api/lawyers', lawyersRouter);
-app.use('/api/maintainers', maintainersRouter);
-app.use('/api/cases', casesRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

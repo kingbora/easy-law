@@ -1,42 +1,63 @@
-# Easy Law Agent Guide
+# 🚀 Copilot 项目开发指南
 
-- Monorepo managed by `pnpm` workspaces. Key apps: `projects/server-project` (Express API) and `projects/web-project` (Next.js 14 dashboard). Shared ESLint config lives in `packages/eslint-config`.
-- Always run commands from the repo root unless noted; prefer PowerShell format. Example bootstrap:
-  ```powershell
-  Set-Location 'd:\Kingbora\ai-workspace\easy-law'
-  pnpm install
-  ```
+## 📖 项目概述
 
-## Server essentials
-- Entry point `src/index.ts` runs `runMigrationsAndSeeds`, which executes Drizzle migrations (`drizzle/`) and seeds (`ensureDefaultPermissions`, `ensureDefaultCaseSettings`). Keep migrations in sync before touching data logic.
-- Database access uses Drizzle ORM with schemas in `src/db/schema.ts`. Enums are materialized in Postgres; changing enum values requires a migration update.
-- Authentication is handled by Better Auth (`src/auth/index.ts`). Routes obtain the session via `requireCurrentUser` in `routes/utils/current-user.ts` and gate actions with `ensureRoleAllowed`.
-- REST routers live under `src/routes/*.ts`. `cases.ts` illustrates the validation pattern: sanitize input, enforce enum sets, and return structured response DTOs. Follow these helpers when adding fields.
-- Error handling is centralized in `middlewares/error-handlers.ts`; throw `HttpError` with status/message for predictable responses.
+**项目名称**: 法律案件管理系统
+**项目类型**: 全栈 Web 应用
+**系统角色**: 超级管理员、管理员、行政、律师、律助
+**部门角色**: 工伤部、保险部
+**核心功能**: 
+- 用户认证与权限管理
+- 案件创建与跟踪
+- 客户管理
+- 团队管理
 
-## Server workflows
-- Generate & push migrations:
-  ```powershell
-  pnpm --filter @easy-law/server-project db:generate
-  pnpm --filter @easy-law/server-project db:push
-  ```
-- Seed the built-in super admin (email `super@qq.com`, password `a@000123`) via:
-  ```powershell
-  pnpm --filter @easy-law/server-project seed:super-admin
-  ```
-- Migration utilities:
-  ```powershell
-  pnpm --filter @easy-law/server-project exec tsx scripts/check-migrations.ts
-  pnpm --filter @easy-law/server-project exec tsx scripts/reset-db.ts  # destructive: drops public & drizzle schemas
-  ```
-- `.env` (checked in for dev) exports `DATABASE_URL`, `HOST`, etc.; ensure Postgres is running before server scripts.
+## 🛠️ 技术栈说明
 
-## Web essentials
-- Next.js app resides in `projects/web-project/app`. Dashboard routes use the `(dashboard)` segment; e.g., `app/(dashboard)/cases/my/page.tsx` consumes the `/api/cases` endpoints.
-- Shared UI components under `components/` (e.g., `components/cases/CaseModal.tsx`) mirror the server DTO shapes; align any schema changes with these components.
+### 前端技术栈
+- **框架**: Next.js 14，AppRouter
+- **语言**: TypeScript 5.0+
+- **状态管理**: zustand
+- **UI 组件库**: Ant Design 5.19+
+- **样式处理**: SCSS 模块
+- **数据请求**: swrc + axios
+- **认证**: BetterAuth 1.3.27
 
-## Collaboration notes
-- Husky + lint-staged enforce ESLint on commit; run `pnpm lint` locally before large changes.
-- For risky DB operations (resets, seed overwrites) warn the user and confirm scope. Always restart the server after altering migrations or `.env`.
-- When introducing new features, update both server routes and matching frontend components, and extend seeds if new reference data is required.
-- Output in Chinese
+### 后端技术栈
+- **运行时**: Node.js 18+
+- **框架**: Express.js 4.19+
+- **语言**: TypeScript 5.0+
+- **数据库**: PostgreSQL + Drizzle ORM
+- **认证**: BetterAuth 1.3.27
+- **API 风格**: RESTful API
+
+### 开发工具
+- **包管理器**: pnpm
+- **数据库迁移**: Drizzle Kit
+- **代码检查和格式化**: ESLint
+
+## 📁 项目结构
+- `projects/server-project` – TypeScript + Express 认证服务，使用 Better Auth。
+- `projects/web-project` – Next.js 15 登录体验，使用 Ant Design 和 SCSS 模块。
+- `packages/eslint-config` – 共享的 ESLint 配置。
+
+## 🚀 快速开始
+
+```powershell
+pnpm install
+```
+
+### 常用脚本
+
+```powershell
+pnpm dev:server   # 以监听模式运行 Express API
+pnpm dev:web      # 启动 Next.js 开发服务器
+pnpm lint         # 在整个工作区运行 lint
+pnpm clean        # 清理所有构建产物和 node_modules
+pnpm build        # 构建所有项目
+pnpm db:rest      # 重置数据库到初始状态
+pnpm db:seed      # 向数据库添加初始数据
+pnpm db:generate  # 生成数据库迁移文件
+pnpm db:migrate   # 运行数据库迁移
+pnpm db:push      # 将数据库模式推送到数据库
+```
