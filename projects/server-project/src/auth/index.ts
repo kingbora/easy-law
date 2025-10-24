@@ -1,9 +1,11 @@
 import { betterAuth } from 'better-auth';
+import { admin } from 'better-auth/plugins';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { localization } from 'better-auth-localization';
 
 import { db } from '../db/client';
 import { users, accounts, sessions, verifications } from '../db/schema/auth-schema';
+import { ac, allRoles } from './permissions';
 const isProduction = process.env.NODE_ENV === 'production';
 const baseURL =
   isProduction 
@@ -16,6 +18,11 @@ export const auth = betterAuth({
   basePath,
   baseURL,
   plugins: [
+    admin({
+      ac,
+      roles: allRoles,
+      adminRoles: ['super_admin'],
+    }),
     localization({
       defaultLocale: 'zh-Hans',
     })

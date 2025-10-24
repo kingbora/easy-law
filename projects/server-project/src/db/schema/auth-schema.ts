@@ -1,15 +1,5 @@
 import { pgTable, text, timestamp, boolean, pgEnum } from 'drizzle-orm/pg-core';
 
-// 定义角色枚举
-export const roleEnum = pgEnum('role', [
-  'super_admin', // 超级管理员
-  'admin', // 管理员
-  'administration', // 行政
-  'sale', // 销售
-  'lawyer', // 律师
-  'assistant' // 律助
-]);
-
 // 定义部门枚举
 export const departmentEnum = pgEnum('department', [
   'work_injury', // 工伤
@@ -22,11 +12,14 @@ export const users = pgTable('user', {
   name: text('name'),
   emailVerified: boolean('email_verified').default(false),
   image: text('image'),
-  role: roleEnum('role').default('assistant'),
+  role: text('role').default('assistant'),
   department: departmentEnum('department'),
   supervisorId: text('supervisor_id'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  banned: boolean('banned').default(false),
+  banReason: text('ban_reason'),
+  banExpires: timestamp('ban_expires'),
 });
 
 export const sessions = pgTable('session', {
@@ -38,6 +31,7 @@ export const sessions = pgTable('session', {
   userAgent: text('user_agent'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  impersonatedBy: text('impersonated_by'),
 });
 
 export const accounts = pgTable('account', {
