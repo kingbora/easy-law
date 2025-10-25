@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
+import 'antd/locale/zh_CN';
 import 'antd/dist/reset.css';
 import './globals.scss';
 

@@ -1,10 +1,11 @@
 import { betterAuth } from 'better-auth';
-import { admin } from 'better-auth/plugins';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { admin } from 'better-auth/plugins';
 import { localization } from 'better-auth-localization';
 
 import { db } from '../db/client';
 import { users, accounts, sessions, verifications } from '../db/schema/auth-schema';
+
 import { ac, allRoles } from './permissions';
 const isProduction = process.env.NODE_ENV === 'production';
 const baseURL =
@@ -21,12 +22,41 @@ export const auth = betterAuth({
     admin({
       ac,
       roles: allRoles,
-      adminRoles: ['super_admin'],
+      adminRoles: ['super_admin']
     }),
     localization({
       defaultLocale: 'zh-Hans',
     })
   ],
+  user: {
+    additionalFields: {
+      department: {
+        type: 'string',
+        required: false,
+        input: true // 这个字段会在个人资料页面显示为可编辑项
+      },
+      creatorId: {
+        type: 'string',
+        required: false,
+        input: false
+      },
+      updaterId: {
+        type: 'string',
+        required: false,
+        input: false
+      },
+      supervisorId: {
+        type: 'string',
+        required: false,
+        input: true
+      },
+      gender: {
+        type: 'string',
+        required: false,
+        input: true
+      }
+    }
+  },
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema: {

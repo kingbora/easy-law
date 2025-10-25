@@ -31,6 +31,7 @@ export interface CreateUserPayload {
   department?: UserDepartment | null;
   supervisorId?: string | null;
   password?: string;
+  creatorId?: string | null;
 }
 
 export interface UpdateUserPayload {
@@ -41,6 +42,7 @@ export interface UpdateUserPayload {
   gender?: 'male' | 'female' | null;
   department?: UserDepartment | null;
   supervisorId?: string | null;
+  updaterId?: string | null;
 }
 
 export interface CurrentUserResponse extends UserResponse {
@@ -142,6 +144,19 @@ function mapUserPayload(raw: unknown): UserResponse | null {
     return null;
   }
 
+  const baseData =
+    'data' in base && typeof (base as { data?: unknown }).data === 'object' && (base as { data?: unknown }).data !== null
+      ? ((base as { data: Record<string, unknown> }).data)
+      : undefined;
+  const containerData =
+    'data' in container && typeof (container as { data?: unknown }).data === 'object' && (container as { data?: unknown }).data !== null
+      ? ((container as { data: Record<string, unknown> }).data)
+      : undefined;
+  const mergedData = {
+    ...(containerData ?? {}),
+    ...(baseData ?? {})
+  } as Record<string, unknown>;
+
   const id = typeof base.id === 'string' ? base.id : null;
   const email = typeof base.email === 'string' ? base.email : null;
 
@@ -150,7 +165,14 @@ function mapUserPayload(raw: unknown): UserResponse | null {
   }
 
   const supervisor = normalizeSupervisor(
-    container.supervisor ?? base.supervisor ?? base.supervisorInfo ?? base.supervisorId ?? container.supervisorId
+    container.supervisor ??
+      base.supervisor ??
+      base.supervisorInfo ??
+      base.supervisorId ??
+      container.supervisorId ??
+      mergedData.supervisor ??
+      mergedData.supervisorInfo ??
+      mergedData.supervisorId
   );
 
   const createdAt = normalizeDate(base.createdAt ?? container.createdAt);
@@ -162,8 +184,8 @@ function mapUserPayload(raw: unknown): UserResponse | null {
     email,
     role: castRole(base.role ?? container.role),
     image: typeof base.image === 'string' ? base.image : null,
-    gender: castGender(base.gender ?? container.gender),
-    department: castDepartment(base.department ?? container.department),
+    gender: castGender(base.gender ?? container.gender ?? mergedData.gender),
+    department: castDepartment(base.department ?? container.department ?? mergedData.department),
     supervisor,
     createdAt,
     updatedAt,
@@ -224,6 +246,9 @@ export async function createUser(payload: CreateUserPayload): Promise<UserRespon
   if (payload.supervisorId !== undefined) {
     extraData.supervisorId = payload.supervisorId;
   }
+  if (payload.creatorId !== undefined) {
+    extraData.creatorId = payload.creatorId;
+  }
 
   const result = (await authClient.admin.createUser({
     email: payload.email,
@@ -266,6 +291,9 @@ export async function updateUser(id: string, payload: UpdateUserPayload): Promis
   }
   if (payload.supervisorId !== undefined) {
     updateData.supervisorId = payload.supervisorId;
+  }
+  if (payload.updaterId !== undefined) {
+    updateData.updaterId = payload.updaterId;
   }
 
   const result = (await authClient.admin.updateUser({

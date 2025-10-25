@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 
 import { Button, Descriptions, Input, Modal, Select, Space, Typography, message } from 'antd';
 import { EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
-import type { UserRole } from '@/lib/users-api';
+import type { UserRole, UserDepartment } from '@/lib/users-api';
 
 export const DEFAULT_INITIAL_PASSWORD = 'a@000123';
 
@@ -16,7 +17,7 @@ export interface TeamMemberModalResult {
   email: string;
   password?: string;
   gender?: 'male' | 'female' | null;
-  department?: 'work_injury' | 'insurance' | null;
+  department?: UserDepartment | null;
   supervisorId?: string | null;
 }
 
@@ -38,13 +39,28 @@ interface RoleOption {
 interface SupervisorOption {
   label: string;
   value: string;
+  role?: UserRole;
+}
+
+interface DepartmentOption {
+  label: string;
+  value: UserDepartment;
 }
 
 interface TeamMemberModalProps {
   open: boolean;
   mode: TeamMemberModalMode;
   roles: RoleOption[];
-  supervisors: SupervisorOption[];
+  supervisors?: SupervisorOption[];
+  departmentOptions?: DepartmentOption[];
+  departmentEditable?: boolean;
+  defaultDepartment?: UserDepartment | null;
+  defaultSupervisorId?: string | null;
+  getSupervisorOptions?: (params: {
+    role: UserRole;
+    department: UserDepartment | null;
+    excludeUserId?: string | null;
+  }) => SupervisorOption[];
   initialValues?: TeamMemberModalDetail;
   onCancel: () => void;
   onSubmit?: (values: TeamMemberModalResult) => void;
@@ -58,7 +74,7 @@ interface TeamMemberFormState {
   email: string;
   joinDate: string;
   gender: 'male' | 'female' | null;
-  department: 'work_injury' | 'insurance' | null;
+  department: UserDepartment | null;
   supervisorId: string | null;
 }
 
@@ -74,12 +90,12 @@ const GENDER_LABEL_MAP: Record<'male' | 'female', string> = {
   female: '女'
 };
 
-const DEPARTMENT_OPTIONS = [
-  { label: '工伤部门', value: 'work_injury' as const },
-  { label: '保险部门', value: 'insurance' as const }
+const DEPARTMENT_OPTIONS: DepartmentOption[] = [
+  { label: '工伤部门', value: 'work_injury' },
+  { label: '保险部门', value: 'insurance' }
 ];
 
-const DEPARTMENT_LABEL_MAP: Record<'work_injury' | 'insurance', string> = {
+const DEPARTMENT_LABEL_MAP: Record<UserDepartment, string> = {
   work_injury: '工伤部门',
   insurance: '保险部门'
 };
@@ -88,13 +104,25 @@ export default function TeamMemberModal({
   open,
   mode,
   roles,
-  supervisors,
+  supervisors = [],
+  departmentOptions,
+  departmentEditable = true,
+  defaultDepartment = null,
+  defaultSupervisorId = null,
+  getSupervisorOptions,
   initialValues,
   onCancel,
   onSubmit,
   onModeChange,
   confirmLoading
 }: TeamMemberModalProps) {
+  const effectiveDepartmentOptions = (departmentOptions && departmentOptions.length > 0
+    ? departmentOptions
+    : DEPARTMENT_OPTIONS);
+  const singleDepartmentValue = useMemo(
+    () => (effectiveDepartmentOptions.length === 1 ? effectiveDepartmentOptions[0].value : null),
+    [effectiveDepartmentOptions]
+  );
   const fallbackRole = (roles[0]?.value ?? 'assistant') as UserRole;
   const [formValues, setFormValues] = useState<TeamMemberFormState>({
     name: '',
@@ -102,7 +130,7 @@ export default function TeamMemberModal({
     email: '',
     joinDate: dayjs().format('YYYY-MM-DD'),
     gender: null,
-    department: null,
+    department: defaultDepartment ?? singleDepartmentValue,
     supervisorId: null
   });
 
@@ -126,6 +154,11 @@ export default function TeamMemberModal({
       mode === 'create'
         ? dayjs().format('YYYY-MM-DD')
         : initialValues?.joinDate ?? '';
+    const baseDepartment =
+      initialValues?.department ??
+      (mode === 'create'
+        ? defaultDepartment ?? singleDepartmentValue
+        : initialValues?.department ?? null);
 
     setFormValues({
       name: initialValues?.name ?? '',
@@ -133,31 +166,134 @@ export default function TeamMemberModal({
       email: initialValues?.email ?? '',
       joinDate: baseJoinDate,
       gender: initialValues?.gender ?? null,
-      department: initialValues?.department ?? null,
+      department: baseDepartment ?? null,
       supervisorId: initialValues?.supervisor?.id ?? null
     });
-  }, [initialValues?.department, initialValues?.email, initialValues?.gender, initialValues?.id, initialValues?.joinDate, initialValues?.name, initialValues?.role, initialValues?.supervisor?.id, mode, open, roles]);
+  }, [
+    defaultDepartment,
+    initialValues?.department,
+    initialValues?.email,
+    initialValues?.gender,
+    initialValues?.id,
+    initialValues?.joinDate,
+    initialValues?.name,
+    initialValues?.role,
+    initialValues?.supervisor?.id,
+    mode,
+    open,
+    roles,
+    singleDepartmentValue
+  ]);
 
   const isSuperAdminSelection = formValues.role === 'super_admin';
-  const departmentDisabled = isSuperAdminSelection;
-  const supervisorDisabled = isSuperAdminSelection;
+  const departmentDisabled = isSuperAdminSelection || !departmentEditable;
+  const supervisorDisabled = isSuperAdminSelection || formValues.role === 'admin';
+  const requiresSupervisor = !supervisorDisabled;
+  const departmentPlaceholder = departmentDisabled
+    ? isSuperAdminSelection
+      ? '无需选择'
+      : '不可更改所属部门'
+    : '请选择所属部门';
 
   const availableSupervisorOptions = useMemo(() => {
-    const filtered = supervisors.filter((option) => option.value !== (initialValues?.id ?? ''));
-    if (initialValues?.supervisor?.id) {
-      const exists = filtered.some((option) => option.value === initialValues.supervisor!.id);
-      if (!exists) {
-        return [
-          ...filtered,
-          {
-            value: initialValues.supervisor.id,
-            label: initialValues.supervisor.name ?? '未命名律师'
-          }
-        ];
+    const excludeUserId = initialValues?.id ?? null;
+    const baseOptions = getSupervisorOptions
+      ? getSupervisorOptions({
+          role: formValues.role,
+          department: formValues.department,
+          excludeUserId
+        })
+      : supervisors.filter((option) => option.value !== (initialValues?.id ?? ''));
+    const filtered = baseOptions.filter((option) => option.value !== (initialValues?.id ?? ''));
+    const merged = (() => {
+      if (initialValues?.supervisor?.id) {
+        const exists = filtered.some((option) => option.value === initialValues.supervisor!.id);
+        if (!exists) {
+          return [
+            ...filtered,
+            {
+              value: initialValues.supervisor.id,
+              label: initialValues.supervisor.name ?? '未命名律师'
+            }
+          ];
+        }
       }
+      return filtered;
+    })();
+    const rolePriority = (role?: UserRole) => {
+      if (role === 'admin') {
+        return 0;
+      }
+      if (role === 'super_admin') {
+        return 1;
+      }
+      return 2;
+    };
+    return [...merged].sort((a, b) => {
+      const priorityDiff = rolePriority(a.role) - rolePriority(b.role);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      return a.label.localeCompare(b.label, 'zh-Hans-CN');
+    });
+  }, [
+    formValues.department,
+    formValues.role,
+    getSupervisorOptions,
+    initialValues?.id,
+    initialValues?.supervisor,
+    supervisors
+  ]);
+
+  useEffect(() => {
+    if (mode !== 'create' || supervisorDisabled) {
+      return;
     }
-    return filtered;
-  }, [initialValues?.id, initialValues?.supervisor, supervisors]);
+    setFormValues((prev) => {
+      const options = availableSupervisorOptions;
+      const currentExists = prev.supervisorId
+        ? options.some((option) => option.value === prev.supervisorId)
+        : false;
+      if (currentExists) {
+        return prev;
+      }
+      const canUseDefault = defaultSupervisorId
+        ? options.some((option) => option.value === defaultSupervisorId)
+        : false;
+      if (canUseDefault && prev.supervisorId !== defaultSupervisorId) {
+        return {
+          ...prev,
+          supervisorId: defaultSupervisorId!
+        };
+      }
+      if (!canUseDefault && prev.supervisorId !== null) {
+        return {
+          ...prev,
+          supervisorId: null
+        };
+      }
+      return prev;
+    });
+  }, [availableSupervisorOptions, defaultSupervisorId, mode, supervisorDisabled]);
+
+  useEffect(() => {
+    if (mode === 'create' || supervisorDisabled) {
+      return;
+    }
+    setFormValues((prev) => {
+      if (!prev.supervisorId) {
+        return prev;
+      }
+      const exists = availableSupervisorOptions.some((option) => option.value === prev.supervisorId);
+      if (exists) {
+        return prev;
+      }
+      return {
+        ...prev,
+        supervisorId: null
+      };
+    });
+  }, [availableSupervisorOptions, mode, supervisorDisabled]);
 
   const handleSubmit = async () => {
     if (!onSubmit) {
@@ -195,6 +331,11 @@ export default function TeamMemberModal({
       return;
     }
 
+    if (requiresSupervisor && !supervisorId) {
+      message.error('请选择直属上级');
+      return;
+    }
+
     const payload: TeamMemberModalResult = {
       name: name.trim(),
       role,
@@ -207,15 +348,22 @@ export default function TeamMemberModal({
     onSubmit(payload);
   };
 
+  const viewFooter: ReactNode[] = [
+    <Button key="close" onClick={onCancel}>
+      关闭
+    </Button>
+  ];
+
+  if (onModeChange) {
+    viewFooter.push(
+      <Button key="edit" type="primary" icon={<EditOutlined />} onClick={() => onModeChange('edit')}>
+        编辑成员
+      </Button>
+    );
+  }
+
   const footer = mode === 'view'
-    ? [
-        <Button key="close" onClick={onCancel}>
-          关闭
-        </Button>,
-        <Button key="edit" type="primary" icon={<EditOutlined />} onClick={() => onModeChange?.('edit')}>
-          编辑成员
-        </Button>
-      ]
+    ? viewFooter
     : [
         <Button key="cancel" onClick={onCancel}>
           取消
@@ -287,7 +435,7 @@ export default function TeamMemberModal({
                     ...prev,
                     role: value,
                     department: value === 'super_admin' ? null : prev.department,
-                    supervisorId: value === 'super_admin' ? null : prev.supervisorId
+                    supervisorId: value === 'super_admin' || value === 'admin' ? null : prev.supervisorId
                   }))
                 }
               />
@@ -301,12 +449,12 @@ export default function TeamMemberModal({
                 allowClear={!departmentDisabled}
                 disabled={departmentDisabled}
                 value={formValues.department ?? undefined}
-                options={DEPARTMENT_OPTIONS}
-                placeholder={departmentDisabled ? '超级管理员无需选择' : '请选择所属部门'}
+                options={effectiveDepartmentOptions}
+                placeholder={departmentPlaceholder}
                 onChange={(value) =>
                   setFormValues((prev) => ({
                     ...prev,
-                    department: (value ?? null) as 'work_injury' | 'insurance' | null
+                    department: (value ?? null) as UserDepartment | null
                   }))
                 }
               />
@@ -333,11 +481,16 @@ export default function TeamMemberModal({
               initialValues?.supervisor?.name ?? '—'
             ) : (
               <Select
-                allowClear
+                allowClear={!requiresSupervisor}
+                showSearch={!supervisorDisabled}
+                optionFilterProp="label"
                 disabled={supervisorDisabled}
                 options={availableSupervisorOptions}
                 value={formValues.supervisorId ?? undefined}
-                placeholder={supervisorDisabled ? '超级管理员无需选择' : '请选择直属上级（可选）'}
+                placeholder={supervisorDisabled ? '无需选择' : requiresSupervisor ? '请选择直属上级' : '请选择直属上级（可选）'}
+                filterOption={(input, option) =>
+                  (option?.label as string | undefined)?.toLowerCase().includes(input.toLowerCase()) ?? false
+                }
                 onChange={(value) =>
                   setFormValues((prev) => ({
                     ...prev,

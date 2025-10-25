@@ -6,6 +6,11 @@ export const departmentEnum = pgEnum('department', [
   'insurance' // 保险
 ]);
 
+export const genderEnum = pgEnum('gender', [
+  'male',
+  'female'
+]);
+
 export const users = pgTable('user', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
@@ -13,8 +18,11 @@ export const users = pgTable('user', {
   emailVerified: boolean('email_verified').default(false),
   image: text('image'),
   role: text('role').default('assistant'),
+  gender: genderEnum('gender'),
   department: departmentEnum('department'),
   supervisorId: text('supervisor_id'),
+  creatorId: text('creator_id'),
+  updaterId: text('updater_id'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   banned: boolean('banned').default(false),

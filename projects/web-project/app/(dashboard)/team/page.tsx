@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { Button, Card, Form, Input, Popconfirm, Select, Space, Table, Tag, message } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { Button, Card, Form, Input, Popconfirm, Result, Select, Space, Table, Tag, message } from 'antd';
+import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { PlusOutlined } from '@ant-design/icons';
 
@@ -38,7 +38,10 @@ interface TeamMember {
   initialPassword?: string;
   department: UserDepartment | null;
   supervisor: UserSupervisorInfo | null;
+  supervisorId: string | null;
 }
+
+type TeamMemberTreeNode = TeamMember & { children?: TeamMemberTreeNode[] };
 
 type Filters = {
   name?: string;
@@ -68,11 +71,6 @@ const ROLE_COLOR_MAP: Record<UserRole, string> = {
   administration: 'orange'
 };
 
-const GENDER_LABEL_MAP: Record<'male' | 'female', string> = {
-  male: '男',
-  female: '女'
-};
-
 const DEPARTMENT_LABEL_MAP: Record<UserDepartment, string> = {
   work_injury: '工伤部门',
   insurance: '保险部门'
@@ -88,7 +86,26 @@ const ROLE_OPTIONS = (Object.entries(ROLE_LABEL_MAP) as Array<[UserRole, string]
   label
 }));
 
+const TEAM_ACCESS_ROLES: readonly UserRole[] = ['super_admin', 'admin'];
+const TEAM_ACCESS_ROLE_SET: ReadonlySet<UserRole> = new Set(TEAM_ACCESS_ROLES);
+const ADMIN_MANAGEABLE_ROLES: readonly UserRole[] = ['sale', 'lawyer', 'administration', 'assistant'];
+const ADMIN_MANAGEABLE_ROLE_SET: ReadonlySet<UserRole> = new Set(ADMIN_MANAGEABLE_ROLES);
+const SUPERVISOR_ROLE_RULES: Partial<Record<UserRole, readonly UserRole[]>> = {
+  administration: ['administration', 'admin'],
+  sale: ['sale', 'admin'],
+  lawyer: ['lawyer', 'admin'],
+  assistant: ['lawyer', 'admin']
+};
+
+const DEFAULT_PAGE_SIZE = 10;
+const MIN_PAGE_SIZE = 5;
+const MAX_PAGE_SIZE = 40;
+const ESTIMATED_ROW_HEIGHT = 56;
+const RESERVED_VERTICAL_SPACE = 360;
+const DEFAULT_PAGE_SIZE_OPTIONS = ['5', '10', '15', '20', '30'];
+
 function mapUserResponse(user: UserResponse, fallbackPassword?: string): TeamMember {
+  const supervisor = user.supervisor ?? null;
   return {
     id: user.id,
     name: user.name ?? '',
@@ -99,7 +116,8 @@ function mapUserResponse(user: UserResponse, fallbackPassword?: string): TeamMem
     gender: user.gender ?? null,
     initialPassword: user.initialPassword ?? fallbackPassword,
     department: user.department ?? null,
-    supervisor: user.supervisor ?? null
+    supervisor,
+    supervisorId: supervisor?.id ?? null
   };
 }
 
@@ -110,8 +128,18 @@ export default function TeamManagementPage() {
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [submitting, setSubmitting] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
-  const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; role: UserRole; department: UserDepartment | null } | null>(null);
+  const [currentUserLoading, setCurrentUserLoading] = useState(true);
   const [filterForm] = Form.useForm<Filters>();
+  const [paginationConfig, setPaginationConfig] = useState<TablePaginationConfig>(() => ({
+    current: 1,
+    pageSize: DEFAULT_PAGE_SIZE,
+    defaultPageSize: DEFAULT_PAGE_SIZE,
+    showQuickJumper: true,
+    showSizeChanger: true,
+    align: 'end',
+    pageSizeOptions: DEFAULT_PAGE_SIZE_OPTIONS
+  }));
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
@@ -139,9 +167,17 @@ export default function TeamManagementPage() {
         if (!mounted) {
           return;
         }
-        setCurrentUserRole(me.role);
+        setCurrentUser({
+          id: me.id,
+          role: me.role,
+          department: me.department ?? null
+        });
       } catch (error) {
         // ignore
+      } finally {
+        if (mounted) {
+          setCurrentUserLoading(false);
+        }
       }
     };
 
@@ -152,8 +188,26 @@ export default function TeamManagementPage() {
     };
   }, []);
 
-  const filteredMembers = useMemo(() => {
-    return members.filter((member) => {
+  const viewableMembers = useMemo(() => {
+    if (!currentUser) {
+      return [];
+    }
+    if (currentUser.role === 'super_admin') {
+      return members;
+    }
+    if (currentUser.role === 'admin') {
+      if (!currentUser.department) {
+        return [];
+      }
+      return members.filter(
+        (member) => member.department === currentUser.department && ADMIN_MANAGEABLE_ROLE_SET.has(member.role)
+      );
+    }
+    return [];
+  }, [currentUser, members]);
+
+  const matchesFilters = useCallback(
+    (member: TeamMember) => {
       if (filters.name) {
         const keyword = filters.name.toLowerCase();
         if (!member.name.toLowerCase().includes(keyword)) {
@@ -164,8 +218,66 @@ export default function TeamManagementPage() {
         return false;
       }
       return true;
+    },
+    [filters]
+  );
+
+  const treeMembers = useMemo<TeamMemberTreeNode[]>(() => {
+    if (!viewableMembers.length) {
+      return [];
+    }
+
+    const nodeMap = new Map<string, TeamMemberTreeNode>();
+
+    viewableMembers.forEach((member) => {
+      nodeMap.set(member.id, { ...member, children: [] });
     });
-  }, [filters, members]);
+
+    const rootIds = new Set(nodeMap.keys());
+
+    viewableMembers.forEach((member) => {
+      if (!member.supervisorId) {
+        return;
+      }
+      const parentNode = nodeMap.get(member.supervisorId);
+      const currentNode = nodeMap.get(member.id);
+      if (!parentNode || !currentNode) {
+        return;
+      }
+      parentNode.children = parentNode.children ?? [];
+      parentNode.children.push(currentNode);
+      rootIds.delete(member.id);
+    });
+
+    const pruneNodes = (nodes: TeamMemberTreeNode[]): TeamMemberTreeNode[] => {
+      return nodes.reduce<TeamMemberTreeNode[]>((acc, node) => {
+        const childNodes = node.children ? pruneNodes(node.children) : [];
+        const matched = matchesFilters(node);
+        if (!matched && childNodes.length === 0) {
+          return acc;
+        }
+        acc.push({
+          ...node,
+          children: childNodes.length ? childNodes : undefined
+        });
+        return acc;
+      }, []);
+    };
+
+    const roots = Array.from(rootIds)
+      .map((id) => nodeMap.get(id))
+      .filter((node): node is TeamMemberTreeNode => Boolean(node));
+
+    return pruneNodes(roots);
+  }, [matchesFilters, viewableMembers]);
+
+  const totalMemberCount = useMemo(() => {
+    const countNodes = (nodes: TeamMemberTreeNode[]): number =>
+      nodes.reduce((acc, node) => acc + 1 + (node.children ? countNodes(node.children) : 0), 0);
+    return countNodes(treeMembers);
+  }, [treeMembers]);
+
+  const rootMemberCount = useMemo(() => treeMembers.length, [treeMembers]);
 
   const handleSearch = useCallback((values: Filters) => {
     setFilters({
@@ -179,50 +291,205 @@ export default function TeamManagementPage() {
     setFilters({});
   }, [filterForm]);
 
-  const openCreateModal = useCallback(() => {
-    setModalState({ open: true, mode: 'create' });
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const computeInitialPageSize = () => {
+      const availableHeight = Math.max(window.innerHeight - RESERVED_VERTICAL_SPACE, MIN_PAGE_SIZE * ESTIMATED_ROW_HEIGHT);
+      const estimated = Math.floor(availableHeight / ESTIMATED_ROW_HEIGHT);
+      return Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, estimated || DEFAULT_PAGE_SIZE));
+    };
+    const initialSize = computeInitialPageSize();
+    setPaginationConfig((prev) => {
+      const optionSet = new Set((prev.pageSizeOptions ?? DEFAULT_PAGE_SIZE_OPTIONS).map((option) => Number(option)));
+      optionSet.add(initialSize);
+      const pageSizeOptions = Array.from(optionSet)
+        .sort((a, b) => a - b)
+        .map((value) => value.toString());
+      return {
+        ...prev,
+        current: 1,
+        pageSize: initialSize,
+        defaultPageSize: initialSize,
+        pageSizeOptions
+      };
+    });
   }, []);
 
+  useEffect(() => {
+    setPaginationConfig((prev) => {
+      const nextPageSize = prev.pageSize ?? DEFAULT_PAGE_SIZE;
+      const totalPages = nextPageSize > 0 ? Math.ceil(rootMemberCount / nextPageSize) : 1;
+      const nextCurrent = Math.min(prev.current ?? 1, Math.max(totalPages, 1));
+      return {
+        ...prev,
+        total: rootMemberCount,
+        current: nextCurrent
+      };
+    });
+  }, [rootMemberCount]);
+
   const creatableRoleOptions = useMemo(() => {
-    if (currentUserRole === 'admin') {
-      return ROLE_OPTIONS.filter((option) => option.value !== 'super_admin');
+    if (!currentUser) {
+      return [];
     }
-    return ROLE_OPTIONS;
-  }, [currentUserRole]);
+    if (currentUser.role === 'super_admin') {
+      return ROLE_OPTIONS;
+    }
+    if (currentUser.role === 'admin') {
+      return ROLE_OPTIONS.filter((option) => ADMIN_MANAGEABLE_ROLE_SET.has(option.value));
+    }
+    return [];
+  }, [currentUser]);
 
   const modalRoleOptions = useMemo(() => {
     if (!modalState.open) {
       return ROLE_OPTIONS;
     }
-
+    if (!currentUser) {
+      return ROLE_OPTIONS;
+    }
     if (modalState.mode === 'create') {
       return creatableRoleOptions;
     }
-
-    if (currentUserRole === 'admin') {
+    if (currentUser.role === 'admin') {
       const recordRole = modalState.record?.role;
-
       return ROLE_OPTIONS.filter((option) => {
         if (option.value === recordRole) {
           return true;
         }
-        return option.value !== 'super_admin';
+        return ADMIN_MANAGEABLE_ROLE_SET.has(option.value);
       });
     }
-
     return ROLE_OPTIONS;
-  }, [creatableRoleOptions, currentUserRole, modalState]);
+  }, [creatableRoleOptions, currentUser, modalState]);
 
-  const headerAction = useMemo(
-    () => (
-      <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+  const filterRoleOptions = useMemo(() => {
+    if (!currentUser) {
+      return ROLE_OPTIONS;
+    }
+    if (currentUser.role === 'super_admin') {
+      return ROLE_OPTIONS;
+    }
+    if (currentUser.role === 'admin') {
+      return ROLE_OPTIONS.filter((option) => ADMIN_MANAGEABLE_ROLE_SET.has(option.value));
+    }
+    return [];
+  }, [currentUser]);
+
+  const hasTeamAccess = currentUser ? TEAM_ACCESS_ROLE_SET.has(currentUser.role) : false;
+
+  const openCreateModal = useCallback(() => {
+    if (!hasTeamAccess) {
+      message.error('您没有权限执行此操作');
+      return;
+    }
+    if (!creatableRoleOptions.length) {
+      message.error('暂无可创建的角色');
+      return;
+    }
+    setModalState({ open: true, mode: 'create' });
+  }, [creatableRoleOptions.length, hasTeamAccess]);
+
+  const headerAction = useMemo(() => {
+    if (!hasTeamAccess) {
+      return null;
+    }
+    return (
+      <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal} disabled={!creatableRoleOptions.length}>
         添加成员
       </Button>
-    ),
-    [openCreateModal]
-  );
+    );
+  }, [creatableRoleOptions.length, hasTeamAccess, openCreateModal]);
 
   useDashboardHeaderAction(headerAction);
+
+  const canManageMember = useCallback(
+    (member: TeamMember) => {
+      if (!currentUser) {
+        return false;
+      }
+      if (currentUser.role === 'super_admin') {
+        return true;
+      }
+      if (currentUser.role === 'admin') {
+        return (
+          !!currentUser.department &&
+          member.department === currentUser.department &&
+          ADMIN_MANAGEABLE_ROLE_SET.has(member.role)
+        );
+      }
+      return false;
+    },
+    [currentUser]
+  );
+
+  const defaultDepartmentForModal = currentUser?.role === 'admin' ? currentUser.department ?? null : null;
+
+  const departmentOptionsForModal = useMemo(() => {
+    if (currentUser?.role === 'admin' && currentUser.department) {
+      return [
+        {
+          value: currentUser.department,
+          label: DEPARTMENT_LABEL_MAP[currentUser.department]
+        }
+      ];
+    }
+    return undefined;
+  }, [currentUser]);
+
+  const supervisorOptionBuilder = useCallback(
+    ({ role, department, excludeUserId }: { role: UserRole; department: TeamMember['department']; excludeUserId?: string | null }) => {
+      if (!department) {
+        return [];
+      }
+
+      const allowedRoles = SUPERVISOR_ROLE_RULES[role] ?? [];
+      if (!allowedRoles.length) {
+        return [];
+      }
+
+      return members
+        .filter((member) => {
+          if (excludeUserId && member.id === excludeUserId) {
+            return false;
+          }
+          return member.department === department && allowedRoles.includes(member.role);
+        })
+        .map((member) => ({
+          value: member.id,
+          label: `${member.name}（${ROLE_LABEL_MAP[member.role]}）`,
+          role: member.role
+        }));
+    },
+    [members]
+  );
+  const defaultSupervisorIdForModal = currentUser?.role === 'admin' ? currentUser.id : null;
+
+  const handlePaginationChange = useCallback((page: number, pageSize?: number) => {
+    setPaginationConfig((prev) => ({
+      ...prev,
+      current: page,
+      pageSize: pageSize ?? prev.pageSize
+    }));
+  }, []);
+
+  const handlePageSizeChange = useCallback((current: number, size: number) => {
+    setPaginationConfig((prev) => {
+      const optionSet = new Set((prev.pageSizeOptions ?? DEFAULT_PAGE_SIZE_OPTIONS).map((option) => Number(option)));
+      optionSet.add(size);
+      const pageSizeOptions = Array.from(optionSet)
+        .sort((a, b) => a - b)
+        .map((value) => value.toString());
+      return {
+        ...prev,
+        current,
+        pageSize: size,
+        pageSizeOptions
+      };
+    });
+  }, []);
 
   const handleViewMember = useCallback((record: TeamMember) => {
     setModalState({ open: true, mode: 'view', record });
@@ -244,36 +511,61 @@ export default function TeamManagementPage() {
 
   const handleSubmit = useCallback(
     async (values: TeamMemberModalResult) => {
-      setSubmitting(true);
-      try {
-        const payload = {
-          name: values.name.trim(),
-          email: values.email.trim(),
-          role: values.role,
-          gender: values.gender ?? null,
-          department: values.department ?? null,
-          supervisorId: values.supervisorId ?? null
-        };
+      if (!currentUser) {
+        message.error('未获取到当前用户信息，无法执行操作');
+        return;
+      }
+      if (!hasTeamAccess) {
+        message.error('您没有权限执行此操作');
+        return;
+      }
 
-        if (
-          modalState.open &&
-          modalState.mode === 'create' &&
-          currentUserRole === 'admin' &&
-          (payload.role === 'super_admin' || payload.role === 'admin')
-        ) {
-          message.error('管理员无法创建超级管理员或管理员角色');
+      const payload = {
+        name: values.name.trim(),
+        email: values.email.trim(),
+        role: values.role,
+        gender: values.gender ?? null,
+        department: values.department ?? null,
+        supervisorId: values.supervisorId ?? null,
+      };
+
+      if (currentUser.role === 'admin') {
+        if (!currentUser.department) {
+          message.error('管理员未分配部门，无法执行操作');
           return;
         }
+        if (!ADMIN_MANAGEABLE_ROLE_SET.has(payload.role)) {
+          message.error('管理员仅可管理本部门的销售、律师、行政和律助角色');
+          return;
+        }
+        if (payload.department !== currentUser.department) {
+          message.error('管理员仅可为本部门成员执行操作');
+          return;
+        }
+      }
 
+      setSubmitting(true);
+      try {
         if (modalState.open && modalState.mode === 'edit' && modalState.record) {
-          const updated = await updateUser(modalState.record.id, payload);
+          if (!canManageMember(modalState.record)) {
+            message.error('您无权编辑该成员');
+            return;
+          }
+          const updated = await updateUser(modalState.record.id, {
+            ...payload,
+            updaterId: currentUser.id
+          });
           const nextMember = mapUserResponse(updated, modalState.record.initialPassword);
           setMembers((prev) =>
             prev.map((member) => (member.id === nextMember.id ? { ...member, ...nextMember } : member))
           );
           message.success('成员信息已更新');
         } else {
-          const created = await createUser(payload);
+          
+          const created = await createUser({
+            ...payload,
+            creatorId: currentUser.id
+          });
           const nextMember = mapUserResponse(created, DEFAULT_INITIAL_PASSWORD);
           setMembers((prev) => [nextMember, ...prev]);
           message.success(`新增成员成功，初始密码为 ${created.initialPassword ?? DEFAULT_INITIAL_PASSWORD}`);
@@ -286,11 +578,20 @@ export default function TeamManagementPage() {
         setSubmitting(false);
       }
     },
-    [closeModal, currentUserRole, modalState]
+    [canManageMember, closeModal, currentUser, hasTeamAccess, modalState]
   );
 
   const handleDeleteMember = useCallback(
     async (id: string) => {
+      const targetMember = members.find((member) => member.id === id);
+      if (!targetMember) {
+        return;
+      }
+      if (!canManageMember(targetMember)) {
+        message.error('您无权删除该成员');
+        return;
+      }
+
       setDeletingIds((prev) => ({ ...prev, [id]: true }));
       try {
         await deleteUser(id);
@@ -310,11 +611,11 @@ export default function TeamManagementPage() {
         });
       }
     },
-    [closeModal, modalState]
+    [canManageMember, closeModal, members, modalState]
   );
 
-  const columns = useMemo<ColumnsType<TeamMember>>(
-    () => [
+  const columns = useMemo<ColumnsType<TeamMember>>(() => {
+    const list: ColumnsType<TeamMember> = [
       {
         title: '成员名称',
         dataIndex: 'name',
@@ -328,8 +629,11 @@ export default function TeamManagementPage() {
         title: '角色类型',
         dataIndex: 'role',
         render: (role: UserRole) => <Tag color={ROLE_COLOR_MAP[role]}>{ROLE_LABEL_MAP[role]}</Tag>
-      },
-      {
+      }
+    ];
+
+    if (currentUser?.role === 'super_admin') {
+      list.push({
         title: '所属部门',
         dataIndex: 'department',
         render: (department: TeamMember['department']) =>
@@ -338,21 +642,10 @@ export default function TeamManagementPage() {
           ) : (
             '—'
           )
-      },
-      {
-        title: '成员邮箱',
-        dataIndex: 'email'
-      },
-      {
-        title: '性别',
-        dataIndex: 'gender',
-        render: (gender: TeamMember['gender']) => (gender ? GENDER_LABEL_MAP[gender] : '—')
-      },
-      {
-        title: '直属上级',
-        dataIndex: ['supervisor', 'name'],
-        render: (_: unknown, record) => record.supervisor?.name ?? '—'
-      },
+      });
+    }
+
+    list.push(
       {
         title: '加入时间',
         dataIndex: 'joinDate'
@@ -360,26 +653,38 @@ export default function TeamManagementPage() {
       {
         title: '操作',
         key: 'actions',
-        render: (_, record) => (
-          <Popconfirm
-            title="确认删除该成员？"
-            description="删除后将无法恢复，请确认。"
-            okText="删除"
-            cancelText="取消"
-            okType="danger"
-            onConfirm={() => handleDeleteMember(record.id)}
-            okButtonProps={{ loading: Boolean(deletingIds[record.id]) }}
-          >
-            <Button type="link" danger loading={Boolean(deletingIds[record.id])}>
-              删除
-            </Button>
-          </Popconfirm>
-        )
+        render: (_, record) => {
+          const manageable = canManageMember(record);
+          return (
+            <Space size="small">
+              <Button
+                type="link"
+                onClick={() => setModalState({ open: true, mode: 'edit', record })}
+                disabled={!manageable}
+              >
+                编辑
+              </Button>
+              <Popconfirm
+                title="确认删除此成员吗？"
+                description="删除后将无法恢复，请确认。"
+                okText="删除"
+                cancelText="取消"
+                okType="danger"
+                disabled={!manageable}
+                onConfirm={() => handleDeleteMember(record.id)}
+              >
+                <Button type="link" danger loading={Boolean(deletingIds[record.id])} disabled={!manageable}>
+                  删除
+                </Button>
+              </Popconfirm>
+            </Space>
+          );
+        }
       }
-    ],
-    [deletingIds, handleDeleteMember, handleViewMember]
-  );
+    );
 
+    return list;
+  }, [canManageMember, currentUser?.role, deletingIds, handleDeleteMember, handleViewMember]);
   const modalInitialValues = useMemo<TeamMemberModalDetail | undefined>(() => {
     if (!modalState.open || modalState.mode === 'create' || !modalState.record) {
       return undefined;
@@ -399,16 +704,14 @@ export default function TeamManagementPage() {
     };
   }, [modalState]);
 
-  const supervisorOptions = useMemo(
-    () =>
-      members
-        .filter((member) => member.role === 'lawyer')
-        .map((member) => ({
-          value: member.id,
-          label: member.name || member.email || '未命名律师'
-        })),
-    [members]
-  );
+  const modalCanEdit =
+    modalState.open && modalState.mode !== 'create' && modalState.record
+      ? canManageMember(modalState.record)
+      : true;
+
+  if (!currentUserLoading && !hasTeamAccess) {
+    return <Result status="403" title="暂无权限" subTitle="您无权访问团队管理，请联系管理员。" />;
+  }
 
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
@@ -427,7 +730,8 @@ export default function TeamManagementPage() {
               allowClear
               placeholder="请选择角色类型"
               style={{ width: 220 }}
-              options={ROLE_OPTIONS}
+              options={filterRoleOptions}
+              disabled={!filterRoleOptions.length}
             />
           </Form.Item>
           <Form.Item>
@@ -445,9 +749,15 @@ export default function TeamManagementPage() {
         <Table<TeamMember>
           rowKey="id"
           columns={columns}
-          dataSource={filteredMembers}
-          pagination={{ pageSize: 8, showSizeChanger: false }}
-          loading={loading}
+          dataSource={treeMembers}
+          pagination={{
+            ...paginationConfig,
+            showTotal: (_, range) => `共 ${totalMemberCount} 人，当前显示第 ${range[0]}-${range[1]} 条`,
+            onChange: handlePaginationChange,
+            onShowSizeChange: handlePageSizeChange
+          }}
+          expandable={{ defaultExpandAllRows: true }}
+          loading={loading || currentUserLoading}
         />
       </Card>
 
@@ -456,11 +766,15 @@ export default function TeamManagementPage() {
           open
           mode={modalState.mode}
           roles={modalRoleOptions}
-          supervisors={supervisorOptions}
+          departmentOptions={departmentOptionsForModal}
+          departmentEditable={currentUser?.role !== 'admin'}
+          defaultDepartment={defaultDepartmentForModal}
+          defaultSupervisorId={defaultSupervisorIdForModal}
+          getSupervisorOptions={supervisorOptionBuilder}
           initialValues={modalInitialValues}
           onCancel={closeModal}
           onSubmit={handleSubmit}
-          onModeChange={handleModeChange}
+          onModeChange={modalCanEdit ? handleModeChange : undefined}
           confirmLoading={submitting}
         />
       ) : null}
