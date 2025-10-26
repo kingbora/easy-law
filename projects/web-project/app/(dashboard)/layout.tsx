@@ -3,25 +3,37 @@
 import {
   BellOutlined,
   BookOutlined,
-  ContactsOutlined,
   FolderOpenOutlined,
   HomeOutlined,
   LogoutOutlined,
+  MailOutlined,
   RightOutlined,
-  SolutionOutlined,
   TeamOutlined,
   UserOutlined
 } from '@ant-design/icons';
-import { Avatar, Badge, Breadcrumb, Button, Dropdown, Layout, Menu, message, type MenuProps } from 'antd';
+import {
+  Avatar,
+  Badge,
+  Breadcrumb,
+  Button,
+  ConfigProvider,
+  Dropdown,
+  Layout,
+  Menu,
+  Typography,
+  message,
+  type MenuProps
+} from 'antd';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-
+import zhCN from 'antd/locale/zh_CN';
 import { authClient } from '@/lib/auth-client';
 import ProfileModal from '@/components/profile/ProfileModal';
 import { ApiError } from '@/lib/api-client';
-import { fetchCurrentUser, updateUser, type UserRole } from '@/lib/users-api';
+import { updateUser, type UserRole } from '@/lib/users-api';
+import { useSessionStore } from '@/lib/stores/session-store';
 
 import { DashboardHeaderActionProvider } from './header-context';
 import styles from './layout.module.scss';
@@ -29,28 +41,47 @@ import Image from 'next/image';
 
 const { Header, Sider, Content } = Layout;
 
-const pathKeyMap: Record<string, string> = {
-  '/': 'overview',
-  '/cases/my': 'cases-my',
-  '/clients/my': 'clients-my',
-  '/team': 'team'
+const CASE_DEPARTMENTS = [
+  { key: 'work_injury', label: '工伤' },
+  { key: 'insurance', label: '保险' }
+] as const;
+
+const DEPARTMENT_LABEL_MAP: Record<'work_injury' | 'insurance', string> = {
+  work_injury: '工伤部门',
+  insurance: '保险部门'
 };
 
-const breadcrumbMap: Record<string, string[]> = {
-  '/cases/my': ['案件管理', '我的案件'],
-  '/clients/my': ['客户管理', '我的客户'],
-  '/team': ['团队管理'],
-  '/profile': ['个人资料']
+const ROLE_LABEL_MAP: Record<UserRole, string> = {
+  super_admin: '超级管理员',
+  admin: '管理员',
+  administration: '行政',
+  lawyer: '律师',
+  assistant: '律助',
+  sale: '销售'
 };
 
-interface SessionUser {
-  id?: string;
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
-  role?: UserRole | null;
-  gender?: 'male' | 'female' | null;
-}
+const pathKeyMap: Record<string, string> = CASE_DEPARTMENTS.reduce(
+  (acc, dept) => ({
+    ...acc,
+    '/cases/my': 'cases-my',
+    [`/cases/${dept.key}`]: `cases-${dept.key}`,
+  }),
+  {
+    '/': 'overview',
+    '/team': 'team'
+  } as Record<string, string>
+);
+
+const breadcrumbMap: Record<string, string[]> = CASE_DEPARTMENTS.reduce(
+  (acc, dept) => {
+    acc[`/cases/${dept.key}`] = ['案件管理', `${dept.label}案件`];
+    acc[`/cases/my`] = ['案件管理', '案件操作'];
+    return acc;
+  },
+  {
+    '/team': ['团队管理'],
+  } as Record<string, string[]>
+);
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -67,67 +98,25 @@ function isTeamPermissionRole(role: UserRole): role is TeamPermissionRole {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<SessionUser | null>(null);
+  const sessionUser = useSessionStore((state) => state.user);
+  const sessionInitialized = useSessionStore((state) => state.initialized);
+  const sessionLoading = useSessionStore((state) => state.loading);
+  const refreshSession = useSessionStore((state) => state.refresh);
+  const updateSessionUser = useSessionStore((state) => state.updateUser);
+  const clearSession = useSessionStore((state) => state.clear);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [headerAction, setHeaderAction] = useState<ReactNode | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [siderCollapsed, setSiderCollapsed] = useState(false);
-
+  
   useEffect(() => {
-    let mounted = true;
+    if (sessionInitialized || sessionLoading) {
+      return;
+    }
 
-    const loadUser = async () => {
-      try {
-        const session = await authClient.getSession();
-        if (!mounted || session.error) {
-          return;
-        }
-        const rawUser = session.data?.user;
-        if (!rawUser) {
-          return;
-        }
-
-        let nextUser: SessionUser = {
-          id: rawUser.id as string | undefined,
-          name: rawUser.name,
-          email: rawUser.email,
-          image: rawUser.image ?? null,
-          role: null,
-          gender: null,
-        };
-
-        try {
-          const detail = await fetchCurrentUser();
-          if (!mounted) {
-            return;
-          }
-          nextUser = {
-            ...nextUser,
-            name: detail.name ?? nextUser.name,
-            email: detail.email ?? nextUser.email,
-            image: detail.image ?? nextUser.image ?? null,
-            role: detail.role,
-            gender: detail.gender ?? nextUser.gender ?? null,
-          };
-        } catch (error) {
-          // ignore fetch errors; keep session data
-        }
-
-        if (mounted) {
-          setUser(nextUser);
-        }
-      } catch (error) {
-        /* noop */
-      }
-    };
-
-    void loadUser();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    void refreshSession();
+  }, [refreshSession, sessionInitialized, sessionLoading]);
 
   const selectedKeys = useMemo(() => {
     const key = pathKeyMap[pathname] ?? null;
@@ -143,34 +132,34 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       label: <Link href="/">首页概览</Link>
     });
 
+    const role = sessionUser?.role ?? null;
+
     items.push(
       {
         key: 'cases',
         icon: <BookOutlined />,
         label: '案件管理',
-        children: [
-          {
-            key: 'cases-my',
-            icon: <FolderOpenOutlined />,
-            label: <Link href="/cases/my">我的案件</Link>
-          }
-        ]
+        children: role === 'super_admin' ? (
+          CASE_DEPARTMENTS.map((dept) => ({
+          key: `cases-${dept.key}`,
+          icon: <FolderOpenOutlined />,
+          label: (
+            <Link href={`/cases/${dept.key}`}>
+              {dept.label}案件
+            </Link>
+          )
+        }))
+        ) : [{
+          key: `cases-my`,
+          icon: <FolderOpenOutlined />,
+          label: (
+            <Link href={`/cases/my`}>
+              {role === 'admin' ? '所有' : '我的'}案件
+            </Link>
+          )
+        }]
       },
-      {
-        key: 'clients',
-        icon: <ContactsOutlined />,
-        label: '客户管理',
-        children: [
-          {
-            key: 'clients-my',
-            icon: <SolutionOutlined />,
-            label: <Link href="/clients/my">我的客户</Link>
-          }
-        ]
-      }
     );
-
-    const role = user?.role;
 
     if (
       role &&
@@ -190,7 +179,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
 
     return items;
-  }, [user?.role]);
+  }, [sessionUser?.role]);
 
   const breadcrumbItems = useMemo(() => {
     const segments = breadcrumbMap[pathname] ?? [];
@@ -229,6 +218,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           message.error(result.error.message ?? '退出失败，请稍后重试');
           return;
         }
+        clearSession();
         message.success('已退出登录');
         router.push('/login');
       } catch (error) {
@@ -241,27 +231,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const handleProfileSubmit = useCallback(
     async ({ name, image }: { name: string; image?: string | null }) => {
-      if (!user?.id) {
+      if (!sessionUser?.id) {
         message.error('未获取到用户信息');
         return;
       }
 
       setProfileSaving(true);
       try {
-        const updated = await updateUser(user.id, {
+        const updated = await updateUser(sessionUser.id, {
           name,
           image: typeof image === 'undefined' ? undefined : image
         });
-
-        setUser((prev) => {
-          if (!prev) {
-            return prev;
-          }
-          return {
-            ...prev,
-            name: updated.name ?? name,
-            image: updated.image ?? null
-          };
+        updateSessionUser({
+          name: updated.name ?? name,
+          image: updated.image ?? null
         });
 
         message.success('个人资料已更新');
@@ -273,33 +256,58 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         setProfileSaving(false);
       }
     },
-    [user?.id]
+  [sessionUser?.id, updateSessionUser]
   );
 
-  const userMenu: MenuProps['items'] = [
-    {
-      key: 'profile',
-      label: '个人资料'
-    },
-    {
-      key: 'email',
-      label: '邮箱认证'
-    },
-    { type: 'divider' },
-    {
-      key: 'signout',
-      label: '退出登录',
-      icon: <LogoutOutlined />,
-      disabled: isSigningOut
-    }
-  ];
+  const userMenu: MenuProps['items'] = useMemo(() => {
+    return [
+      {
+        key: 'profile-info',
+        label: (
+          <div style={{ maxWidth: 240 }}>
+      <Typography.Text strong style={{ display: 'block' }}>
+        {sessionUser?.name ?? sessionUser?.email ?? '未设置昵称'}
+      </Typography.Text>
+      {
+        sessionUser?.role !== 'super_admin' && (
+          <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+        部门：{sessionUser?.department ? DEPARTMENT_LABEL_MAP[sessionUser.department] : '未分配部门'}
+      </Typography.Text>
+        )
+      }
+      <Typography.Text type="secondary" style={{ display: 'block', marginTop: 2 }}>
+        角色：{sessionUser ? ROLE_LABEL_MAP[sessionUser.role] : '未知角色'}
+      </Typography.Text>
+    </div>
+        )
+      },
+      { type: 'divider' },
+      {
+        key: 'profile',
+        label: '个人资料',
+        icon: <UserOutlined />
+      },
+      {
+        key: 'email',
+        label: '邮箱认证',
+        icon: <MailOutlined />
+      },
+      { type: 'divider' },
+      {
+        key: 'signout',
+        label: '退出登录',
+        icon: <LogoutOutlined />,
+        disabled: isSigningOut
+      }
+    ];
+  }, [isSigningOut, sessionUser]);
 
   const avatarInitial = useMemo(() => {
-    return user?.gender === 'female' ? '/images/female.png' : '/images/male.png';
-  }, [user]);
+    return sessionUser?.gender === 'female' ? '/images/female.png' : '/images/male.png';
+  }, [sessionUser?.gender]);
 
-  const avatar = user?.image ? (
-    <Avatar src={user.image} size={36} className={styles.avatarButton} />
+  const avatar = sessionUser?.image ? (
+    <Avatar src={sessionUser.image} size={36} className={styles.avatarButton} />
   ) : avatarInitial ? (
     <Avatar src={avatarInitial} size={36} className={styles.avatarButton} />
   ) : (
@@ -307,7 +315,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   );
 
   return (
-    <DashboardHeaderActionProvider setAction={setHeaderAction}>
+    <ConfigProvider 
+    locale={zhCN}
+    theme={{
+      components: {
+        Layout: {
+          headerBg: '#ffffff',
+          headerPadding: '0 24px',
+          siderBg: '#ffffff',
+          bodyBg: '#f5f5f5',
+          triggerBg: '#ffffff',
+          triggerColor: '#1677ff',
+          lightSiderBg: '#ffffff',
+          lightTriggerBg: '#ffffff',
+          lightTriggerColor: '#1677ff'
+        }
+      }
+    }}>
+      <DashboardHeaderActionProvider setAction={setHeaderAction}>
       <Layout className={styles.layout} hasSider>
         <Sider
           width={220}
@@ -331,7 +356,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             mode="inline"
             items={menuItems}
             selectedKeys={selectedKeys}
-            defaultOpenKeys={['cases', 'clients', 'settings']}
+            defaultOpenKeys={['cases', 'clients']}
           />
         </Sider>
         <Layout>
@@ -358,17 +383,18 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <Content className={styles.content}>{children}</Content>
         </Layout>
       </Layout>
-      <ProfileModal
-        open={profileModalOpen}
-        initialValues={{
-          name: user?.name,
-          email: user?.email,
-          image: user?.image ?? null
-        }}
-        onCancel={() => setProfileModalOpen(false)}
-        onSubmit={handleProfileSubmit}
-        confirmLoading={profileSaving}
-      />
+        <ProfileModal
+          open={profileModalOpen}
+          initialValues={{
+            name: sessionUser?.name,
+            email: sessionUser?.email,
+            image: sessionUser?.image ?? null
+          }}
+          onCancel={() => setProfileModalOpen(false)}
+          onSubmit={handleProfileSubmit}
+          confirmLoading={profileSaving}
+        />
     </DashboardHeaderActionProvider>
+    </ConfigProvider>
   );
 }

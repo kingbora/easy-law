@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Button, Card, Form, Input, Popconfirm, Result, Select, Space, Table, Tag, message } from 'antd';
-import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
-import dayjs from 'dayjs';
+import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined } from '@ant-design/icons';
 
 import TeamMemberModal, {
@@ -16,37 +15,24 @@ import { ApiError } from '@/lib/api-client';
 import {
   createUser,
   deleteUser,
-  fetchCurrentUser,
-  fetchUsers,
   updateUser,
   type UserDepartment,
-  type UserResponse,
-  type UserRole,
-  type UserSupervisorInfo
+  type UserRole
 } from '@/lib/users-api';
+import { useSessionStore } from '@/lib/stores/session-store';
+import {
+  DEFAULT_TEAM_PAGINATION,
+  mapUserToTeamMember,
+  useTeamStore,
+  type TeamFilters,
+  type TeamMember
+} from '@/lib/stores/team-store';
 
 import { useDashboardHeaderAction } from '../header-context';
 
-interface TeamMember {
-  id: string;
-  name: string;
-  role: UserRole;
-  email: string;
-  joinDate: string;
-  image?: string | null;
-  gender: 'male' | 'female' | null;
-  initialPassword?: string;
-  department: UserDepartment | null;
-  supervisor: UserSupervisorInfo | null;
-  supervisorId: string | null;
-}
-
 type TeamMemberTreeNode = TeamMember & { children?: TeamMemberTreeNode[] };
 
-type Filters = {
-  name?: string;
-  role?: UserRole;
-};
+type Filters = TeamFilters;
 
 type ModalState =
   | { open: false }
@@ -97,96 +83,89 @@ const SUPERVISOR_ROLE_RULES: Partial<Record<UserRole, readonly UserRole[]>> = {
   assistant: ['lawyer', 'admin']
 };
 
-const DEFAULT_PAGE_SIZE = 10;
 const MIN_PAGE_SIZE = 5;
 const MAX_PAGE_SIZE = 40;
 const ESTIMATED_ROW_HEIGHT = 56;
 const RESERVED_VERTICAL_SPACE = 360;
-const DEFAULT_PAGE_SIZE_OPTIONS = ['5', '10', '15', '20', '30'];
-
-function mapUserResponse(user: UserResponse, fallbackPassword?: string): TeamMember {
-  const supervisor = user.supervisor ?? null;
-  return {
-    id: user.id,
-    name: user.name ?? '',
-    role: user.role,
-    email: user.email,
-    joinDate: user.createdAt ? dayjs(user.createdAt).format('YYYY-MM-DD') : '',
-    image: user.image,
-    gender: user.gender ?? null,
-    initialPassword: user.initialPassword ?? fallbackPassword,
-    department: user.department ?? null,
-    supervisor,
-    supervisorId: supervisor?.id ?? null
-  };
-}
 
 export default function TeamManagementPage() {
-  const [members, setMembers] = useState<TeamMember[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState<Filters>({});
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [submitting, setSubmitting] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
-  const [currentUser, setCurrentUser] = useState<{ id: string; role: UserRole; department: UserDepartment | null } | null>(null);
-  const [currentUserLoading, setCurrentUserLoading] = useState(true);
   const [filterForm] = Form.useForm<Filters>();
-  const [paginationConfig, setPaginationConfig] = useState<TablePaginationConfig>(() => ({
-    current: 1,
-    pageSize: DEFAULT_PAGE_SIZE,
-    defaultPageSize: DEFAULT_PAGE_SIZE,
-    showQuickJumper: true,
-    showSizeChanger: true,
-    align: 'end',
-    pageSizeOptions: DEFAULT_PAGE_SIZE_OPTIONS
-  }));
 
-  const loadMembers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const list = await fetchUsers();
-      setMembers(list.map((item) => mapUserResponse(item)));
-    } catch (error) {
+  const currentUser = useSessionStore((state) => state.user);
+  const currentUserInitialized = useSessionStore((state) => state.initialized);
+  const currentUserLoading = useSessionStore((state) => state.loading);
+  const refreshSession = useSessionStore((state) => state.refresh);
+
+  const members = useTeamStore((state) => state.members);
+  const teamLoading = useTeamStore((state) => state.loading);
+  const teamInitialized = useTeamStore((state) => state.initialized);
+  const filters = useTeamStore((state) => state.filters);
+  const pagination = useTeamStore((state) => state.pagination);
+  const loadTeamMembers = useTeamStore((state) => state.loadMembers);
+  const setTeamFilters = useTeamStore((state) => state.setFilters);
+  const resetTeamFilters = useTeamStore((state) => state.resetFilters);
+  const setTeamPagination = useTeamStore((state) => state.setPagination);
+  const upsertTeamMember = useTeamStore((state) => state.upsertMember);
+  const removeTeamMember = useTeamStore((state) => state.removeMember);
+
+  useEffect(() => {
+    if (!currentUserInitialized && !currentUserLoading) {
+      void refreshSession();
+    }
+  }, [refreshSession, currentUserInitialized, currentUserLoading]);
+
+  useEffect(() => {
+    if (teamInitialized) {
+      return;
+    }
+    void loadTeamMembers().catch((error) => {
       const errorMessage = error instanceof ApiError ? error.message : '获取成员列表失败，请稍后重试';
       message.error(errorMessage);
-    } finally {
-      setLoading(false);
+    });
+  }, [loadTeamMembers, teamInitialized]);
+
+  useEffect(() => {
+    filterForm.setFieldsValue({
+      name: filters.name,
+      role: filters.role
+    });
+  }, [filterForm, filters]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    void loadMembers();
-  }, [loadMembers]);
+    const availableHeight = Math.max(window.innerHeight - RESERVED_VERTICAL_SPACE, MIN_PAGE_SIZE * ESTIMATED_ROW_HEIGHT);
+    const estimated = Math.floor(availableHeight / ESTIMATED_ROW_HEIGHT);
+    const initialSize = Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, estimated || DEFAULT_TEAM_PAGINATION.pageSize));
+    const optionSet = new Set(pagination.pageSizeOptions ?? DEFAULT_TEAM_PAGINATION.pageSizeOptions);
+    optionSet.add(String(initialSize));
+    const pageSizeOptions = Array.from(optionSet)
+      .map((value) => Number(value))
+      .sort((a, b) => a - b)
+      .map((value) => value.toString());
 
-  useEffect(() => {
-    let mounted = true;
+    const needsUpdate =
+      pagination.pageSize !== initialSize ||
+      pagination.defaultPageSize !== initialSize ||
+      pagination.pageSizeOptions.length !== pageSizeOptions.length ||
+      pagination.pageSizeOptions.some((value, index) => value !== pageSizeOptions[index]);
 
-    const loadCurrentRole = async () => {
-      try {
-        const me = await fetchCurrentUser();
-        if (!mounted) {
-          return;
-        }
-        setCurrentUser({
-          id: me.id,
-          role: me.role,
-          department: me.department ?? null
-        });
-      } catch (error) {
-        // ignore
-      } finally {
-        if (mounted) {
-          setCurrentUserLoading(false);
-        }
-      }
-    };
+    if (!needsUpdate) {
+      return;
+    }
 
-    void loadCurrentRole();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    setTeamPagination({
+      current: 1,
+      pageSize: initialSize,
+      defaultPageSize: initialSize,
+      pageSizeOptions
+    });
+  }, [pagination.defaultPageSize, pagination.pageSize, pagination.pageSizeOptions, setTeamPagination]);
 
   const viewableMembers = useMemo(() => {
     if (!currentUser) {
@@ -279,56 +258,35 @@ export default function TeamManagementPage() {
 
   const rootMemberCount = useMemo(() => treeMembers.length, [treeMembers]);
 
-  const handleSearch = useCallback((values: Filters) => {
-    setFilters({
-      name: values.name?.trim() || undefined,
-      role: values.role
-    });
-  }, []);
+  const handleSearch = useCallback(
+    (values: Filters) => {
+      setTeamFilters({
+        name: values.name?.trim() || undefined,
+        role: values.role
+      });
+    },
+    [setTeamFilters]
+  );
 
   const handleReset = useCallback(() => {
     filterForm.resetFields();
-    setFilters({});
-  }, [filterForm]);
+    resetTeamFilters();
+  }, [filterForm, resetTeamFilters]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    const pageSize = pagination.pageSize || DEFAULT_TEAM_PAGINATION.pageSize;
+    const totalPages = pageSize > 0 ? Math.ceil(rootMemberCount / pageSize) : 1;
+    const nextCurrent = Math.min(pagination.current ?? 1, Math.max(totalPages, 1));
+
+    if (pagination.total === rootMemberCount && nextCurrent === pagination.current) {
       return;
     }
-    const computeInitialPageSize = () => {
-      const availableHeight = Math.max(window.innerHeight - RESERVED_VERTICAL_SPACE, MIN_PAGE_SIZE * ESTIMATED_ROW_HEIGHT);
-      const estimated = Math.floor(availableHeight / ESTIMATED_ROW_HEIGHT);
-      return Math.max(MIN_PAGE_SIZE, Math.min(MAX_PAGE_SIZE, estimated || DEFAULT_PAGE_SIZE));
-    };
-    const initialSize = computeInitialPageSize();
-    setPaginationConfig((prev) => {
-      const optionSet = new Set((prev.pageSizeOptions ?? DEFAULT_PAGE_SIZE_OPTIONS).map((option) => Number(option)));
-      optionSet.add(initialSize);
-      const pageSizeOptions = Array.from(optionSet)
-        .sort((a, b) => a - b)
-        .map((value) => value.toString());
-      return {
-        ...prev,
-        current: 1,
-        pageSize: initialSize,
-        defaultPageSize: initialSize,
-        pageSizeOptions
-      };
-    });
-  }, []);
 
-  useEffect(() => {
-    setPaginationConfig((prev) => {
-      const nextPageSize = prev.pageSize ?? DEFAULT_PAGE_SIZE;
-      const totalPages = nextPageSize > 0 ? Math.ceil(rootMemberCount / nextPageSize) : 1;
-      const nextCurrent = Math.min(prev.current ?? 1, Math.max(totalPages, 1));
-      return {
-        ...prev,
-        total: rootMemberCount,
-        current: nextCurrent
-      };
+    setTeamPagination({
+      total: rootMemberCount,
+      current: nextCurrent
     });
-  }, [rootMemberCount]);
+  }, [pagination, rootMemberCount, setTeamPagination]);
 
   const creatableRoleOptions = useMemo(() => {
     if (!currentUser) {
@@ -467,29 +425,32 @@ export default function TeamManagementPage() {
   );
   const defaultSupervisorIdForModal = currentUser?.role === 'admin' ? currentUser.id : null;
 
-  const handlePaginationChange = useCallback((page: number, pageSize?: number) => {
-    setPaginationConfig((prev) => ({
-      ...prev,
-      current: page,
-      pageSize: pageSize ?? prev.pageSize
-    }));
-  }, []);
+  const handlePaginationChange = useCallback(
+    (page: number, pageSize?: number) => {
+      setTeamPagination({
+        current: page,
+        pageSize: pageSize ?? pagination.pageSize
+      });
+    },
+    [pagination.pageSize, setTeamPagination]
+  );
 
-  const handlePageSizeChange = useCallback((current: number, size: number) => {
-    setPaginationConfig((prev) => {
-      const optionSet = new Set((prev.pageSizeOptions ?? DEFAULT_PAGE_SIZE_OPTIONS).map((option) => Number(option)));
+  const handlePageSizeChange = useCallback(
+    (current: number, size: number) => {
+      const optionSet = new Set((pagination.pageSizeOptions ?? DEFAULT_TEAM_PAGINATION.pageSizeOptions).map(Number));
       optionSet.add(size);
       const pageSizeOptions = Array.from(optionSet)
         .sort((a, b) => a - b)
         .map((value) => value.toString());
-      return {
-        ...prev,
+
+      setTeamPagination({
         current,
         pageSize: size,
         pageSizeOptions
-      };
-    });
-  }, []);
+      });
+    },
+    [pagination.pageSizeOptions, setTeamPagination]
+  );
 
   const handleViewMember = useCallback((record: TeamMember) => {
     setModalState({ open: true, mode: 'view', record });
@@ -555,10 +516,8 @@ export default function TeamManagementPage() {
             ...payload,
             updaterId: currentUser.id
           });
-          const nextMember = mapUserResponse(updated, modalState.record.initialPassword);
-          setMembers((prev) =>
-            prev.map((member) => (member.id === nextMember.id ? { ...member, ...nextMember } : member))
-          );
+          const nextMember = mapUserToTeamMember(updated, modalState.record.initialPassword);
+          upsertTeamMember(nextMember);
           message.success('成员信息已更新');
         } else {
           
@@ -566,8 +525,8 @@ export default function TeamManagementPage() {
             ...payload,
             creatorId: currentUser.id
           });
-          const nextMember = mapUserResponse(created, DEFAULT_INITIAL_PASSWORD);
-          setMembers((prev) => [nextMember, ...prev]);
+          const nextMember = mapUserToTeamMember(created, DEFAULT_INITIAL_PASSWORD);
+          upsertTeamMember(nextMember);
           message.success(`新增成员成功，初始密码为 ${created.initialPassword ?? DEFAULT_INITIAL_PASSWORD}`);
         }
         closeModal();
@@ -578,7 +537,7 @@ export default function TeamManagementPage() {
         setSubmitting(false);
       }
     },
-    [canManageMember, closeModal, currentUser, hasTeamAccess, modalState]
+  [canManageMember, closeModal, currentUser, hasTeamAccess, modalState, upsertTeamMember]
   );
 
   const handleDeleteMember = useCallback(
@@ -594,8 +553,8 @@ export default function TeamManagementPage() {
 
       setDeletingIds((prev) => ({ ...prev, [id]: true }));
       try {
-        await deleteUser(id);
-        setMembers((prev) => prev.filter((member) => member.id !== id));
+  await deleteUser(id);
+  removeTeamMember(id);
         if (modalState.open && modalState.mode !== 'create' && modalState.record?.id === id) {
           closeModal();
         }
@@ -611,7 +570,7 @@ export default function TeamManagementPage() {
         });
       }
     },
-    [canManageMember, closeModal, members, modalState]
+  [canManageMember, closeModal, members, modalState, removeTeamMember]
   );
 
   const columns = useMemo<ColumnsType<TeamMember>>(() => {
@@ -751,13 +710,13 @@ export default function TeamManagementPage() {
           columns={columns}
           dataSource={treeMembers}
           pagination={{
-            ...paginationConfig,
+            ...pagination,
             showTotal: (_, range) => `共 ${totalMemberCount} 人，当前显示第 ${range[0]}-${range[1]} 条`,
             onChange: handlePaginationChange,
             onShowSizeChange: handlePageSizeChange
           }}
           expandable={{ defaultExpandAllRows: true }}
-          loading={loading || currentUserLoading}
+          loading={teamLoading || currentUserLoading}
         />
       </Card>
 

@@ -35,6 +35,7 @@ async function main() {
         role: 'super_admin',
         department: null,
         supervisorId: null,
+        creatorId: 'system'
       })
       .where(eq(users.email, EMAIL));
 

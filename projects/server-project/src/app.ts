@@ -5,6 +5,8 @@ import express from 'express';
 
 import { auth } from './auth';
 import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
+import { requireSession } from './middlewares/session';
+import casesRouter from './routes/cases';
 
 const app = express();
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
@@ -23,6 +25,8 @@ app.all('/api/auth/*', toNodeHandler(auth));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use('/api/cases', requireSession, casesRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

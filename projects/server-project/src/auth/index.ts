@@ -14,6 +14,7 @@ const baseURL =
       : `http://localhost:3000`;
 
 const basePath = process.env.AUTH_BASE_PATH ?? '/api/auth';
+export const authBasePath = basePath;
 
 export const auth = betterAuth({
   basePath,

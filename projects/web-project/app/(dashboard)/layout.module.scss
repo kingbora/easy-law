@@ -1,10 +1,9 @@
 .layout {
-  min-height: 100vh;
+  min-height: 100vh !important;
   background: var(--dashboard-background, #f5f5f5);
 }
 
 .sidebar {
-  background: #fff;
   border-inline-end: 1px solid #f0f0f0;
 }
 
@@ -24,7 +23,6 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #fff;
   border-bottom: 1px solid #f0f0f0;
 }
 
@@ -50,4 +48,20 @@
   cursor: pointer;
   display: flex;
   align-items: center;
+}
+
+.themeGroupLabel {
+  display: flex;
+  align-items: center;
+}
+
+.themeMenuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 160px;
+}
+
+.themeMenuCheck {
+  color: #1677ff;
 }

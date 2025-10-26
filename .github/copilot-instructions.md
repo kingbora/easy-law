@@ -20,7 +20,6 @@
 - **状态管理**: zustand
 - **UI 组件库**: Ant Design 5.19+
 - **样式处理**: SCSS 模块
-- **数据请求**: swrc + axios
 - **认证**: BetterAuth 1.3.27
 
 ### 后端技术栈
@@ -38,7 +37,7 @@
 
 ## 📁 项目结构
 - `projects/server-project` – TypeScript + Express 认证服务，使用 Better Auth。
-- `projects/web-project` – Next.js 15 登录体验，使用 Ant Design 和 SCSS 模块。
+- `projects/web-project` – Next.js 14 登录体验，使用 Ant Design 和 SCSS 模块。
 - `packages/eslint-config` – 共享的 ESLint 配置。
 
 ## 🚀 快速开始
@@ -61,3 +60,13 @@ pnpm db:generate  # 生成数据库迁移文件
 pnpm db:migrate   # 运行数据库迁移
 pnpm db:push      # 本地仅需执行此命令即可，将数据库模式推送到数据库
 ```
+
+## 代码生成规范
+- 对生成的代码进行注释，尤其是复杂的方法、数据库或者一些第三方库的参数说明，以便生成更好的类型定义和文档。
+- 保持代码风格一致，遵循 ESLint 规则。
+- 数据交互时，确保前后端接口的一致性，使用共享的类型定义文件。
+- 状态管理时，优先使用`zustand`，保持状态逻辑的简洁和高效。
+- 对于 UI 组件，遵循 Ant Design 的设计规范，确保界面的一致性和用户体验。
+- 对于数据库的操作，只需要在结论时进行文案说明即可，不需要执行操作代码
+- 在处理认证和权限时，确保使用 BetterAuth 提供的最佳实践，保障系统的安全性。
+- 中文输出结果
