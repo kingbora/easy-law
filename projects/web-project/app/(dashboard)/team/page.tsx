@@ -576,6 +576,14 @@ export default function TeamManagementPage() {
   const columns = useMemo<ColumnsType<TeamMember>>(() => {
     const list: ColumnsType<TeamMember> = [
       {
+        title: '',
+        dataIndex: '__expander',
+        key: '__expander',
+        width: 48,
+        align: 'center',
+        render: () => null
+      },
+      {
         title: '成员名称',
         dataIndex: 'name',
         render: (name: string, record) => (
@@ -715,7 +723,10 @@ export default function TeamManagementPage() {
             onChange: handlePaginationChange,
             onShowSizeChange: handlePageSizeChange
           }}
-          expandable={{ defaultExpandAllRows: true }}
+              expandable={{
+                defaultExpandAllRows: true,
+                expandIconColumnIndex: 0,
+              }}
           loading={teamLoading || currentUserLoading}
         />
       </Card>

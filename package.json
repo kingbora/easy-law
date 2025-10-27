@@ -15,6 +15,7 @@
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "lint": "pnpm -r lint",
+    "lint:fix": "pnpm -r exec eslint --fix .",
     "clean": "pnpm -r clean && rimraf node_modules",
     "lint-staged": "lint-staged"
   },
