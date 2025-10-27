@@ -229,8 +229,44 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   };
 
+  const uploadAvatar = useCallback(async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/profile/avatar', {
+      method: 'POST',
+      body: formData
+    });
+
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      // ignore and fallback below
+    }
+
+    if (!response.ok) {
+      const messageText =
+        payload && typeof payload === 'object' && payload !== null && 'message' in payload
+          ? String((payload as { message?: unknown }).message ?? '上传头像失败')
+          : '上传头像失败';
+      throw new Error(messageText);
+    }
+
+    if (!payload || typeof payload !== 'object' || payload === null || typeof (payload as { path?: unknown }).path !== 'string') {
+      throw new Error('上传头像失败');
+    }
+
+    return (payload as { path: string }).path;
+  }, []);
+
   const handleProfileSubmit = useCallback(
-    async ({ name, image }: { name: string; image?: string | null }) => {
+    async ({ name, email, gender, avatarFile }: {
+      name: string;
+      email: string;
+      gender: 'male' | 'female';
+      avatarFile?: File | null;
+    }) => {
       if (!sessionUser?.id) {
         message.error('未获取到用户信息');
         return;
@@ -238,25 +274,49 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       setProfileSaving(true);
       try {
-        const updated = await updateUser(sessionUser.id, {
+        let imagePath: string | null | undefined = undefined;
+        if (avatarFile) {
+          imagePath = await uploadAvatar(avatarFile);
+        }
+
+        const payload = {
           name,
-          image: typeof image === 'undefined' ? undefined : image
-        });
+          email,
+          gender,
+          image: imagePath
+        } satisfies {
+          name: string;
+          email: string;
+          gender: 'male' | 'female';
+          image: string | null | undefined;
+        };
+
+        const updated = await updateUser(sessionUser.id, payload);
         updateSessionUser({
           name: updated.name ?? name,
-          image: updated.image ?? null
+          email: updated.email ?? email,
+          gender: updated.gender ?? gender,
+          image:
+            imagePath !== undefined
+              ? updated.image ?? imagePath ?? null
+              : updated.image ?? sessionUser.image ?? null
         });
 
         message.success('个人资料已更新');
         setProfileModalOpen(false);
       } catch (error) {
-        const errorMessage = error instanceof ApiError ? error.message : '更新个人资料失败，请稍后重试';
+        const errorMessage =
+          error instanceof ApiError
+            ? error.message
+            : error instanceof Error
+              ? error.message || '更新个人资料失败，请稍后重试'
+              : '更新个人资料失败，请稍后重试';
         message.error(errorMessage);
       } finally {
         setProfileSaving(false);
       }
     },
-  [sessionUser?.id, updateSessionUser]
+    [sessionUser?.id, sessionUser?.image, updateSessionUser, uploadAvatar]
   );
 
   const userMenu: MenuProps['items'] = useMemo(() => {
@@ -388,7 +448,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           initialValues={{
             name: sessionUser?.name,
             email: sessionUser?.email,
-            image: sessionUser?.image ?? null
+            image: sessionUser?.image ?? null,
+            gender: sessionUser?.gender ?? null
           }}
           onCancel={() => setProfileModalOpen(false)}
           onSubmit={handleProfileSubmit}

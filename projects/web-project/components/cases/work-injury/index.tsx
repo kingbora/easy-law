@@ -658,8 +658,7 @@ export default function WorkInjuryCasesPage() {
       if (currentUser.role === 'lawyer') {
         return (
           record.assignedLawyerId === currentUser.id ||
-          record.assignedTrialLawyerId === currentUser.id ||
-          record.ownerId === currentUser.id
+          record.assignedTrialLawyerId === currentUser.id
         );
       }
       if (currentUser.role === 'assistant') {
@@ -673,6 +672,20 @@ export default function WorkInjuryCasesPage() {
     [currentUser]
   );
 
+  const canUpdateHearingRecord = useCallback((record: CaseRecord) => {
+    if (!currentUser) {
+        return false;
+      }
+      if (currentUser.role === 'super_admin') {
+        return true;
+      }
+      if (currentUser.role === 'admin' || currentUser.role === 'lawyer' || currentUser.role === 'assistant'
+      ) {
+        return Boolean(currentUser.department && record.department === currentUser.department);
+      }
+      return false;
+  }, [currentUser]);
+
   const canAssignStaffToCase = useCallback(
     (record: CaseRecord) => {
       if (!currentUser) {
@@ -681,7 +694,7 @@ export default function WorkInjuryCasesPage() {
       if (currentUser.role === 'super_admin') {
         return true;
       }
-      if (currentUser.role === 'admin') {
+      if (currentUser.role === 'admin' || currentUser.role === 'administration') {
         return Boolean(currentUser.department && record.department === currentUser.department);
       }
       return false;
@@ -857,7 +870,7 @@ export default function WorkInjuryCasesPage() {
           setAssignModalOpen(true);
           break;
         case 'hearing':
-          if (!canUpdateCaseRecord(record)) {
+          if (!canUpdateHearingRecord(record)) {
             message.error('您没有权限新增庭审信息');
             return;
           }
@@ -876,7 +889,7 @@ export default function WorkInjuryCasesPage() {
           break;
       }
     },
-    [canAssignStaffToCase, canUpdateCaseRecord]
+    [canAssignStaffToCase, canUpdateCaseRecord, canUpdateHearingRecord]
   );
 
   const handleCaseTitleClick = useCallback(
@@ -945,23 +958,28 @@ export default function WorkInjuryCasesPage() {
         fixed: 'right',
         width: 60,
         render: (_, record) => {
-          const items: MenuProps['items'] = [
-            {
+          const items: MenuProps['items'] = [];
+          if (canAssignStaffToCase(record)) {
+            items.push({
               key: 'assign',
               label: '分配律师',
               disabled: !canAssignStaffToCase(record)
-            },
-            {
+            });
+          }
+          if (canUpdateHearingRecord(record)) {
+            items.push({
               key: 'hearing',
               label: '新增庭审',
               disabled: !canUpdateCaseRecord(record)
-            },
-            {
+            });
+          }
+          if (canUpdateCaseRecord(record)) {
+            items.push({
               key: 'follow_up',
               label: '跟进备注',
               disabled: !canUpdateCaseRecord(record)
-            }
-          ];
+            });
+          }
           return (
             <Dropdown
               menu={{
@@ -980,7 +998,7 @@ export default function WorkInjuryCasesPage() {
         },
       }
     ],
-    [canAssignStaffToCase, canUpdateCaseRecord, handleActionSelect, handleCaseTitleClick]
+    [canAssignStaffToCase, canUpdateCaseRecord, canUpdateHearingRecord, handleActionSelect, handleCaseTitleClick]
   );
 
   return (

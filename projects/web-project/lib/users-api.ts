@@ -328,24 +328,56 @@ export async function fetchCurrentUser(): Promise<CurrentUserResponse> {
 
   const accountId = typeof sessionData.session?.accountId === 'string' ? sessionData.session.accountId : null;
 
-  let accountPayload: unknown = { user: sessionData.user, permissions: [] };
+  let accountPayload: Record<string, unknown> = {
+    user: sessionData.user as Record<string, unknown> | null,
+    permissions: []
+  };
 
   if (accountId) {
     try {
       const accountResult = (await authClient.accountInfo({ accountId } as Parameters<typeof authClient.accountInfo>[0])) as BetterAuthResponse<unknown>;
-      accountPayload = ensureAuthSuccess(accountResult, '获取当前用户信息失败');
+      const accountData = ensureAuthSuccess(accountResult, '获取当前用户信息失败');
+      const normalizedAccount =
+        typeof accountData === 'object' && accountData !== null
+          ? { ...(accountData as Record<string, unknown>) }
+          : {};
+
+      const sessionUserRecord =
+        typeof sessionData.user === 'object' && sessionData.user !== null
+          ? ({ ...(sessionData.user as Record<string, unknown>) })
+          : {};
+
+      const accountUserRecord =
+        typeof normalizedAccount.user === 'object' && normalizedAccount.user !== null
+          ? ({ ...(normalizedAccount.user as Record<string, unknown>) })
+          : {};
+
+      accountPayload = {
+        ...normalizedAccount,
+        user: {
+          ...sessionUserRecord,
+          ...accountUserRecord
+        }
+      };
+
+      if (!('permissions' in accountPayload)) {
+        accountPayload.permissions = [];
+      }
     } catch (error) {
       if (error instanceof ApiError) {
-        accountPayload = { user: sessionData.user, permissions: [] };
+        accountPayload = {
+          user: sessionData.user as Record<string, unknown> | null,
+          permissions: []
+        };
       } else {
         throw error;
       }
     }
   }
 
-  const user = mapSingularPayload((accountPayload as Record<string, unknown>).user ?? accountPayload, '获取当前用户信息失败：返回数据无效');
-  const permissions = Array.isArray((accountPayload as Record<string, unknown>).permissions)
-    ? ((accountPayload as Record<string, unknown>).permissions as unknown[]).map((item) => String(item))
+  const user = mapSingularPayload(accountPayload.user ?? accountPayload, '获取当前用户信息失败：返回数据无效');
+  const permissions = Array.isArray(accountPayload.permissions)
+    ? (accountPayload.permissions as unknown[]).map((item) => String(item))
     : [];
 
   return {

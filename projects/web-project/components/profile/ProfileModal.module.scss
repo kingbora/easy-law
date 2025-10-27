@@ -1,0 +1,48 @@
+.avatarUpload {
+  :global(.ant-upload) {
+    display: inline-block;
+  }
+}
+
+.avatarUploadInner {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.avatarImage {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.avatarMask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  gap: 4px;
+  font-size: 12px;
+
+  span {
+    color: inherit;
+  }
+}
+
+.avatarMaskIcon {
+  font-size: 20px;
+}
+
+.avatarUploadInner:hover .avatarMask,
+.avatarMaskVisible {
+  opacity: 1;
+}
