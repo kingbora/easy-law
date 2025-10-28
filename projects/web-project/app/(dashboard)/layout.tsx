@@ -215,14 +215,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       try {
         const result = await authClient.signOut();
         if (result.error) {
-          message.error(result.error.message ?? '退出失败，请稍后重试');
+          message.error(result.error.message ?? '退出失败，请刷新页面再试试');
           return;
         }
         clearSession();
         message.success('已退出登录');
         router.push('/login');
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '退出失败，请稍后重试');
+        message.error(error instanceof Error ? error.message : '退出失败，请刷新页面再试试');
       } finally {
         setIsSigningOut(false);
       }

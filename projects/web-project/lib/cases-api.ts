@@ -49,6 +49,24 @@ export interface CaseTimelineRecord {
   followerName: string | null;
 }
 
+export interface CaseChangeDetail {
+  field: string;
+  label: string;
+  previousValue: string | null;
+  currentValue: string | null;
+}
+
+export interface CaseChangeLog {
+  id: string;
+  action: string;
+  description: string | null;
+  changes: CaseChangeDetail[] | null;
+  actorId: string | null;
+  actorName: string | null;
+  actorRole: UserRole | string | null;
+  createdAt: string;
+}
+
 export interface CaseParticipantsGroup {
   claimants?: CaseParticipant[];
   respondents?: CaseParticipant[];
@@ -91,13 +109,19 @@ export interface CaseRecord {
   remark: string | null;
   department: UserDepartment | null;
   ownerId: string | null;
+  ownerName: string | null;
   assignedLawyerId: string | null;
+  assignedLawyerName: string | null;
   assignedAssistantId: string | null;
+  assignedAssistantName: string | null;
   assignedTrialLawyerId: string | null;
+  assignedTrialLawyerName: string | null;
   caseStatus: CaseStatus | null;
   closedReason: string | null;
   voidReason: string | null;
   lawyerProgress: Record<string, unknown> | null;
+  salesCommission: string | null;
+  handlingFee: string | null;
   createdAt: string;
   updatedAt: string;
   participants: CaseParticipantsGroup;
@@ -216,6 +240,8 @@ export interface CasePayload {
   closedReason?: string | null;
   voidReason?: string | null;
   lawyerProgress?: Record<string, unknown> | null;
+  salesCommission?: string | number | null;
+  handlingFee?: string | number | null;
   participants?: CaseParticipantsInput;
   collections?: CaseCollectionInput[];
   timeline?: CaseTimelineInput[];
@@ -274,6 +300,11 @@ export async function deleteCase(id: string): Promise<void> {
   await apiFetch<void>(`/api/cases/${id}`, {
     method: 'DELETE'
   });
+}
+
+export async function fetchCaseChangeLogs(id: string): Promise<CaseChangeLog[]> {
+  const response = await apiFetch<{ data: CaseChangeLog[] }>(`/api/cases/${id}/change-logs`);
+  return response.data;
 }
 
 export async function fetchAssignableStaff(params?: {

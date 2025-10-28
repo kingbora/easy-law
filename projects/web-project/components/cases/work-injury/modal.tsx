@@ -8,7 +8,6 @@ import {
   Descriptions,
   Form,
   Input,
-  InputNumber,
   message,
   Modal,
   Radio,
@@ -23,6 +22,7 @@ import type { Dayjs } from 'dayjs';
 import dayjs from 'dayjs';
 import type { TrialStage } from '@/lib/cases-api';
 import styles from './modal.module.scss';
+import { useSessionStore } from '@/lib/stores/session-store';
 
 const { TextArea } = Input;
 
@@ -68,12 +68,6 @@ const TIMELINE_NODE_TYPES = [
   { label: '立案审核通过', value: 'filing_approved' },
   { label: '裁决时间', value: 'judgment_time' }
 ] as const;
-
-const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
-  first_instance: '一审',
-  second_instance: '二审',
-  retrial: '再审'
-};
 
 const TIMELINE_NODE_LABEL_MAP = TIMELINE_NODE_TYPES.reduce<Record<TimelineNodeType, string>>((acc, item) => {
   acc[item.value] = item.label;
@@ -172,21 +166,14 @@ const formatCurrency = (value?: number | null): string => {
   return numberText === '—' ? numberText : `¥${numberText}`;
 };
 
-const formatTrialStage = (value?: TrialStage | null): string => {
-  if (!value) {
-    return '—';
-  }
-  return TRIAL_STAGE_LABEL_MAP[value] ?? '—';
-};
-
 export interface WorkInjuryCaseFormValues {
   basicInfo?: {
     caseType?: CaseTypeValue;
     caseLevel?: CaseLevelValue;
     provinceCity?: string;
-    targetAmount?: number;
+    targetAmount?: string;
     feeStandard?: string;
-    agencyFeeEstimate?: number;
+    agencyFeeEstimate?: string;
     dataSource?: string;
     hasContract?: boolean;
     hasSocialSecurity?: boolean;
@@ -195,7 +182,7 @@ export interface WorkInjuryCaseFormValues {
     injurySeverity?: string;
     injuryCause?: string;
     workInjuryCertified?: boolean;
-    monthlySalary?: number;
+    monthlySalary?: string;
     appraisalLevel?: string;
     existingEvidence?: string;
     appraisalEstimate?: string;
@@ -275,6 +262,7 @@ export default function WorkInjuryCaseModal({
   onSubmit,
   confirmLoading
 }: WorkInjuryCaseModalProps) {
+  const sessionUser = useSessionStore(state => state.user);
   const [form] = Form.useForm<WorkInjuryCaseFormValues>();
   const [activeViewTab, setActiveViewTab] = useState<'basic' | 'personnel' | 'hearing' | 'assignment'>('basic');
   const isViewMode = mode === 'view';
@@ -315,7 +303,6 @@ export default function WorkInjuryCaseModal({
       if (onSubmit) {
         await onSubmit(values);
       }
-      form.resetFields();
     } catch (error) {
       if ((error as { errorFields?: unknown[] })?.errorFields) {
         message.error('表单验证失败，请检查是否所有必填项都填写完成！');
@@ -328,11 +315,18 @@ export default function WorkInjuryCaseModal({
     onCancel();
   };
 
+  const canShowEditButton = Boolean(
+    allowEdit &&
+      onRequestEdit &&
+      sessionUser &&
+      !['lawyer', 'assistant'].includes(sessionUser.role)
+  );
+
   const viewFooter = [
     <Button key="close" onClick={handleCancel}>
       关闭
     </Button>,
-    ...(allowEdit && onRequestEdit
+    ...(canShowEditButton
       ? [
           <Button key="edit" type="primary" onClick={onRequestEdit}>
             编辑案件
@@ -371,23 +365,66 @@ export default function WorkInjuryCaseModal({
               </Col>
               <Col span={8}>
                 <Form.Item
-                  {...restField}
-                  name={[name, 'name']}
-                  label="姓名/名称"
-                  rules={[{ required: true, message: '请输入姓名或名称' }]}
+                  noStyle
+                  shouldUpdate={(prev, curr) =>
+                    prev?.parties?.[field]?.[name]?.entityType !==
+                    curr?.parties?.[field]?.[name]?.entityType
+                  }
                 >
-                  <Input placeholder="请输入姓名或名称" />
+                  {() => {
+                    const entityType = form.getFieldValue([
+                      'parties',
+                      field,
+                      name,
+                      'entityType'
+                    ]) as 'personal' | 'organization' | undefined;
+                    const isOrganization = entityType === 'organization';
+                    const nameLabel = isOrganization ? '名称' : '姓名';
+                    return (
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'name']}
+                        label={nameLabel}
+                        rules={[{ required: true, message: `请输入${nameLabel}` }]}
+                      >
+                        <Input placeholder={`请输入${nameLabel}`} />
+                      </Form.Item>
+                    );
+                  }}
                 </Form.Item>
               </Col>
               
               <Col span={8}>
-                <Form.Item 
-                {...restField} 
-                name={[name, 'idNumber']} 
-                label="证件/社会统一代码"
-                rules={[{required: field === 'claimants', message: '请输入证件号码或统一社会信用代码'}]}
+                <Form.Item
+                  noStyle
+                  shouldUpdate={(prev, curr) =>
+                    prev?.parties?.[field]?.[name]?.entityType !==
+                    curr?.parties?.[field]?.[name]?.entityType
+                  }
                 >
-                  <Input placeholder="请输入证件号码或统一社会信用代码" />
+                  {() => {
+                    const entityType = form.getFieldValue([
+                      'parties',
+                      field,
+                      name,
+                      'entityType'
+                    ]) as 'personal' | 'organization' | undefined;
+                    const isOrganization = entityType === 'organization';
+                    const idLabel = isOrganization ? '统一信用代码' : '身份证';
+                    const idRules = field === 'claimants'
+                      ? [{ required: true, message: `请输入${idLabel}` }]
+                      : [];
+                    return (
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'idNumber']}
+                        label={idLabel}
+                        rules={idRules}
+                      >
+                        <Input placeholder={`请输入${idLabel}`} />
+                      </Form.Item>
+                    );
+                  }}
                 </Form.Item>
               </Col>
               <Col span={8}>
@@ -405,7 +442,6 @@ export default function WorkInjuryCaseModal({
                 {...restField} 
                 name={[name, 'address']} 
                 label="地址"
-                rules={[{ required: field === 'claimants', message: '请输入地址'}]}
                 >
                   <Input placeholder="请输入地址" />
                 </Form.Item>
@@ -478,7 +514,7 @@ export default function WorkInjuryCaseModal({
             label="标的额"
             name={['basicInfo', 'targetAmount']}
           >
-            <InputNumber min={0} style={{ width: '100%' }} placeholder="请输入标的额" />
+            <Input style={{ width: '100%' }} placeholder="请输入标的额" />
           </Form.Item>
         </Col>
         <Col span={8}>
@@ -488,7 +524,7 @@ export default function WorkInjuryCaseModal({
         </Col>
         <Col span={8}>
           <Form.Item label="代理费估值" name={['basicInfo', 'agencyFeeEstimate']}>
-            <InputNumber min={0} style={{ width: '100%' }} placeholder="请输入代理费估值" />
+            <Input style={{ width: '100%' }} placeholder="请输入代理费估值" />
           </Form.Item>
         </Col>
         <Col span={8}>
@@ -541,7 +577,7 @@ export default function WorkInjuryCaseModal({
         </Col>
         <Col span={8}>
           <Form.Item label="当时月薪" name={['basicInfo', 'monthlySalary']}>
-            <InputNumber min={0} style={{ width: '100%' }} placeholder="请输入当时月薪" />
+            <Input style={{ width: '100%' }} placeholder="请输入当时月薪" />
           </Form.Item>
         </Col>
         <Col span={6}>
@@ -607,22 +643,22 @@ export default function WorkInjuryCaseModal({
   const renderBasicInfoDisplay = (values: WorkInjuryCaseFormValues) => {
     const info = values.basicInfo ?? {};
     return (
-      <Descriptions bordered size="small" column={3} className={styles.descriptions}>
+      <Descriptions bordered size="small" column={2} className={styles.descriptions}>
         <Descriptions.Item label="案件类型">{formatOptionLabel(CASE_TYPE_LABEL_MAP, info.caseType ?? null)}</Descriptions.Item>
         <Descriptions.Item label="案件级别">{formatOptionLabel(CASE_LEVEL_LABEL_MAP, info.caseLevel ?? null)}</Descriptions.Item>
         <Descriptions.Item label="省份/城市">{formatText(info.provinceCity)}</Descriptions.Item>
-        <Descriptions.Item label="标的额">{formatCurrency(info.targetAmount)}</Descriptions.Item>
+        <Descriptions.Item label="标的额">{formatText(info.targetAmount)}</Descriptions.Item>
         <Descriptions.Item label="收费标准">{formatText(info.feeStandard)}</Descriptions.Item>
-        <Descriptions.Item label="代理费估值">{formatCurrency(info.agencyFeeEstimate)}</Descriptions.Item>
+        <Descriptions.Item label="代理费估值">{formatText(info.agencyFeeEstimate)}</Descriptions.Item>
         <Descriptions.Item label="数据来源">{formatText(info.dataSource)}</Descriptions.Item>
         <Descriptions.Item label="入职时间">{formatDate(info.entryDate ?? null)}</Descriptions.Item>
         <Descriptions.Item label="受伤地点">{formatText(info.injuryLocation)}</Descriptions.Item>
         <Descriptions.Item label="受伤程度">{formatText(info.injurySeverity)}</Descriptions.Item>
-        <Descriptions.Item label="受伤原因">{formatText(info.injuryCause)}</Descriptions.Item>
+        <Descriptions.Item label="受伤原因" span={3}>{formatText(info.injuryCause)}</Descriptions.Item>
         <Descriptions.Item label="工伤认定">{formatBoolean(info.workInjuryCertified ?? null, '有', '无')}</Descriptions.Item>
         <Descriptions.Item label="劳动能力等级鉴定/人损等级">{formatText(info.appraisalLevel)}</Descriptions.Item>
         <Descriptions.Item label="劳动能力/人损等级预估">{formatText(info.appraisalEstimate)}</Descriptions.Item>
-        <Descriptions.Item label="当时月薪">{formatCurrency(info.monthlySalary)}</Descriptions.Item>
+        <Descriptions.Item label="当时月薪">{formatText(info.monthlySalary)}</Descriptions.Item>
         <Descriptions.Item label="是否配合提交材料">{formatBoolean(info.customerCooperative ?? null, '是', '否')}</Descriptions.Item>
         <Descriptions.Item label="有无合同">{formatBoolean(info.hasContract ?? null, '有', '无')}</Descriptions.Item>
         <Descriptions.Item label="有无社保">{formatBoolean(info.hasSocialSecurity ?? null, '有', '无')}</Descriptions.Item>
@@ -648,13 +684,12 @@ export default function WorkInjuryCaseModal({
           key={`${title}-${index}`}
           bordered
           size="small"
-          column={3}
-          title={`${title}${list.length > 1 ? index + 1 : ''}`}
+          column={2}
           className={styles.descriptions}
         >
           <Descriptions.Item label="类型">{formatOptionLabel(ENTITY_TYPE_LABEL_MAP, party.entityType ?? null)}</Descriptions.Item>
-          <Descriptions.Item label="姓名/名称" span={2}>{formatText(party.name)}</Descriptions.Item>
-          <Descriptions.Item label="证件/统一社会信用代码" span={2}>{formatText(party.idNumber)}</Descriptions.Item>
+          <Descriptions.Item label={party.entityType === 'personal' ? '姓名' : '名称'}>{formatText(party.name)}</Descriptions.Item>
+          <Descriptions.Item label={party.entityType === 'personal' ? '身份证' : '社会统一信用代码'}>{formatText(party.idNumber)}</Descriptions.Item>
           <Descriptions.Item label="电话">{formatText(party.phone)}</Descriptions.Item>
           <Descriptions.Item label="地址" span={3}>{formatText(party.address)}</Descriptions.Item>
           <Descriptions.Item label="是否失信">{formatBoolean(party.isDishonest ?? null, '是', '否')}</Descriptions.Item>
@@ -692,16 +727,13 @@ export default function WorkInjuryCaseModal({
     return (
       <div className={styles.sectionList}>
         <Descriptions bordered size="small" column={2} className={styles.descriptions}>
-          <Descriptions.Item label="庭审时间" span={2}>
+          <Descriptions.Item label="庭审时间">
             {formatDate(lawyerInfo.hearingTime ?? null, 'YYYY-MM-DD HH:mm')}
           </Descriptions.Item>
           <Descriptions.Item label="庭审地点">{formatText(lawyerInfo.hearingLocation)}</Descriptions.Item>
           <Descriptions.Item label="庭审庭次">{formatText(lawyerInfo.tribunal)}</Descriptions.Item>
           <Descriptions.Item label="主审法官">{formatText(lawyerInfo.judge)}</Descriptions.Item>
-          <Descriptions.Item label="案号">{formatText(lawyerInfo.caseNumber)}</Descriptions.Item>
           <Descriptions.Item label="联系电话">{formatText(lawyerInfo.contactPhone)}</Descriptions.Item>
-          <Descriptions.Item label="审理阶段">{formatTrialStage(lawyerInfo.trialStage ?? null)}</Descriptions.Item>
-          <Descriptions.Item label="庭审结果" span={2}>{formatText(lawyerInfo.hearingResult)}</Descriptions.Item>
         </Descriptions>
         <Divider dashed>办案进度</Divider>
         {timelineItems.length ? (
@@ -764,18 +796,18 @@ export default function WorkInjuryCaseModal({
         label: '人员信息',
         children: renderPartyDisplay(displayValues)
       },
-      {
+      sessionUser?.role !== 'sale' ? {
         key: 'hearing',
         label: '庭审信息',
         children: renderHearingDisplay(displayValues)
-      },
+      } : null,
       {
         key: 'assignment',
         label: '分配信息',
         children: renderAssignmentDisplay(displayValues)
       }
-    ],
-    [displayValues]
+    ].filter(item => item !== null),
+    [displayValues, sessionUser]
   );
 
   const handleViewTabChange = (key: string) => {

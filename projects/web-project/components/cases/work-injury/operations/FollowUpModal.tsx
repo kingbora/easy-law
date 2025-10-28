@@ -1,23 +1,9 @@
 import { useEffect } from 'react';
 
-import { DatePicker, Form, Input, Modal, Select, message } from 'antd';
+import { DatePicker, Form, Input, Modal, message } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 
 import type { CaseTimelineNode } from '@/lib/cases-api';
-
-const TIMELINE_NODE_OPTIONS: Array<{ value: CaseTimelineNode; label: string }> = [
-  { value: 'apply_labor_confirmation', label: '申请确认劳务关系' },
-  { value: 'receive_labor_confirmation_award', label: '收到确认劳务关系裁决' },
-  { value: 'apply_work_injury_certification', label: '申请工伤认定' },
-  { value: 'receive_work_injury_decision', label: '收到工伤认定书' },
-  { value: 'apply_work_ability_appraisal', label: '申请劳动能力鉴定' },
-  { value: 'receive_work_ability_conclusion', label: '收到劳动能力鉴定结论' },
-  { value: 'apply_work_injury_benefit_award', label: '申请工伤保险待遇裁决' },
-  { value: 'lawsuit_filed', label: '起诉立案' },
-  { value: 'filing_approved', label: '立案审核通过' },
-  { value: 'judgment_time', label: '裁决时间' }
-];
-
 export interface FollowUpFormValues {
   nodeType?: CaseTimelineNode;
   occurredOn?: Dayjs | null;
@@ -96,18 +82,6 @@ export default function FollowUpModal({
       confirmLoading={confirmLoading}
     >
       <Form form={form} layout="vertical">
-        <Form.Item
-          label="跟进节点"
-          name="nodeType"
-          rules={[{ required: true, message: '请选择跟进节点' }]}
-        >
-          <Select
-            placeholder="请选择跟进节点"
-            options={TIMELINE_NODE_OPTIONS}
-            optionFilterProp="label"
-            showSearch
-          />
-        </Form.Item>
         <Form.Item
           label="发生日期"
           name="occurredOn"

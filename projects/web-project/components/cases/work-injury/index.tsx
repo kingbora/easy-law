@@ -10,11 +10,15 @@ import WorkInjuryCaseModal, { type WorkInjuryCaseFormValues } from './modal';
 import AssignStaffModal, { type AssignStaffFormValues } from './operations/AssignStaffModal';
 import HearingModal, { type HearingFormValues } from './operations/HearingModal';
 import FollowUpModal, { type FollowUpFormValues } from './operations/FollowUpModal';
+import UpdateStatusModal, { type UpdateStatusFormValues } from './operations/UpdateStatusModal';
+import CaseChangeLogModal from './operations/CaseChangeLogModal';
+import CaseFeeModal from './operations/CaseFeeModal';
 import { useDashboardHeaderAction } from '@/app/(dashboard)/header-context';
 import { ApiError } from '@/lib/api-client';
 import { useSessionStore } from '@/lib/stores/session-store';
 import {
   createCase as createCaseApi,
+  fetchCaseChangeLogs,
   fetchCaseById,
   fetchCases,
   type CaseParticipantInput,
@@ -27,6 +31,7 @@ import {
   type CaseTimelineInput,
   type CaseType,
   type CaseCollectionInput,
+  type CaseChangeLog,
   updateCase as updateCaseApi
 } from '@/lib/cases-api';
 import type { UserDepartment, UserRole } from '@/lib/users-api';
@@ -57,6 +62,12 @@ const CASE_CREATE_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'super_admin',
   'admin',
   'sale'
+]);
+
+const CASE_FEE_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
+  'super_admin',
+  'admin',
+  'administration'
 ]);
 
 const PAGE_DEPARTMENT: UserDepartment = 'work_injury';
@@ -215,9 +226,9 @@ function mapCaseRecordToFormValues(record: CaseRecord): WorkInjuryCaseFormValues
       caseType: record.caseType,
       caseLevel: record.caseLevel,
       provinceCity: record.provinceCity ?? undefined,
-      targetAmount: parseNumberValue(record.targetAmount ?? null),
+      targetAmount:record.targetAmount ?? undefined,
       feeStandard: record.feeStandard ?? undefined,
-      agencyFeeEstimate: parseNumberValue(record.agencyFeeEstimate ?? null),
+      agencyFeeEstimate: record.agencyFeeEstimate ?? undefined,
       dataSource: record.dataSource ?? undefined,
       hasContract: record.hasContract ?? undefined,
       hasSocialSecurity: record.hasSocialSecurity ?? undefined,
@@ -226,7 +237,7 @@ function mapCaseRecordToFormValues(record: CaseRecord): WorkInjuryCaseFormValues
       injurySeverity: record.injurySeverity ?? undefined,
       injuryCause: record.injuryCause ?? undefined,
       workInjuryCertified: record.workInjuryCertified ?? undefined,
-      monthlySalary: parseNumberValue(record.monthlySalary ?? null),
+      monthlySalary: record.monthlySalary ?? undefined,
       appraisalLevel: record.appraisalLevel ?? undefined,
       appraisalEstimate: record.appraisalEstimate ?? undefined,
       existingEvidence: record.existingEvidence ?? undefined,
@@ -386,9 +397,9 @@ function mapFormToCasePayload(values: WorkInjuryCaseFormValues, department: Case
     caseType: (basic.caseType ?? 'work_injury') as CasePayload['caseType'],
     caseLevel: (basic.caseLevel ?? 'A') as CasePayload['caseLevel'],
     provinceCity: toNullableText(basic.provinceCity ?? null),
-    targetAmount: toNumericString(basic.targetAmount ?? null),
+    targetAmount: basic.targetAmount ?? null,
     feeStandard: toNullableText(basic.feeStandard ?? null),
-    agencyFeeEstimate: toNumericString(basic.agencyFeeEstimate ?? null),
+    agencyFeeEstimate: basic.agencyFeeEstimate ?? null,
     dataSource: toNullableText(basic.dataSource ?? null),
     hasContract: basic.hasContract ?? null,
     hasSocialSecurity: basic.hasSocialSecurity ?? null,
@@ -397,7 +408,7 @@ function mapFormToCasePayload(values: WorkInjuryCaseFormValues, department: Case
     injurySeverity: toNullableText(basic.injurySeverity ?? null),
     injuryCause: toNullableText(basic.injuryCause ?? null),
     workInjuryCertified: basic.workInjuryCertified ?? null,
-    monthlySalary: toNumericString(basic.monthlySalary ?? null),
+    monthlySalary: basic.monthlySalary ?? null,
     appraisalLevel: toNullableText(basic.appraisalLevel ?? null),
     appraisalEstimate: toNullableText(basic.appraisalEstimate ?? null),
     existingEvidence: toNullableText(basic.existingEvidence ?? null),
@@ -455,6 +466,17 @@ export default function WorkInjuryCasesPage() {
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
   const [followUpModalCase, setFollowUpModalCase] = useState<CaseRecord | null>(null);
   const [followSubmitting, setFollowSubmitting] = useState(false);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [statusModalCase, setStatusModalCase] = useState<CaseRecord | null>(null);
+  const [statusSubmitting, setStatusSubmitting] = useState(false);
+  const [logModalOpen, setLogModalOpen] = useState(false);
+  const [logModalCase, setLogModalCase] = useState<CaseRecord | null>(null);
+  const [logModalLoading, setLogModalLoading] = useState(false);
+  const [logModalLogs, setLogModalLogs] = useState<CaseChangeLog[]>([]);
+  const [feeModalOpen, setFeeModalOpen] = useState(false);
+  const [feeModalCase, setFeeModalCase] = useState<CaseRecord | null>(null);
+  const [feeModalLoading, setFeeModalLoading] = useState(false);
+  const [feeModalSubmitting, setFeeModalSubmitting] = useState(false);
   const [caseModalOpen, setCaseModalOpen] = useState(false);
   const [caseModalMode, setCaseModalMode] = useState<'view' | 'update'>('view');
   const [caseModalCase, setCaseModalCase] = useState<CaseRecord | null>(null);
@@ -471,6 +493,7 @@ export default function WorkInjuryCasesPage() {
   const [filterForm] = Form.useForm<CaseFilters>();
   const filtersRef = useRef<CaseFilters>({});
   const [filters, setFilters] = useState<CaseFilters>({});
+  const changeLogCacheRef = useRef<Map<string, CaseChangeLog[]>>(new Map());
   const currentUser = useSessionStore((state) => state.user);
 
   const currentPage = pagination.current ?? 1;
@@ -702,6 +725,25 @@ export default function WorkInjuryCasesPage() {
     [currentUser]
   );
 
+  const canManageCaseFee = useCallback(
+    (record: CaseRecord) => {
+      if (!currentUser) {
+        return false;
+      }
+      if (!CASE_FEE_ALLOWED_ROLES.has(currentUser.role as UserRole)) {
+        return false;
+      }
+      if (currentUser.role === 'super_admin') {
+        return true;
+      }
+      if (currentUser.role === 'admin' || currentUser.role === 'administration') {
+        return Boolean(currentUser.department && record.department === currentUser.department);
+      }
+      return false;
+    },
+    [currentUser]
+  );
+
   const refreshCases = useCallback(async () => {
     const nextPage = pagination.current ?? 1;
     const nextSize = pagination.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -739,9 +781,10 @@ export default function WorkInjuryCasesPage() {
       if (!assignModalCase) {
         return;
       }
+      const caseId = assignModalCase.id;
       setAssignSubmitting(true);
       try {
-        await updateCaseApi(assignModalCase.id, {
+        await updateCaseApi(caseId, {
           caseType: assignModalCase.caseType,
           caseLevel: assignModalCase.caseLevel,
           assignedLawyerId: values.assignedLawyerId ?? null,
@@ -751,6 +794,7 @@ export default function WorkInjuryCasesPage() {
         message.success('人员分配已更新');
         setAssignModalOpen(false);
         setAssignModalCase(null);
+        changeLogCacheRef.current.delete(caseId);
         await refreshCases();
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '更新人员分配失败，请稍后重试';
@@ -767,9 +811,10 @@ export default function WorkInjuryCasesPage() {
       if (!hearingModalCase) {
         return;
       }
+      const caseId = hearingModalCase.id;
       setHearingSubmitting(true);
       try {
-        await updateCaseApi(hearingModalCase.id, {
+        await updateCaseApi(caseId, {
           caseType: hearingModalCase.caseType,
           caseLevel: hearingModalCase.caseLevel,
           hearing: {
@@ -786,6 +831,7 @@ export default function WorkInjuryCasesPage() {
         message.success('庭审信息添加成功');
         setHearingModalOpen(false);
         setHearingModalCase(null);
+        changeLogCacheRef.current.delete(caseId);
         await refreshCases();
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '新增庭审信息失败，请稍后重试';
@@ -816,7 +862,8 @@ export default function WorkInjuryCasesPage() {
           note: values.note ?? null,
           followerId: currentUser?.id ?? null
         });
-        await updateCaseApi(followUpModalCase.id, {
+        const caseId = followUpModalCase.id;
+        await updateCaseApi(caseId, {
           caseType: followUpModalCase.caseType,
           caseLevel: followUpModalCase.caseLevel,
           timeline: existingTimeline
@@ -824,6 +871,7 @@ export default function WorkInjuryCasesPage() {
         message.success('跟进备注已添加');
         setFollowUpModalOpen(false);
         setFollowUpModalCase(null);
+        changeLogCacheRef.current.delete(caseId);
         await refreshCases();
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '保存跟进备注失败，请稍后重试';
@@ -835,18 +883,50 @@ export default function WorkInjuryCasesPage() {
     [followUpModalCase, currentUser, refreshCases]
   );
 
+  const handleStatusSubmit = useCallback(
+    async (values: UpdateStatusFormValues) => {
+      if (!statusModalCase) {
+        return;
+      }
+      const caseId = statusModalCase.id;
+      setStatusSubmitting(true);
+      try {
+        await updateCaseApi(caseId, {
+          caseType: statusModalCase.caseType,
+          caseLevel: statusModalCase.caseLevel,
+          caseStatus: values.caseStatus,
+          closedReason: values.caseStatus === '已结案' ? values.closedReason ?? null : null,
+          voidReason: values.caseStatus === '废单' ? values.voidReason ?? null : null
+        });
+        message.success('案件状态已更新');
+        setStatusModalOpen(false);
+        setStatusModalCase(null);
+        changeLogCacheRef.current.delete(caseId);
+        await refreshCases();
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '更新案件状态失败，请稍后重试';
+        message.error(errorMessage);
+      } finally {
+        setStatusSubmitting(false);
+      }
+    },
+    [refreshCases, statusModalCase]
+  );
+
   const handleCaseModalSubmit = useCallback(
     async (values: WorkInjuryCaseFormValues) => {
       if (!caseModalCase) {
         return;
       }
+      const caseId = caseModalCase.id;
       setCaseModalSubmitting(true);
       try {
         const payload = mapFormToCasePayload(values, caseModalCase.department ?? null);
-        await updateCaseApi(caseModalCase.id, payload);
+        await updateCaseApi(caseId, payload);
         message.success('案件信息已更新');
         setCaseModalOpen(false);
         setCaseModalCase(null);
+        changeLogCacheRef.current.delete(caseId);
         await refreshCases();
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '更新案件信息失败，请稍后重试';
@@ -856,6 +936,34 @@ export default function WorkInjuryCasesPage() {
       }
     },
     [caseModalCase, refreshCases]
+  );
+
+  const handleFeeSubmit = useCallback(
+    async (values: { salesCommission: string | null; handlingFee: string | null }) => {
+      if (!feeModalCase) {
+        return;
+      }
+      setFeeModalSubmitting(true);
+      try {
+        await updateCaseApi(feeModalCase.id, {
+          caseType: feeModalCase.caseType,
+          caseLevel: feeModalCase.caseLevel,
+          salesCommission: values.salesCommission,
+          handlingFee: values.handlingFee
+        });
+        message.success('费用信息已更新');
+        changeLogCacheRef.current.delete(feeModalCase.id);
+        setFeeModalOpen(false);
+        setFeeModalCase(null);
+        await refreshCases();
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '更新费用信息失败，请稍后重试';
+        message.error(errorMessage);
+      } finally {
+        setFeeModalSubmitting(false);
+      }
+    },
+    [feeModalCase, refreshCases]
   );
 
   const handleActionSelect = useCallback(
@@ -885,11 +993,66 @@ export default function WorkInjuryCasesPage() {
           setFollowUpModalCase(record);
           setFollowUpModalOpen(true);
           break;
+        case 'update_status':
+          if (!canUpdateCaseRecord(record)) {
+            message.error('您没有权限更新案件状态');
+            return;
+          }
+          setStatusModalCase(record);
+          setStatusModalOpen(true);
+          break;
+        case 'fee_detail': {
+          if (!canManageCaseFee(record)) {
+            message.error('您没有权限查看费用明细');
+            return;
+          }
+          setFeeModalOpen(true);
+          setFeeModalLoading(true);
+          setFeeModalCase(null);
+          void fetchCaseById(record.id)
+            .then((detail) => {
+              setFeeModalCase(detail);
+            })
+            .catch((error) => {
+              const errorMessage = error instanceof ApiError ? error.message : '获取费用信息失败，请稍后重试';
+              message.error(errorMessage);
+              setFeeModalOpen(false);
+            })
+            .finally(() => {
+              setFeeModalLoading(false);
+            });
+          break;
+        }
+        case 'view_logs': {
+          setLogModalCase(record);
+          setLogModalOpen(true);
+          const cached = changeLogCacheRef.current.get(record.id);
+          if (cached) {
+            setLogModalLogs(cached);
+            setLogModalLoading(false);
+            break;
+          }
+          setLogModalLogs([]);
+          setLogModalLoading(true);
+          void fetchCaseChangeLogs(record.id)
+            .then((logs) => {
+              changeLogCacheRef.current.set(record.id, logs);
+              setLogModalLogs(logs);
+            })
+            .catch((error) => {
+              const errorMessage = error instanceof ApiError ? error.message : '获取变更日志失败，请稍后重试';
+              message.error(errorMessage);
+            })
+            .finally(() => {
+              setLogModalLoading(false);
+            });
+          break;
+        }
         default:
           break;
       }
     },
-    [canAssignStaffToCase, canUpdateCaseRecord, canUpdateHearingRecord]
+    [canAssignStaffToCase, canManageCaseFee, canUpdateCaseRecord, canUpdateHearingRecord]
   );
 
   const handleCaseTitleClick = useCallback(
@@ -907,6 +1070,18 @@ export default function WorkInjuryCasesPage() {
     setCaseModalSubmitting(false);
   }, []);
 
+  const handleLogModalClose = useCallback(() => {
+    setLogModalOpen(false);
+    setLogModalCase(null);
+  }, []);
+
+  const handleFeeModalClose = useCallback(() => {
+    setFeeModalOpen(false);
+    setFeeModalCase(null);
+    setFeeModalLoading(false);
+    setFeeModalSubmitting(false);
+  }, []);
+
   const handleCaseModalEdit = useCallback(() => {
     if (!caseModalCanEdit) {
       return;
@@ -918,6 +1093,18 @@ export default function WorkInjuryCasesPage() {
     () => (caseModalCase ? mapCaseRecordToFormValues(caseModalCase) : undefined),
     [caseModalCase]
   );
+
+  const statusModalInitialValues = useMemo<UpdateStatusFormValues | undefined>(() => {
+    if (!statusModalCase) {
+      return undefined;
+    }
+    const caseStatus = statusModalCase.caseStatus ?? '未结案';
+    return {
+      caseStatus,
+      closedReason: caseStatus === '已结案' ? castClosedReason(statusModalCase.closedReason ?? null) ?? null : null,
+      voidReason: caseStatus === '废单' ? castVoidReason(statusModalCase.voidReason ?? null) ?? null : null
+    };
+  }, [statusModalCase]);
 
   const columns = useMemo<ColumnsType<CaseRecord>>(
     () => [
@@ -979,7 +1166,23 @@ export default function WorkInjuryCasesPage() {
               label: '跟进备注',
               disabled: !canUpdateCaseRecord(record)
             });
+            items.push({
+              key: 'update_status',
+              label: '更新状态',
+              disabled: !canUpdateCaseRecord(record)
+            });
           }
+          if (canManageCaseFee(record)) {
+            items.push({
+              key: 'fee_detail',
+              label: '费用明细',
+              disabled: !canManageCaseFee(record)
+            });
+          }
+          items.push({
+            key: 'view_logs',
+            label: '查看变更日志'
+          });
           return (
             <Dropdown
               menu={{
@@ -998,7 +1201,14 @@ export default function WorkInjuryCasesPage() {
         },
       }
     ],
-    [canAssignStaffToCase, canUpdateCaseRecord, canUpdateHearingRecord, handleActionSelect, handleCaseTitleClick]
+    [
+      canAssignStaffToCase,
+      canManageCaseFee,
+      canUpdateCaseRecord,
+      canUpdateHearingRecord,
+      handleActionSelect,
+      handleCaseTitleClick
+    ]
   );
 
   return (
@@ -1105,6 +1315,34 @@ export default function WorkInjuryCasesPage() {
           setFollowUpModalCase(null);
         }}
         onSubmit={handleFollowUpSubmit}
+      />
+
+      <UpdateStatusModal
+        open={statusModalOpen}
+        initialValues={statusModalInitialValues}
+        confirmLoading={statusSubmitting}
+        onCancel={() => {
+          setStatusModalOpen(false);
+          setStatusModalCase(null);
+        }}
+        onSubmit={handleStatusSubmit}
+      />
+
+      <CaseFeeModal
+        open={feeModalOpen}
+        loading={feeModalLoading}
+        submitting={feeModalSubmitting}
+        caseRecord={feeModalCase}
+        onClose={handleFeeModalClose}
+        onSubmit={handleFeeSubmit}
+      />
+
+      <CaseChangeLogModal
+        open={logModalOpen}
+        loading={logModalLoading}
+        logs={logModalLogs}
+        caseTitle={logModalCase ? buildCaseTitle(logModalCase) : undefined}
+        onClose={handleLogModalClose}
       />
 
       <WorkInjuryCaseModal

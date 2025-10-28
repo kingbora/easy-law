@@ -5,6 +5,7 @@ import {
   deleteCase,
   getAssignableStaff,
   getCaseById,
+  getCaseChangeLogs,
   listCases,
   updateCase
 } from '../services/cases-service';
@@ -54,6 +55,22 @@ router.get(
     const department = typeof query.department === 'string' ? query.department : undefined;
     const result = await getAssignableStaff(session.user, department);
     res.json({ data: result });
+  })
+);
+
+router.get(
+  '/:id/change-logs',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+
+    const logs = await getCaseChangeLogs(req.params.id, session.user);
+
+    if (!logs) {
+      res.status(404).json({ message: 'Case not found' });
+      return;
+    }
+
+    res.json({ data: logs });
   })
 );
 

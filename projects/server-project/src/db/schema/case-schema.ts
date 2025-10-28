@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   date,
@@ -13,6 +13,13 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { departmentEnum, users } from './auth-schema';
+
+export interface CaseChangeDetail {
+  field: string;
+  label: string;
+  previousValue: string | null;
+  currentValue: string | null;
+}
 
 export const caseTypeEnum = pgEnum('case_type', ['work_injury', 'personal_injury', 'other']);
 export const caseLevelEnum = pgEnum('case_level', ['A', 'B', 'C']);
@@ -40,9 +47,9 @@ export const cases = pgTable('case_record', {
   caseType: caseTypeEnum('case_type').notNull(),
   caseLevel: caseLevelEnum('case_level').notNull(),
   provinceCity: text('province_city'),
-  targetAmount: numeric('target_amount', { precision: 18, scale: 2 }),
+  targetAmount: text('target_amount'),
   feeStandard: text('fee_standard'),
-  agencyFeeEstimate: numeric('agency_fee_estimate', { precision: 18, scale: 2 }),
+  agencyFeeEstimate: text('agency_fee_estimate'),
   dataSource: text('data_source'),
   hasContract: boolean('has_contract'),
   hasSocialSecurity: boolean('has_social_security'),
@@ -51,7 +58,7 @@ export const cases = pgTable('case_record', {
   injurySeverity: text('injury_severity'),
   injuryCause: text('injury_cause'),
   workInjuryCertified: boolean('work_injury_certified'),
-  monthlySalary: numeric('monthly_salary', { precision: 12, scale: 2 }),
+  monthlySalary: text('monthly_salary'),
   appraisalLevel: text('appraisal_level'),
   appraisalEstimate: text('appraisal_estimate'),
   existingEvidence: text('existing_evidence'),
@@ -69,6 +76,8 @@ export const cases = pgTable('case_record', {
   lawyerProgress: jsonb('lawyer_progress'),
   creatorId: text('creator_id').references(() => users.id),
   updaterId: text('updater_id').references(() => users.id),
+  salesCommission: text('sales_commission'),
+  handlingFee: text('handling_fee'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
@@ -130,6 +139,22 @@ export const caseTimeline = pgTable('case_timeline', {
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
 
+export const caseChangeLogs = pgTable('case_change_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  caseId: uuid('case_id')
+    .notNull()
+    .references(() => cases.id, { onDelete: 'cascade' }),
+  actorId: text('actor_id').references(() => users.id),
+  actorName: text('actor_name'),
+  actorRole: text('actor_role'),
+  action: text('action').notNull(),
+  description: text('description'),
+  changes: jsonb('changes')
+    .$type<CaseChangeDetail[] | null>()
+    .default(sql`'[]'::jsonb`),
+  createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
 export const casesRelations = relations(cases, ({ many, one }) => ({
   owner: one(users, {
     fields: [cases.ownerId],
@@ -161,7 +186,8 @@ export const casesRelations = relations(cases, ({ many, one }) => ({
   }),
   participants: many(caseParticipants),
   collections: many(caseCollections),
-  timeline: many(caseTimeline)
+  timeline: many(caseTimeline),
+  changeLogs: many(caseChangeLogs)
 }));
 
 export const caseParticipantRelations = relations(caseParticipants, ({ one }) => ({
@@ -193,5 +219,16 @@ export const caseHearingRelations = relations(caseHearings, ({ one }) => ({
   case: one(cases, {
     fields: [caseHearings.caseId],
     references: [cases.id]
+  })
+}));
+
+export const caseChangeLogRelations = relations(caseChangeLogs, ({ one }) => ({
+  case: one(cases, {
+    fields: [caseChangeLogs.caseId],
+    references: [cases.id]
+  }),
+  actor: one(users, {
+    fields: [caseChangeLogs.actorId],
+    references: [users.id]
   })
 }));

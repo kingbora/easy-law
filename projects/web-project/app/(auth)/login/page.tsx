@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 
 import { authClient } from '@/lib/auth-client';
 import { AuthShell } from '@/components/auth/AuthShell';
+import { useSessionStore } from '@/lib/stores/session-store';
 
 const { Paragraph } = Typography;
 
@@ -34,6 +35,7 @@ const LoginPage = () => {
         setErrorMessage(result.error.message ?? '登录失败，请稍后重试');
         return;
       }
+      useSessionStore.getState().clear();
       message.success('登录成功');
       router.replace(redirectParam ?? '/');
     } catch (error) {
