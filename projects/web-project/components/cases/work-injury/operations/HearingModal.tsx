@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { Col, DatePicker, Form, Input, Modal, Row, Select, message } from 'antd';
 import TextArea from 'antd/es/input/TextArea';
@@ -12,6 +12,7 @@ const TRIAL_STAGE_OPTIONS: Array<{ label: string; value: TrialStage }> = [
 ];
 
 export interface HearingFormValues {
+  trialLawyerId?: string | null;
   hearingTime?: Dayjs | null;
   hearingLocation?: string | null;
   tribunal?: string | null;
@@ -28,6 +29,9 @@ interface HearingModalProps {
   confirmLoading?: boolean;
   onCancel: () => void;
   onSubmit?: (values: HearingFormValues) => Promise<void> | void;
+  lawyerOptions?: Array<{ value: string; label: string }>;
+  lawyerOptionsLoading?: boolean;
+  disabledStages?: TrialStage[];
 }
 
 export default function HearingModal({
@@ -35,9 +39,21 @@ export default function HearingModal({
   initialValues,
   confirmLoading = false,
   onCancel,
-  onSubmit
+  onSubmit,
+  lawyerOptions = [],
+  lawyerOptionsLoading = false,
+  disabledStages = []
 }: HearingModalProps) {
   const [form] = Form.useForm<HearingFormValues>();
+
+  const stageOptions = useMemo(
+    () =>
+      TRIAL_STAGE_OPTIONS.map((option) => ({
+        ...option,
+        disabled: disabledStages.includes(option.value)
+      })),
+    [disabledStages]
+  );
 
   useEffect(() => {
     if (!open) {
@@ -57,6 +73,7 @@ export default function HearingModal({
     try {
       const values = await form.validateFields();
       await onSubmit({
+        trialLawyerId: values.trialLawyerId ?? null,
         hearingTime: values.hearingTime ?? null,
         hearingLocation: values.hearingLocation ?? null,
         tribunal: values.tribunal ?? null,
@@ -91,10 +108,26 @@ export default function HearingModal({
       <Form form={form} layout="vertical">
         <Row gutter={24}>
           <Col span={12}>
+            <Form.Item
+              label="开庭律师"
+              name="trialLawyerId"
+              rules={[{ required: true, message: '请选择开庭律师' }]}
+            >
+              <Select
+                allowClear
+                placeholder="请选择开庭律师"
+                options={lawyerOptions}
+                loading={lawyerOptionsLoading}
+                optionFilterProp="label"
+                showSearch
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
           <Form.Item rules={[{required: true, message: '请选择审理阶段'}]} label="审理阶段" name="trialStage">
           <Select
             allowClear
-            options={TRIAL_STAGE_OPTIONS}
+            options={stageOptions}
             placeholder="请选择审理阶段"
           />
         </Form.Item>
@@ -110,13 +143,13 @@ export default function HearingModal({
         </Form.Item>
           </Col>
           <Col span={12}>
-          <Form.Item label="庭审地点" name="hearingLocation">
-          <Input placeholder="请输入庭审地点" />
+          <Form.Item label="法院" name="hearingLocation">
+          <Input placeholder="请输入法院" />
         </Form.Item>
           </Col>
         <Col span={12}>
-        <Form.Item label="庭审庭次" name="tribunal">
-          <Input placeholder="请输入庭审庭次" />
+        <Form.Item label="判庭" name="tribunal">
+          <Input placeholder="请输入判庭" />
         </Form.Item>
         </Col>
         <Col span={12}>

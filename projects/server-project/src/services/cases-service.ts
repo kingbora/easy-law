@@ -8,7 +8,6 @@ import type {
   caseTypeEnum,
   participantEntityEnum,
   participantRoleEnum,
-  timelineNodeEnum
 } from '../db/schema/case-schema';
 import {
   caseChangeLogs,
@@ -44,6 +43,12 @@ const CASE_PERMISSIONS: Record<string, Set<CaseAction>> = {
   sale: new Set(['list', 'create', 'update'])
 };
 
+const CASE_COLLECTION_ALLOWED_ROLES = new Set<SessionUser['role']>([
+  'super_admin',
+  'admin',
+  'administration'
+]);
+
 export type CaseType = (typeof caseTypeEnum.enumValues)[number];
 export type CaseLevel = (typeof caseLevelEnum.enumValues)[number];
 export type CaseStatus = (typeof caseStatusEnum.enumValues)[number];
@@ -72,17 +77,17 @@ export interface CaseCollectionInput {
   receivedAt?: string | Date | null;
 }
 
-export type CaseTimelineNode = (typeof timelineNodeEnum.enumValues)[number];
+export type CreateCaseCollectionInput = Pick<CaseCollectionInput, 'amount' | 'receivedAt'>;
 
 export interface CaseTimelineInput {
   id?: string;
-  nodeType: CaseTimelineNode;
   occurredOn: string | Date;
-  note?: string | null;
+  note: string;
   followerId?: string | null;
 }
 
 export interface CaseHearingInput {
+  trialLawyerId?: string | null;
   hearingTime?: string | Date | null;
   hearingLocation?: string | null;
   tribunal?: string | null;
@@ -93,8 +98,11 @@ export interface CaseHearingInput {
   hearingResult?: string | null;
 }
 
+export interface CaseHearingUpsertInput extends Omit<CaseHearingInput, 'trialStage'> {
+  trialStage: TrialStage;
+}
+
 export interface CaseInput {
-  referenceNo?: string | null;
   caseType: CaseType;
   caseLevel: CaseLevel;
   provinceCity?: string | null;
@@ -117,25 +125,23 @@ export interface CaseInput {
   witnessCooperative?: boolean | null;
   remark?: string | null;
   department?: (typeof cases.$inferInsert)['department'];
-  ownerId?: string | null;
+  assignedSaleId?: string | null;
   assignedLawyerId?: string | null;
   assignedAssistantId?: string | null;
-  assignedTrialLawyerId?: string | null;
   caseStatus?: CaseStatus | null;
   closedReason?: string | null;
   voidReason?: string | null;
-  lawyerProgress?: Record<string, unknown> | null;
   salesCommission?: string | number | null;
   handlingFee?: string | number | null;
   participants?: CaseParticipantsInput;
   collections?: CaseCollectionInput[];
   timeline?: CaseTimelineInput[];
-  hearing?: CaseHearingInput | null;
+  hearings?: CaseHearingInput[] | null;
 }
 
 export interface CaseListFilters {
   department?: (typeof cases.$inferSelect)['department'];
-  ownerId?: string;
+  assignedSaleId?: string;
   assignedLawyerId?: string;
   caseType?: CaseType;
   caseLevel?: CaseLevel;
@@ -178,16 +184,18 @@ export interface CaseCollectionDTO {
 
 export interface CaseTimelineDTO {
   id: string;
-  nodeType: CaseTimelineInput['nodeType'];
   occurredOn: string;
   createdAt: string;
   updatedAt: string;
-  note: string | null;
+  note: string;
   followerId: string | null;
   followerName: string | null;
 }
 
 export interface CaseHearingDTO {
+  id: string;
+  trialLawyerId: string | null;
+  trialLawyerName: string | null;
   hearingTime: string | null;
   hearingLocation: string | null;
   tribunal: string | null;
@@ -196,11 +204,12 @@ export interface CaseHearingDTO {
   contactPhone: string | null;
   trialStage: TrialStage | null;
   hearingResult: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CaseDTO {
   id: string;
-  referenceNo: string | null;
   caseType: CaseType;
   caseLevel: CaseLevel;
   provinceCity: string | null;
@@ -223,18 +232,15 @@ export interface CaseDTO {
   witnessCooperative: boolean | null;
   remark: string | null;
   department: (typeof cases.$inferSelect)['department'];
-  ownerId: string | null;
+  assignedSaleId: string | null;
   ownerName: string | null;
   assignedLawyerId: string | null;
   assignedLawyerName: string | null;
   assignedAssistantId: string | null;
   assignedAssistantName: string | null;
-  assignedTrialLawyerId: string | null;
-  assignedTrialLawyerName: string | null;
   caseStatus: CaseStatus | null;
   closedReason: string | null;
   voidReason: string | null;
-  lawyerProgress: Record<string, unknown> | null;
   salesCommission: string | null;
   handlingFee: string | null;
   createdAt: string;
@@ -245,7 +251,7 @@ export interface CaseDTO {
   };
   collections: CaseCollectionDTO[];
   timeline: CaseTimelineDTO[];
-  hearing: CaseHearingDTO | null;
+  hearings: CaseHearingDTO[];
 }
 
 export interface CaseChangeLogDTO {
@@ -264,6 +270,9 @@ type CaseParticipantRecord = typeof caseParticipants.$inferSelect;
 type CaseCollectionRecord = typeof caseCollections.$inferSelect;
 type CaseTimelineRecord = typeof caseTimeline.$inferSelect;
 type CaseHearingRecord = typeof caseHearings.$inferSelect;
+type CaseHearingRecordWithRelations = CaseHearingRecord & {
+  trialLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
+};
 type UserRecord = typeof users.$inferSelect;
 
 type CaseTimelineRecordWithFollower = CaseTimelineRecord & {
@@ -271,14 +280,13 @@ type CaseTimelineRecordWithFollower = CaseTimelineRecord & {
 };
 
 type CaseWithRelations = CaseRecord & {
-  participants: CaseParticipantRecord[];
-  collections: CaseCollectionRecord[];
-  timeline: CaseTimelineRecordWithFollower[];
-  hearing?: CaseHearingRecord | null;
+  participants?: CaseParticipantRecord[];
+  collections?: CaseCollectionRecord[];
+  timeline?: CaseTimelineRecordWithFollower[];
+  hearings?: CaseHearingRecordWithRelations[];
   owner?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedAssistant?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
-  assignedTrialLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
 };
 
 type CaseChangeLogRecord = typeof caseChangeLogs.$inferSelect & {
@@ -309,8 +317,10 @@ function combineOr(conditions: SQL<unknown>[]): SQL<unknown> | undefined {
 
 type CaseAccessProjection = Pick<
   CaseRecord,
-  'department' | 'ownerId' | 'assignedLawyerId' | 'assignedAssistantId' | 'assignedTrialLawyerId'
->;
+  'id' | 'department' | 'assignedSaleId' | 'assignedLawyerId' | 'assignedAssistantId'
+> & {
+  hearings?: Array<Pick<CaseHearingRecord, 'trialLawyerId'>>;
+};
 
 interface CaseAccessContext {
   allowAll: boolean;
@@ -318,7 +328,8 @@ interface CaseAccessContext {
   ownerIds: Set<string>;
   assignedLawyerIds: Set<string>;
   assignedAssistantIds: Set<string>;
-  assignedTrialLawyerIds: Set<string>;
+  hearingTrialLawyerIds: Set<string>;
+  hearingCaseIds: Set<string>;
 }
 
 async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessContext> {
@@ -329,7 +340,8 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
       ownerIds: new Set(),
       assignedLawyerIds: new Set(),
       assignedAssistantIds: new Set(),
-      assignedTrialLawyerIds: new Set()
+      hearingTrialLawyerIds: new Set(),
+      hearingCaseIds: new Set()
     } satisfies CaseAccessContext;
   }
 
@@ -339,7 +351,8 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
     ownerIds: new Set([user.id]),
     assignedLawyerIds: new Set([user.id]),
     assignedAssistantIds: new Set([user.id]),
-    assignedTrialLawyerIds: new Set([user.id])
+    hearingTrialLawyerIds: new Set([user.id]),
+    hearingCaseIds: new Set()
   };
 
   if ((user.role === 'admin' || user.role === 'administration') && user.department) {
@@ -374,8 +387,25 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
 
     if (supervisor?.role === 'lawyer') {
       context.assignedLawyerIds.add(supervisor.id);
-      context.assignedTrialLawyerIds.add(supervisor.id);
+      context.hearingTrialLawyerIds.add(supervisor.id);
       context.ownerIds.add(supervisor.id);
+    }
+  }
+
+  if (context.hearingTrialLawyerIds.size > 0) {
+    const lawyerIds = Array.from(context.hearingTrialLawyerIds).filter((value) => value && value.trim().length > 0);
+    if (lawyerIds.length > 0) {
+      const hearingRecords = await db
+        .select({ caseId: caseHearings.caseId })
+        .from(caseHearings)
+        .where(inArray(caseHearings.trialLawyerId, lawyerIds));
+
+      hearingRecords.forEach((record) => {
+        const caseId = record.caseId;
+        if (caseId && caseId.trim().length > 0) {
+          context.hearingCaseIds.add(caseId);
+        }
+      });
     }
   }
 
@@ -384,10 +414,10 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
 
 function buildColumnCondition(
   column:
-    | typeof cases.ownerId
+    | typeof cases.id
+    | typeof cases.assignedSaleId
     | typeof cases.assignedLawyerId
-    | typeof cases.assignedAssistantId
-    | typeof cases.assignedTrialLawyerId,
+    | typeof cases.assignedAssistantId,
   ids: Set<string>
 ): SQL<unknown> | undefined {
   const values = Array.from(ids).filter((value) => Boolean(value && value.trim().length > 0));
@@ -411,7 +441,7 @@ function buildAccessWhere(context: CaseAccessContext): SQL<unknown> | undefined 
     orConditions.push(eq(cases.department, department));
   }
 
-  const ownerCondition = buildColumnCondition(cases.ownerId, context.ownerIds);
+  const ownerCondition = buildColumnCondition(cases.assignedSaleId, context.ownerIds);
   if (ownerCondition) {
     orConditions.push(ownerCondition);
   }
@@ -426,9 +456,9 @@ function buildAccessWhere(context: CaseAccessContext): SQL<unknown> | undefined 
     orConditions.push(assistantCondition);
   }
 
-  const trialLawyerCondition = buildColumnCondition(cases.assignedTrialLawyerId, context.assignedTrialLawyerIds);
-  if (trialLawyerCondition) {
-    orConditions.push(trialLawyerCondition);
+  const hearingCaseCondition = buildColumnCondition(cases.id, context.hearingCaseIds);
+  if (hearingCaseCondition) {
+    orConditions.push(hearingCaseCondition);
   }
 
   return combineOr(orConditions);
@@ -439,11 +469,15 @@ function canAccessCase(context: CaseAccessContext, record: CaseAccessProjection)
     return true;
   }
 
+  if (context.hearingCaseIds.has(record.id)) {
+    return true;
+  }
+
   if (record.department && context.departments.has(record.department)) {
     return true;
   }
 
-  if (record.ownerId && context.ownerIds.has(record.ownerId)) {
+  if (record.assignedSaleId && context.ownerIds.has(record.assignedSaleId)) {
     return true;
   }
 
@@ -455,7 +489,11 @@ function canAccessCase(context: CaseAccessContext, record: CaseAccessProjection)
     return true;
   }
 
-  if (record.assignedTrialLawyerId && context.assignedTrialLawyerIds.has(record.assignedTrialLawyerId)) {
+  if (
+    record.hearings?.some(
+      (hearing) => hearing.trialLawyerId && context.hearingTrialLawyerIds.has(hearing.trialLawyerId)
+    )
+  ) {
     return true;
   }
 
@@ -467,6 +505,97 @@ function mergeWhere(base?: SQL<unknown>, access?: SQL<unknown>): SQL<unknown> | 
     return and(base, access);
   }
   return base ?? access ?? undefined;
+}
+
+async function fetchSupervisorIdForUser(userId: string): Promise<string | null> {
+  if (!userId) {
+    return null;
+  }
+
+  const record = await db.query.users.findFirst({
+    columns: {
+      supervisorId: true
+    },
+    where: eq(users.id, userId)
+  });
+
+  const supervisorId = record?.supervisorId ?? null;
+  return supervisorId && supervisorId.trim().length > 0 ? supervisorId : null;
+}
+
+async function resolveDefaultTrialLawyerId(user: SessionUser): Promise<string | null> {
+  if (user.role === 'lawyer') {
+    return user.id;
+  }
+
+  if (user.role === 'assistant') {
+    const supervisorId = user.supervisorId ?? (await fetchSupervisorIdForUser(user.id));
+    if (!supervisorId) {
+      return null;
+    }
+
+    const supervisor = await db.query.users.findFirst({
+      columns: {
+        id: true,
+        role: true
+      },
+      where: eq(users.id, supervisorId)
+    });
+
+    if (!supervisor || supervisor.role !== 'lawyer') {
+      return null;
+    }
+
+    return supervisor.id;
+  }
+
+  return null;
+}
+
+async function applyDefaultTrialLawyer(
+  hearing: CaseHearingInput | null | undefined,
+  user: SessionUser
+): Promise<CaseHearingInput | null | undefined> {
+  if (!hearing) {
+    return hearing ?? null;
+  }
+
+  if (hearing.trialLawyerId !== undefined) {
+    return hearing;
+  }
+
+  const defaultId = await resolveDefaultTrialLawyerId(user);
+  if (!defaultId) {
+    return hearing;
+  }
+
+  return {
+    ...hearing,
+    trialLawyerId: defaultId
+  } satisfies CaseHearingInput;
+}
+
+async function applyDefaultTrialLawyerList(
+  hearings: CaseHearingInput[] | null | undefined,
+  user: SessionUser
+): Promise<CaseHearingInput[] | null | undefined> {
+  if (hearings === undefined) {
+    return undefined;
+  }
+
+  if (hearings === null) {
+    return null;
+  }
+
+  const results: CaseHearingInput[] = [];
+  for (const hearing of hearings) {
+    const processed = await applyDefaultTrialLawyer(hearing, user);
+    if (processed) {
+      results.push(processed);
+    }
+  }
+
+  return results;
 }
 
 const DEFAULT_PAGE = 1;
@@ -568,10 +697,9 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   | 'witnessCooperative'
   | 'remark'
   | 'department'
-  | 'ownerId'
+  | 'assignedSaleId'
   | 'assignedLawyerId'
   | 'assignedAssistantId'
-  | 'assignedTrialLawyerId'
   | 'caseStatus'
   | 'closedReason'
   | 'voidReason'
@@ -601,10 +729,9 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   witnessCooperative: '证人配合度',
   remark: '备注',
   department: '所属部门',
-  ownerId: '跟进人',
+  assignedSaleId: '跟进人',
   assignedLawyerId: '签约律师',
   assignedAssistantId: '律师助理',
-  assignedTrialLawyerId: '诉讼律师',
   caseStatus: '案件状态',
   closedReason: '结案原因',
   voidReason: '废单原因',
@@ -659,7 +786,7 @@ function buildChangeDescription(changes: CaseChangeDetail[], input?: CaseInput):
   if (input?.timeline) {
     return '更新案件跟进记录';
   }
-  if (input?.hearing !== undefined) {
+  if (input?.hearings !== undefined) {
     return '更新庭审信息';
   }
   if (input?.participants) {
@@ -678,9 +805,6 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
     caseLevel: input.caseLevel
   };
 
-  if (input.referenceNo !== undefined) {
-    values.referenceNo = input.referenceNo ?? null;
-  }
   if (input.provinceCity !== undefined) {
     values.provinceCity = input.provinceCity ?? null;
   }
@@ -741,17 +865,14 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
   if (input.department !== undefined) {
     values.department = input.department ?? null;
   }
-  if (input.ownerId !== undefined) {
-    values.ownerId = input.ownerId ?? null;
+  if (input.assignedSaleId !== undefined) {
+    values.assignedSaleId = input.assignedSaleId ?? null;
   }
   if (input.assignedLawyerId !== undefined) {
     values.assignedLawyerId = input.assignedLawyerId ?? null;
   }
   if (input.assignedAssistantId !== undefined) {
     values.assignedAssistantId = input.assignedAssistantId ?? null;
-  }
-  if (input.assignedTrialLawyerId !== undefined) {
-    values.assignedTrialLawyerId = input.assignedTrialLawyerId ?? null;
   }
   if (input.caseStatus !== undefined) {
     values.caseStatus = input.caseStatus ?? '未结案';
@@ -761,9 +882,6 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
   }
   if (input.voidReason !== undefined) {
     values.voidReason = input.voidReason ?? null;
-  }
-  if (input.lawyerProgress !== undefined) {
-    values.lawyerProgress = input.lawyerProgress ?? null;
   }
   if (input.salesCommission !== undefined) {
     values.salesCommission = normalizeNumericInput(input.salesCommission);
@@ -877,7 +995,6 @@ function mapCollection(record: CaseCollectionRecord): CaseCollectionDTO {
 function mapTimeline(record: CaseTimelineRecordWithFollower): CaseTimelineDTO {
   return {
     id: record.id,
-    nodeType: record.nodeType,
     occurredOn: formatDateOnly(record.occurredOn) ?? formatDateOnly(new Date())!,
     createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
     updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString(),
@@ -887,12 +1004,15 @@ function mapTimeline(record: CaseTimelineRecordWithFollower): CaseTimelineDTO {
   };
 }
 
-function mapHearing(record?: CaseHearingRecord | null): CaseHearingDTO | null {
+function mapHearing(record?: CaseHearingRecordWithRelations | null): CaseHearingDTO | null {
   if (!record) {
     return null;
   }
 
   return {
+    id: record.id,
+    trialLawyerId: record.trialLawyerId ?? null,
+    trialLawyerName: record.trialLawyer?.name ?? null,
     hearingTime: formatTimestamp(record.hearingTime),
     hearingLocation: record.hearingLocation ?? null,
     tribunal: record.tribunal ?? null,
@@ -900,7 +1020,9 @@ function mapHearing(record?: CaseHearingRecord | null): CaseHearingDTO | null {
     caseNumber: record.caseNumber ?? null,
     contactPhone: record.contactPhone ?? null,
     trialStage: record.trialStage ?? null,
-    hearingResult: record.hearingResult ?? null
+    hearingResult: record.hearingResult ?? null,
+    createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
+    updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString()
   } satisfies CaseHearingDTO;
 }
 
@@ -935,9 +1057,22 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     })
     .map(mapTimeline);
 
+  const hearings = [...(record.hearings ?? [])]
+    .sort((a, b) => {
+      const aTime = a.hearingTime ? new Date(a.hearingTime).getTime() : Number.MAX_SAFE_INTEGER;
+      const bTime = b.hearingTime ? new Date(b.hearingTime).getTime() : Number.MAX_SAFE_INTEGER;
+      if (aTime === bTime) {
+        const stageOrder = (stage?: TrialStage | null) =>
+          stage ? trialStageEnum.enumValues.indexOf(stage) : Number.MAX_SAFE_INTEGER;
+        return stageOrder(a.trialStage) - stageOrder(b.trialStage);
+      }
+      return aTime - bTime;
+    })
+    .map(mapHearing)
+    .filter((item): item is CaseHearingDTO => item !== null);
+
   return {
     id: record.id,
-    referenceNo: record.referenceNo ?? null,
     caseType: record.caseType,
     caseLevel: record.caseLevel,
     provinceCity: record.provinceCity ?? null,
@@ -960,20 +1095,17 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     witnessCooperative: record.witnessCooperative ?? null,
     remark: record.remark ?? null,
     department: record.department ?? null,
-    ownerId: record.ownerId ?? null,
-  ownerName: record.owner?.name ?? null,
+    assignedSaleId: record.assignedSaleId ?? null,
+    ownerName: record.owner?.name ?? null,
     assignedLawyerId: record.assignedLawyerId ?? null,
-  assignedLawyerName: record.assignedLawyer?.name ?? null,
+    assignedLawyerName: record.assignedLawyer?.name ?? null,
     assignedAssistantId: record.assignedAssistantId ?? null,
-  assignedAssistantName: record.assignedAssistant?.name ?? null,
-    assignedTrialLawyerId: record.assignedTrialLawyerId ?? null,
-  assignedTrialLawyerName: record.assignedTrialLawyer?.name ?? null,
+    assignedAssistantName: record.assignedAssistant?.name ?? null,
     caseStatus: record.caseStatus ?? null,
     closedReason: record.closedReason ?? null,
     voidReason: record.voidReason ?? null,
-    lawyerProgress: (record.lawyerProgress ?? null) as Record<string, unknown> | null,
-  salesCommission: formatNumeric(record.salesCommission),
-  handlingFee: formatNumeric(record.handlingFee),
+    salesCommission: formatNumeric(record.salesCommission),
+    handlingFee: formatNumeric(record.handlingFee),
     createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
     updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString(),
     participants: {
@@ -982,7 +1114,7 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     },
     collections,
     timeline,
-    hearing: mapHearing(record.hearing)
+    hearings
   };
 }
 
@@ -1005,8 +1137,8 @@ function buildWhereClause(options: CaseListFilters): SQL<unknown> | undefined {
   if (options.department) {
     conditions.push(eq(cases.department, options.department));
   }
-  if (options.ownerId) {
-    conditions.push(eq(cases.ownerId, options.ownerId));
+  if (options.assignedSaleId) {
+    conditions.push(eq(cases.assignedSaleId, options.assignedSaleId));
   }
   if (options.assignedLawyerId) {
     conditions.push(eq(cases.assignedLawyerId, options.assignedLawyerId));
@@ -1027,8 +1159,7 @@ function buildWhereClause(options: CaseListFilters): SQL<unknown> | undefined {
 
     const searchCondition = sql<unknown>`
       (
-        ${cases.referenceNo} ILIKE ${term}
-        OR ${cases.provinceCity} ILIKE ${term}
+        ${cases.provinceCity} ILIKE ${term}
         OR EXISTS (
           SELECT 1
           FROM ${caseHearings}
@@ -1081,16 +1212,15 @@ function normalizeTimelineInput(timeline?: CaseTimelineInput[], caseId?: string)
   }
 
   return timeline
-    .filter((item): item is CaseTimelineInput => Boolean(item && item.nodeType && item.occurredOn))
+    .filter((item): item is CaseTimelineInput => Boolean(item && item.note && item.occurredOn))
     .map((item) => {
       const occurredOn =
         normalizeDateInput(item.occurredOn) ?? new Date().toISOString().slice(0, 10);
       const note = typeof item.note === 'string' ? item.note.trim() : null;
       return {
         caseId,
-        nodeType: item.nodeType,
         occurredOn,
-        note: note && note.length > 0 ? note : null,
+        note: note && note.length > 0 ? note : '',
         followerId: item.followerId ?? null
       } satisfies typeof caseTimeline.$inferInsert;
     });
@@ -1103,6 +1233,7 @@ function normalizeHearingInput(hearing?: CaseHearingInput | null, caseId?: strin
 
   const result = {
     caseId,
+    trialLawyerId: normalizeTextInput(hearing.trialLawyerId),
     hearingTime: normalizeTimestampInput(hearing.hearingTime) ?? null,
     hearingLocation: normalizeTextInput(hearing.hearingLocation),
     tribunal: normalizeTextInput(hearing.tribunal),
@@ -1114,6 +1245,7 @@ function normalizeHearingInput(hearing?: CaseHearingInput | null, caseId?: strin
   } satisfies typeof caseHearings.$inferInsert;
 
   const hasData =
+    result.trialLawyerId !== null ||
     result.hearingTime !== null ||
     result.hearingLocation !== null ||
     result.tribunal !== null ||
@@ -1124,6 +1256,21 @@ function normalizeHearingInput(hearing?: CaseHearingInput | null, caseId?: strin
     result.hearingResult !== null;
 
   return hasData ? result : null;
+}
+
+function normalizeHearingInputs(
+  hearings: CaseHearingInput[] | null | undefined,
+  caseId?: string
+): (typeof caseHearings.$inferInsert)[] {
+  if (!caseId || !hearings || hearings.length === 0) {
+    return [] as (typeof caseHearings.$inferInsert)[];
+  }
+
+  const normalized = hearings
+    .map((hearing) => normalizeHearingInput(hearing, caseId))
+    .filter((item): item is NonNullable<ReturnType<typeof normalizeHearingInput>> => item !== null);
+
+  return normalized as (typeof caseHearings.$inferInsert)[];
 }
 
 export async function listCases(options: ListCasesOptions = {}, user: SessionUser) {
@@ -1142,7 +1289,7 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
 
   const records = await db.query.cases.findMany({
     with: {
-      owner: {
+      assignedSale: {
         columns: {
           id: true,
           name: true,
@@ -1163,13 +1310,6 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
           role: true
         }
       },
-      assignedTrialLawyer: {
-        columns: {
-          id: true,
-          name: true,
-          role: true
-        }
-      },
       participants: true,
       collections: true,
       timeline: {
@@ -1177,7 +1317,17 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
           follower: true
         }
       },
-      hearing: true
+      hearings: {
+        with: {
+          trialLawyer: {
+            columns: {
+              id: true,
+              name: true,
+              role: true
+            }
+          }
+        }
+      }
     },
     where,
     orderBy: (casesTable, operators) => {
@@ -1195,8 +1345,10 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
   const total = Number(totalResult?.[0]?.value ?? 0);
   const totalPages = Math.max(Math.ceil(total / pageSize), 1);
 
+  const mappedRecords = records.map((record) => mapCaseRecord(record as CaseWithRelations));
+
   return {
-    data: records.map(mapCaseRecord),
+    data: mappedRecords,
     pagination: {
       page,
       pageSize,
@@ -1216,7 +1368,7 @@ export async function getCaseById(id: string, user: SessionUser) {
   const record = await db.query.cases.findFirst({
     where: whereClause,
     with: {
-      owner: {
+      assignedSale: {
         columns: {
           id: true,
           name: true,
@@ -1237,13 +1389,6 @@ export async function getCaseById(id: string, user: SessionUser) {
           role: true
         }
       },
-      assignedTrialLawyer: {
-        columns: {
-          id: true,
-          name: true,
-          role: true
-        }
-      },
       participants: true,
       collections: true,
       timeline: {
@@ -1251,7 +1396,17 @@ export async function getCaseById(id: string, user: SessionUser) {
           follower: true
         }
       },
-      hearing: true
+      hearings: {
+        with: {
+          trialLawyer: {
+            columns: {
+              id: true,
+              name: true,
+              role: true
+            }
+          }
+        }
+      }
     }
   });
 
@@ -1259,7 +1414,7 @@ export async function getCaseById(id: string, user: SessionUser) {
     return null;
   }
 
-  return mapCaseRecord(record);
+  return mapCaseRecord(record as CaseWithRelations);
 }
 
 export async function createCase(input: CaseInput, user: SessionUser) {
@@ -1281,8 +1436,8 @@ export async function createCase(input: CaseInput, user: SessionUser) {
       caseValues.department = user.department as (typeof cases.$inferInsert)['department'];
     }
 
-    if (!caseValues.ownerId) {
-      caseValues.ownerId = user.id;
+    if (!caseValues.assignedSaleId) {
+      caseValues.assignedSaleId = user.id;
     }
 
     const [created] = await tx.insert(cases).values(caseValues).returning();
@@ -1307,9 +1462,10 @@ export async function createCase(input: CaseInput, user: SessionUser) {
       await tx.insert(caseTimeline).values(timelineValues);
     }
 
-    const hearingValue = normalizeHearingInput(input.hearing, caseId);
-    if (hearingValue) {
-      await tx.insert(caseHearings).values(hearingValue);
+    const hearingInputs = await applyDefaultTrialLawyerList(input.hearings, user);
+    const hearingValues = normalizeHearingInputs(hearingInputs, caseId);
+    if (hearingValues.length > 0) {
+      await tx.insert(caseHearings).values(hearingValues);
     }
 
     const actor = extractActorContext(user);
@@ -1326,7 +1482,7 @@ export async function createCase(input: CaseInput, user: SessionUser) {
     const fullRecord = await tx.query.cases.findFirst({
       where: eq(cases.id, caseId),
       with: {
-        owner: {
+        assignedSale: {
           columns: {
             id: true,
             name: true,
@@ -1347,13 +1503,6 @@ export async function createCase(input: CaseInput, user: SessionUser) {
             role: true
           }
         },
-        assignedTrialLawyer: {
-          columns: {
-            id: true,
-            name: true,
-            role: true
-          }
-        },
         participants: true,
         collections: true,
         timeline: {
@@ -1361,7 +1510,17 @@ export async function createCase(input: CaseInput, user: SessionUser) {
             follower: true
           }
         },
-        hearing: true
+        hearings: {
+          with: {
+            trialLawyer: {
+              columns: {
+                id: true,
+                name: true,
+                role: true
+              }
+            }
+          }
+        }
       }
     });
 
@@ -1369,7 +1528,7 @@ export async function createCase(input: CaseInput, user: SessionUser) {
       throw new Error('Failed to load created case');
     }
 
-    return mapCaseRecord(fullRecord);
+    return mapCaseRecord(fullRecord as CaseWithRelations);
   });
 }
 
@@ -1403,11 +1562,11 @@ export async function updateCase(id: string, input: CaseInput, user: SessionUser
       }
     }
 
-    if (input.ownerId === undefined) {
-      if (existing.ownerId) {
-        caseValues.ownerId = existing.ownerId;
+    if (input.assignedSaleId === undefined) {
+      if (existing.assignedSaleId) {
+        caseValues.assignedSaleId = existing.assignedSaleId;
       } else if (user.role === 'admin' || user.role === 'administration' || isSuperAdmin(user)) {
-        caseValues.ownerId = user.id;
+        caseValues.assignedSaleId = user.id;
       }
     }
 
@@ -1424,7 +1583,7 @@ export async function updateCase(id: string, input: CaseInput, user: SessionUser
     const changeDetails = buildChangeDetails(existing, updatedCase);
     const shouldLog =
       changeDetails.length > 0 ||
-      Boolean(input.timeline || input.hearing !== undefined || input.participants || input.collections);
+      Boolean(input.timeline || input.hearings !== undefined || input.participants || input.collections);
 
     if (shouldLog) {
       const actor = extractActorContext(user);
@@ -1463,18 +1622,19 @@ export async function updateCase(id: string, input: CaseInput, user: SessionUser
       }
     }
 
-    if (input.hearing !== undefined) {
+    if (input.hearings !== undefined) {
       await tx.delete(caseHearings).where(eq(caseHearings.caseId, id));
-      const hearingValue = normalizeHearingInput(input.hearing, id);
-      if (hearingValue) {
-        await tx.insert(caseHearings).values(hearingValue);
+      const processedHearings = await applyDefaultTrialLawyerList(input.hearings, user);
+      const hearingValues = normalizeHearingInputs(processedHearings, id);
+      if (hearingValues.length > 0) {
+        await tx.insert(caseHearings).values(hearingValues);
       }
     }
 
     const fullRecord = await tx.query.cases.findFirst({
       where: eq(cases.id, id),
       with: {
-        owner: {
+        assignedSale: {
           columns: {
             id: true,
             name: true,
@@ -1495,13 +1655,6 @@ export async function updateCase(id: string, input: CaseInput, user: SessionUser
             role: true
           }
         },
-        assignedTrialLawyer: {
-          columns: {
-            id: true,
-            name: true,
-            role: true
-          }
-        },
         participants: true,
         collections: true,
         timeline: {
@@ -1509,7 +1662,17 @@ export async function updateCase(id: string, input: CaseInput, user: SessionUser
             follower: true
           }
         },
-        hearing: true
+        hearings: {
+          with: {
+            trialLawyer: {
+              columns: {
+                id: true,
+                name: true,
+                role: true
+              }
+            }
+          }
+        }
       }
     });
 
@@ -1517,7 +1680,7 @@ export async function updateCase(id: string, input: CaseInput, user: SessionUser
       return null;
     }
 
-    return mapCaseRecord(fullRecord);
+    return mapCaseRecord(fullRecord as CaseWithRelations);
   });
 }
 
@@ -1530,11 +1693,17 @@ export async function deleteCase(id: string, user: SessionUser) {
     where: eq(cases.id, id),
     columns: {
       id: true,
-      ownerId: true,
+      assignedSaleId: true,
       department: true,
       assignedLawyerId: true,
-      assignedAssistantId: true,
-      assignedTrialLawyerId: true
+      assignedAssistantId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
     }
   });
 
@@ -1550,6 +1719,163 @@ export async function deleteCase(id: string, user: SessionUser) {
   return deleted?.id ?? null;
 }
 
+export async function createCaseCollection(
+  caseId: string,
+  input: CreateCaseCollectionInput,
+  user: SessionUser
+): Promise<CaseCollectionDTO | null> {
+  ensureCasePermission(user, 'update');
+
+  if (!CASE_COLLECTION_ALLOWED_ROLES.has(user.role)) {
+    throw new AuthorizationError('Insufficient permissions');
+  }
+
+  const normalizedAmount = normalizeNumericInput(input.amount ?? null);
+  if (!normalizedAmount) {
+    throw new BadRequestError('回款金额不能为空');
+  }
+
+  const numericAmount = Number(normalizedAmount);
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+    throw new BadRequestError('请填写有效的回款金额');
+  }
+
+  const normalizedReceivedAt = normalizeDateInput(input.receivedAt ?? new Date());
+  if (!normalizedReceivedAt) {
+    throw new BadRequestError('请填写有效的回款日期');
+  }
+
+  const accessContext = await buildCaseAccessContext(user);
+
+  const projection = await db.query.cases.findFirst({
+    where: eq(cases.id, caseId),
+    columns: {
+      id: true,
+      department: true,
+      assignedSaleId: true,
+      assignedLawyerId: true,
+      assignedAssistantId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
+    }
+  });
+
+  if (!projection) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, projection)) {
+    throw new AuthorizationError();
+  }
+
+  const actor = extractActorContext(user);
+
+  return db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(caseCollections)
+      .values({
+        caseId,
+        amount: normalizedAmount,
+        receivedAt: normalizedReceivedAt
+      })
+      .returning();
+
+    if (!created) {
+      throw new Error('Failed to create case collection record');
+    }
+
+    await tx
+      .update(cases)
+      .set({
+        updatedAt: new Date(),
+        updaterId: user.id
+      })
+      .where(eq(cases.id, caseId));
+
+    const amountText = numericAmount.toFixed(2);
+    await tx.insert(caseChangeLogs).values({
+      caseId,
+      action: 'add_collection',
+      description: `新增回款记录：金额¥${amountText}，到账日期${normalizedReceivedAt}`,
+      changes: null,
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      actorRole: actor.actorRole
+    });
+
+    return mapCollection(created);
+  });
+}
+
+export async function getCaseHearings(
+  caseId: string,
+  user: SessionUser
+): Promise<CaseHearingDTO[] | null> {
+  ensureCasePermission(user, 'list');
+
+  const accessContext = await buildCaseAccessContext(user);
+
+  const existing = await db.query.cases.findFirst({
+    where: eq(cases.id, caseId),
+    columns: {
+      id: true,
+      assignedSaleId: true,
+      department: true,
+      assignedLawyerId: true,
+      assignedAssistantId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
+    }
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, existing)) {
+    throw new AuthorizationError();
+  }
+
+  const records = await db.query.caseHearings.findMany({
+    where: eq(caseHearings.caseId, caseId),
+    with: {
+      trialLawyer: {
+        columns: {
+          id: true,
+          name: true,
+          role: true
+        }
+      }
+    }
+  });
+
+  const mapped = records
+    .map(mapHearing)
+    .filter((item): item is CaseHearingDTO => item !== null)
+    .sort((a, b) => {
+      const aTime = a.hearingTime ? new Date(a.hearingTime).getTime() : Number.MAX_SAFE_INTEGER;
+      const bTime = b.hearingTime ? new Date(b.hearingTime).getTime() : Number.MAX_SAFE_INTEGER;
+      if (aTime === bTime) {
+        const stageOrder = (stage: TrialStage | null) =>
+          stage ? trialStageEnum.enumValues.indexOf(stage) : Number.MAX_SAFE_INTEGER;
+        return stageOrder(a.trialStage) - stageOrder(b.trialStage);
+      }
+      return aTime - bTime;
+    });
+
+  return mapped;
+}
+
 export async function getCaseChangeLogs(
   caseId: string,
   user: SessionUser
@@ -1562,11 +1888,17 @@ export async function getCaseChangeLogs(
     where: eq(cases.id, caseId),
     columns: {
       id: true,
-      ownerId: true,
+      assignedSaleId: true,
       department: true,
       assignedLawyerId: true,
-      assignedAssistantId: true,
-      assignedTrialLawyerId: true
+      assignedAssistantId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
     }
   });
 
@@ -1607,7 +1939,7 @@ export interface AssignableStaffDTO {
   assistants: AssignableStaffMemberDTO[];
 }
 
-const ASSIGNABLE_ROLES = new Set(['super_admin', 'admin', 'administration']);
+const ASSIGNABLE_ROLES = new Set(['super_admin', 'admin', 'administration', 'lawyer']);
 
 function extractActorContext(user: SessionUser) {
   return {
@@ -1634,7 +1966,14 @@ export async function getAssignableStaff(
   }
 
   const validDepartments = new Set<string>(departmentEnum.enumValues);
-  const normalizedDepartment = department && validDepartments.has(department) ? department : undefined;
+  const normalizedDepartment =
+    department && validDepartments.has(department)
+      ? (department as (typeof departmentEnum.enumValues)[number])
+      : undefined;
+  const userDepartment =
+    user.department && validDepartments.has(user.department)
+      ? (user.department as (typeof departmentEnum.enumValues)[number])
+      : null;
 
   const members = await db.query.users.findMany({
     columns: {
@@ -1656,46 +1995,71 @@ export async function getAssignableStaff(
     department: (member.department as (typeof departmentEnum.enumValues)[number] | null) ?? null
   });
 
-  const filterByDepartment = <T extends typeof members[number]>(
-    list: T[],
-    fallbackDepartment?: string | null
+  const filterByDepartment = (
+    list: typeof members,
+    targetDepartment?: (typeof departmentEnum.enumValues)[number] | null
   ) => {
-    const targetDepartment = normalizedDepartment ?? fallbackDepartment ?? null;
     if (!targetDepartment) {
       return list;
     }
     return list.filter((member) => member.department === targetDepartment);
   };
 
-  let lawyerCandidates: typeof members = [];
-  let assistantCandidates: typeof members = [];
-
-  if (user.role === 'super_admin') {
-    if (!normalizedDepartment) {
-      throw new BadRequestError('缺少部门参数');
+  const resolveDepartment = (): (typeof departmentEnum.enumValues)[number] => {
+    if (user.role === 'super_admin') {
+      if (!normalizedDepartment) {
+        throw new BadRequestError('缺少部门参数');
+      }
+      return normalizedDepartment;
     }
-    const filtered = filterByDepartment(activeMembers, normalizedDepartment);
-    lawyerCandidates = filtered.filter((member) => member.role === 'lawyer');
-    assistantCandidates = filtered.filter((member) => member.role === 'assistant');
-  } else if (user.role === 'admin') {
-    const subordinates = activeMembers.filter((member) => member.supervisorId === user.id);
-    const filtered = filterByDepartment(subordinates, user.department ?? null);
-    lawyerCandidates = filtered.filter((member) => member.role === 'lawyer');
-    assistantCandidates = filtered.filter((member) => member.role === 'assistant');
-  } else {
+
+    if (user.role === 'admin' || user.role === 'administration') {
+      if (!userDepartment) {
+        throw new AuthorizationError('管理员未设置所属部门，无法获取候选人员');
+      }
+      if (normalizedDepartment && normalizedDepartment !== userDepartment) {
+        throw new AuthorizationError('管理员仅可查看所属部门成员');
+      }
+      return userDepartment;
+    }
+
+    if (userDepartment) {
+      if (normalizedDepartment && normalizedDepartment !== userDepartment) {
+        throw new AuthorizationError('当前角色仅可获取所属部门成员');
+      }
+      return userDepartment;
+    }
+
     const managerId = user.supervisorId;
     if (!managerId) {
       throw new AuthorizationError('未找到上级管理员，无法获取候选人员');
     }
-    const manager = activeMembers.find((member) => member.id === managerId && member.role === 'admin');
+
+    const manager = activeMembers.find(
+      (member) => member.id === managerId && member.role === 'admin'
+    );
+
     if (!manager) {
       throw new AuthorizationError('未找到上级管理员，无法获取候选人员');
     }
-    const managerSubordinates = activeMembers.filter((member) => member.supervisorId === manager.id);
-    const filtered = filterByDepartment(managerSubordinates, manager.department ?? null);
-    lawyerCandidates = filtered.filter((member) => member.role === 'lawyer');
-    assistantCandidates = filtered.filter((member) => member.role === 'assistant');
-  }
+
+    const managerDepartment = (manager.department as (typeof departmentEnum.enumValues)[number] | null) ?? null;
+    if (!managerDepartment) {
+      throw new AuthorizationError('上级管理员未设置所属部门，无法获取候选人员');
+    }
+
+    if (normalizedDepartment && normalizedDepartment !== managerDepartment) {
+      throw new AuthorizationError('当前角色仅可获取所属部门成员');
+    }
+
+    return managerDepartment;
+  };
+
+  const targetDepartment = resolveDepartment();
+  const departmentMembers = filterByDepartment(activeMembers, targetDepartment);
+
+  const lawyerCandidates = departmentMembers.filter((member) => member.role === 'lawyer');
+  const assistantCandidates = departmentMembers.filter((member) => member.role === 'assistant');
 
   return {
     lawyers: sortStaff(lawyerCandidates.map(toDTO)),

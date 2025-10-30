@@ -4,7 +4,7 @@ import { MailOutlined } from '@ant-design/icons';
 import { Alert, Button, Form, Input, Typography, message } from 'antd';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 
 import { authClient } from '@/lib/auth-client';
 import { AuthShell } from '@/components/auth/AuthShell';
@@ -15,7 +15,7 @@ type ForgotFormValues = {
   email: string;
 };
 
-const ForgotPasswordPage = () => {
+const ForgotPasswordPageContent = () => {
   const searchParams = useSearchParams();
   const redirectParam = useMemo(() => {
     const redirect = searchParams.get('redirect');
@@ -72,4 +72,10 @@ const ForgotPasswordPage = () => {
   );
 };
 
-export default ForgotPasswordPage;
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ForgotPasswordPageContent />
+    </Suspense>
+  );
+}

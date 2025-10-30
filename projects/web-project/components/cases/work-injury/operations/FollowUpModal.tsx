@@ -3,9 +3,7 @@ import { useEffect } from 'react';
 import { DatePicker, Form, Input, Modal, message } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 
-import type { CaseTimelineNode } from '@/lib/cases-api';
 export interface FollowUpFormValues {
-  nodeType?: CaseTimelineNode;
   occurredOn?: Dayjs | null;
   note?: string | null;
 }
@@ -34,7 +32,6 @@ export default function FollowUpModal({
     }
 
     const defaults: FollowUpFormValues = {
-      nodeType: initialValues?.nodeType,
       occurredOn: initialValues?.occurredOn ?? dayjs(),
       note: initialValues?.note ?? null
     };
@@ -50,12 +47,11 @@ export default function FollowUpModal({
 
     try {
       const values = await form.validateFields();
-      if (!values.nodeType || !values.occurredOn) {
-        message.error('请完善跟进节点和日期');
+      if (!values.note || !values.occurredOn) {
+        message.error('请输入框跟进备注和日期');
         return;
       }
       await onSubmit({
-        nodeType: values.nodeType,
         occurredOn: values.occurredOn,
         note: values.note?.trim() ? values.note.trim() : null
       });
@@ -89,7 +85,7 @@ export default function FollowUpModal({
         >
           <DatePicker style={{ width: '100%' }} placeholder="请选择发生日期" />
         </Form.Item>
-        <Form.Item label="备注" name="note">
+        <Form.Item rules={[{ required: true, message: '请填写跟进备注' }]} label="备注" name="note">
           <Input.TextArea
             rows={4}
             placeholder="请填写跟进备注"

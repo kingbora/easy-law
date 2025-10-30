@@ -69,7 +69,7 @@ const CaseFeeModal: FC<CaseFeeModalProps> = ({
     }
   };
 
-  const salesName = caseRecord?.ownerName ?? '未分配';
+  const salesName = caseRecord?.assignedSaleName ?? '未分配';
   const lawyerNames = [caseRecord?.assignedLawyerName, caseRecord?.assignedAssistantName]
     .filter((name): name is string => Boolean(name && name.trim().length > 0))
     .join(' / ');

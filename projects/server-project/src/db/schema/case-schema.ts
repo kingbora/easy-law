@@ -26,58 +26,42 @@ export const caseLevelEnum = pgEnum('case_level', ['A', 'B', 'C']);
 export const participantRoleEnum = pgEnum('case_participant_role', ['claimant', 'respondent']);
 export const participantEntityEnum = pgEnum('case_participant_entity', ['personal', 'organization']);
 export const caseStatusEnum = pgEnum('case_status', ['未结案', '已结案', '废单']);
-export const timelineNodeEnum = pgEnum('case_timeline_node', [
-  'apply_labor_confirmation',
-  'receive_labor_confirmation_award',
-  'apply_work_injury_certification',
-  'receive_work_injury_decision',
-  'apply_work_ability_appraisal',
-  'receive_work_ability_conclusion',
-  'apply_work_injury_benefit_award',
-  'lawsuit_filed',
-  'filing_approved',
-  'judgment_time',
-  'custom'
-]);
 export const trialStageEnum = pgEnum('case_trial_stage', ['一审', '二审', '再审']);
 
 export const cases = pgTable('case_record', {
   id: uuid('id').primaryKey().defaultRandom(),
-  referenceNo: text('reference_no'),
-  caseType: caseTypeEnum('case_type').notNull(),
-  caseLevel: caseLevelEnum('case_level').notNull(),
-  provinceCity: text('province_city'),
-  targetAmount: text('target_amount'),
-  feeStandard: text('fee_standard'),
-  agencyFeeEstimate: text('agency_fee_estimate'),
-  dataSource: text('data_source'),
-  hasContract: boolean('has_contract'),
-  hasSocialSecurity: boolean('has_social_security'),
-  entryDate: date('entry_date'),
-  injuryLocation: text('injury_location'),
-  injurySeverity: text('injury_severity'),
-  injuryCause: text('injury_cause'),
-  workInjuryCertified: boolean('work_injury_certified'),
-  monthlySalary: text('monthly_salary'),
-  appraisalLevel: text('appraisal_level'),
-  appraisalEstimate: text('appraisal_estimate'),
-  existingEvidence: text('existing_evidence'),
-  customerCooperative: boolean('customer_cooperative'),
-  witnessCooperative: boolean('witness_cooperative'),
-  remark: text('remark'),
-  department: departmentEnum('department'),
-  ownerId: text('owner_id').references(() => users.id),
-  assignedLawyerId: text('assigned_lawyer_id').references(() => users.id),
-  assignedAssistantId: text('assigned_assistant_id').references(() => users.id),
-  assignedTrialLawyerId: text('assigned_trial_lawyer_id').references(() => users.id),
-  caseStatus: caseStatusEnum('case_status').default('未结案'),
-  closedReason: text('closed_reason'),
-  voidReason: text('void_reason'),
-  lawyerProgress: jsonb('lawyer_progress'),
-  creatorId: text('creator_id').references(() => users.id),
-  updaterId: text('updater_id').references(() => users.id),
-  salesCommission: text('sales_commission'),
-  handlingFee: text('handling_fee'),
+  caseType: caseTypeEnum('case_type').notNull(), // 案件类型
+  caseLevel: caseLevelEnum('case_level').notNull(), // 案件级别
+  provinceCity: text('province_city'), // 省份/城市
+  targetAmount: text('target_amount'), // 标的额
+  feeStandard: text('fee_standard'), // 收费标准
+  agencyFeeEstimate: text('agency_fee_estimate'), // 预估代理费
+  dataSource: text('data_source'), // 数据来源
+  hasContract: boolean('has_contract'), // 是否有合同
+  hasSocialSecurity: boolean('has_social_security'), // 是否有社保
+  entryDate: date('entry_date'), // 入职时间
+  injuryLocation: text('injury_location'), // 受伤地点
+  injurySeverity: text('injury_severity'), // 受伤程度
+  injuryCause: text('injury_cause'), // 受伤原因
+  workInjuryCertified: boolean('work_injury_certified'), // 是否工伤认定
+  monthlySalary: text('monthly_salary'), // 月薪
+  appraisalLevel: text('appraisal_level'), // 劳动力能力鉴定等级
+  appraisalEstimate: text('appraisal_estimate'), // 劳动能力等级鉴定预估
+  existingEvidence: text('existing_evidence'), // 已知证据
+  customerCooperative: boolean('customer_cooperative'), // 是否配合提交材料
+  witnessCooperative: boolean('witness_cooperative'), // 证人是否配合出庭
+  remark: text('remark'), // 备注
+  department: departmentEnum('department'), // 部门
+  assignedSaleId: text('assigned_sale_id').references(() => users.id), // 跟进销售
+  assignedLawyerId: text('assigned_lawyer_id').references(() => users.id), // 跟进律师
+  assignedAssistantId: text('assigned_assistant_id').references(() => users.id), // 跟进助理
+  caseStatus: caseStatusEnum('case_status').default('未结案'), // 案件状态
+  closedReason: text('closed_reason'), // 结案原因
+  voidReason: text('void_reason'), // 废单原因
+  creatorId: text('creator_id').references(() => users.id), // 创建人
+  updaterId: text('updater_id').references(() => users.id), // 更新人
+  salesCommission: text('sales_commission'), // 销售提成
+  handlingFee: text('handling_fee'), // 办案费用
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
@@ -86,8 +70,8 @@ export const caseHearings = pgTable('case_hearing', {
   id: uuid('id').primaryKey().defaultRandom(),
   caseId: uuid('case_id')
     .notNull()
-    .references(() => cases.id, { onDelete: 'cascade' })
-    .unique(),
+    .references(() => cases.id, { onDelete: 'cascade' }),
+  trialLawyerId: text('trial_lawyer_id').references(() => users.id),
   hearingTime: timestamp('hearing_time'),
   hearingLocation: text('hearing_location'),
   tribunal: text('tribunal'),
@@ -131,10 +115,9 @@ export const caseTimeline = pgTable('case_timeline', {
   caseId: uuid('case_id')
     .notNull()
     .references(() => cases.id, { onDelete: 'cascade' }),
-  nodeType: timelineNodeEnum('node_type').notNull(),
   occurredOn: date('occurred_on').notNull(),
   followerId: text('follower_id').references(() => users.id),
-  note: text('note'),
+  note: text('note').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
@@ -156,16 +139,16 @@ export const caseChangeLogs = pgTable('case_change_log', {
 });
 
 export const casesRelations = relations(cases, ({ many, one }) => ({
-  owner: one(users, {
-    fields: [cases.ownerId],
-    references: [users.id]
-  }),
   creator: one(users, {
     fields: [cases.creatorId],
     references: [users.id]
   }),
   updater: one(users, {
     fields: [cases.updaterId],
+    references: [users.id]
+  }),
+  assignedSale: one(users, {
+    fields: [cases.assignedSaleId],
     references: [users.id]
   }),
   assignedLawyer: one(users, {
@@ -176,14 +159,7 @@ export const casesRelations = relations(cases, ({ many, one }) => ({
     fields: [cases.assignedAssistantId],
     references: [users.id]
   }),
-  assignedTrialLawyer: one(users, {
-    fields: [cases.assignedTrialLawyerId],
-    references: [users.id]
-  }),
-  hearing: one(caseHearings, {
-    fields: [cases.id],
-    references: [caseHearings.caseId]
-  }),
+  hearings: many(caseHearings),
   participants: many(caseParticipants),
   collections: many(caseCollections),
   timeline: many(caseTimeline),
@@ -219,6 +195,10 @@ export const caseHearingRelations = relations(caseHearings, ({ one }) => ({
   case: one(cases, {
     fields: [caseHearings.caseId],
     references: [cases.id]
+  }),
+  trialLawyer: one(users, {
+    fields: [caseHearings.trialLawyerId],
+    references: [users.id]
   })
 }));
 

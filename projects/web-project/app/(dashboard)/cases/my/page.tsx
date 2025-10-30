@@ -5,12 +5,8 @@ import WorkInjuryCasesPage from '@/components/cases/work-injury';
 import { useSessionStore } from '@/lib/stores/session-store';
 import React from 'react';
 
-interface CaseManagementPageProps {
-  department?: 'insurance' | 'work_injury';
-}
-
-export default function CaseManagementPage(props: CaseManagementPageProps) {
-  const { department } = props;
+export default function CaseManagementPage() {
   const currentUser = useSessionStore((state) => state.user);
-  return (currentUser?.department || department) === 'work_injury' ? <WorkInjuryCasesPage /> : <InsuranceCasesPage />;
+  const department = currentUser?.department ?? null;
+  return department === 'insurance' ? <InsuranceCasesPage /> : <WorkInjuryCasesPage />;
 }

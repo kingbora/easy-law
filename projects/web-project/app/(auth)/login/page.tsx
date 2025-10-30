@@ -3,7 +3,7 @@
 import { LockOutlined, MailOutlined } from '@ant-design/icons';
 import { Alert, Button, Form, Input, Typography, message } from 'antd';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 
 import { authClient } from '@/lib/auth-client';
 import { AuthShell } from '@/components/auth/AuthShell';
@@ -16,7 +16,7 @@ type LoginFormValues = {
   password: string;
 };
 
-const LoginPage = () => {
+const LoginPageContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectParam = useMemo(() => {
@@ -79,4 +79,10 @@ const LoginPage = () => {
   );
 };
 
-export default LoginPage;
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}

@@ -11,7 +11,6 @@ import type { UserDepartment } from '@/lib/users-api';
 export interface AssignStaffFormValues {
   assignedLawyerId?: string | null;
   assignedAssistantId?: string | null;
-  assignedTrialLawyerId?: string | null;
 }
 
 interface AssignStaffModalProps {
@@ -100,8 +99,7 @@ export default function AssignStaffModal({
       const values = await form.validateFields();
       await onSubmit({
         assignedLawyerId: values.assignedLawyerId ?? null,
-        assignedAssistantId: values.assignedAssistantId ?? null,
-        assignedTrialLawyerId: values.assignedTrialLawyerId ?? null
+        assignedAssistantId: values.assignedAssistantId ?? null
       });
       form.resetFields();
     } catch (error) {
@@ -148,15 +146,6 @@ export default function AssignStaffModal({
               allowClear
               placeholder="请选择律师助理"
               options={assistantOptions}
-              optionFilterProp="label"
-              showSearch
-            />
-          </Form.Item>
-          <Form.Item label="开庭律师" name="assignedTrialLawyerId">
-            <Select
-              allowClear
-              placeholder="请选择开庭律师"
-              options={lawyerOptions}
               optionFilterProp="label"
               showSearch
             />

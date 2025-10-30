@@ -5,17 +5,6 @@ export type CaseType = 'work_injury' | 'personal_injury' | 'other';
 export type CaseLevel = 'A' | 'B' | 'C';
 export type CaseStatus = '未结案' | '已结案' | '废单';
 export type TrialStage = 'first_instance' | 'second_instance' | 'retrial';
-export type CaseTimelineNode =
-  | 'apply_labor_confirmation'
-  | 'receive_labor_confirmation_award'
-  | 'apply_work_injury_certification'
-  | 'receive_work_injury_decision'
-  | 'apply_work_ability_appraisal'
-  | 'receive_work_ability_conclusion'
-  | 'apply_work_injury_benefit_award'
-  | 'lawsuit_filed'
-  | 'filing_approved'
-  | 'judgment_time';
 
 export type CaseParticipantEntity = 'personal' | 'organization';
 
@@ -38,13 +27,17 @@ export interface CaseCollectionRecord {
   updatedAt: string;
 }
 
+export interface CreateCaseCollectionPayload {
+  amount: string | number;
+  receivedAt?: string | Date | null;
+}
+
 export interface CaseTimelineRecord {
   id: string;
-  nodeType: CaseTimelineNode;
   occurredOn: string;
   createdAt: string;
   updatedAt: string;
-  note: string | null;
+  note: string;
   followerId: string | null;
   followerName: string | null;
 }
@@ -73,6 +66,9 @@ export interface CaseParticipantsGroup {
 }
 
 export interface CaseHearingRecord {
+  id: string;
+  trialLawyerId: string | null;
+  trialLawyerName: string | null;
   hearingTime: string | null;
   hearingLocation: string | null;
   tribunal: string | null;
@@ -81,11 +77,12 @@ export interface CaseHearingRecord {
   contactPhone: string | null;
   trialStage: TrialStage | null;
   hearingResult: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CaseRecord {
   id: string;
-  referenceNo: string | null;
   caseType: CaseType;
   caseLevel: CaseLevel;
   provinceCity: string | null;
@@ -108,18 +105,15 @@ export interface CaseRecord {
   witnessCooperative: boolean | null;
   remark: string | null;
   department: UserDepartment | null;
-  ownerId: string | null;
-  ownerName: string | null;
+  assignedSaleId: string | null;
+  assignedSaleName: string | null;
   assignedLawyerId: string | null;
   assignedLawyerName: string | null;
   assignedAssistantId: string | null;
   assignedAssistantName: string | null;
-  assignedTrialLawyerId: string | null;
-  assignedTrialLawyerName: string | null;
   caseStatus: CaseStatus | null;
   closedReason: string | null;
   voidReason: string | null;
-  lawyerProgress: Record<string, unknown> | null;
   salesCommission: string | null;
   handlingFee: string | null;
   createdAt: string;
@@ -127,7 +121,7 @@ export interface CaseRecord {
   participants: CaseParticipantsGroup;
   collections: CaseCollectionRecord[];
   timeline: CaseTimelineRecord[];
-  hearing: CaseHearingRecord | null;
+  hearings: CaseHearingRecord[];
 }
 
 export interface AssignableStaffMember {
@@ -158,7 +152,7 @@ export interface CaseListQuery {
   page?: number;
   pageSize?: number;
   department?: UserDepartment;
-  ownerId?: string;
+  assignedSaleId?: string;
   assignedLawyerId?: string;
   caseType?: CaseType;
   caseLevel?: CaseLevel;
@@ -191,13 +185,13 @@ export interface CaseCollectionInput {
 
 export interface CaseTimelineInput {
   id?: string;
-  nodeType: CaseTimelineNode;
   occurredOn: string | Date;
-  note?: string | null;
+  note: string | null;
   followerId?: string | null;
 }
 
 export interface CaseHearingInput {
+  trialLawyerId?: string | null;
   hearingTime?: string | Date | null;
   hearingLocation?: string | null;
   tribunal?: string | null;
@@ -209,7 +203,6 @@ export interface CaseHearingInput {
 }
 
 export interface CasePayload {
-  referenceNo?: string | null;
   caseType: CaseType;
   caseLevel: CaseLevel;
   provinceCity?: string | null;
@@ -232,20 +225,18 @@ export interface CasePayload {
   witnessCooperative?: boolean | null;
   remark?: string | null;
   department?: UserDepartment | null;
-  ownerId?: string | null;
+  assignedSaleId?: string | null;
   assignedLawyerId?: string | null;
   assignedAssistantId?: string | null;
-  assignedTrialLawyerId?: string | null;
   caseStatus?: CaseStatus | null;
   closedReason?: string | null;
   voidReason?: string | null;
-  lawyerProgress?: Record<string, unknown> | null;
   salesCommission?: string | number | null;
   handlingFee?: string | number | null;
   participants?: CaseParticipantsInput;
   collections?: CaseCollectionInput[];
   timeline?: CaseTimelineInput[];
-  hearing?: CaseHearingInput | null;
+  hearings?: CaseHearingInput[] | null;
 }
 
 interface CaseDetailResponse {
@@ -302,8 +293,24 @@ export async function deleteCase(id: string): Promise<void> {
   });
 }
 
+export async function createCaseCollection(
+  caseId: string,
+  payload: CreateCaseCollectionPayload
+): Promise<CaseCollectionRecord> {
+  const response = await apiFetch<{ data: CaseCollectionRecord }>(`/api/cases/${caseId}/collections`, {
+    method: 'POST',
+    body: payload
+  });
+  return response.data;
+}
+
 export async function fetchCaseChangeLogs(id: string): Promise<CaseChangeLog[]> {
   const response = await apiFetch<{ data: CaseChangeLog[] }>(`/api/cases/${id}/change-logs`);
+  return response.data;
+}
+
+export async function fetchCaseHearings(id: string): Promise<CaseHearingRecord[]> {
+  const response = await apiFetch<{ data: CaseHearingRecord[] }>(`/api/cases/${id}/hearings`);
   return response.data;
 }
 

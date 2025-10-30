@@ -2,9 +2,11 @@ import { Router } from 'express';
 
 import {
   createCase,
+  createCaseCollection,
   deleteCase,
   getAssignableStaff,
   getCaseById,
+  getCaseHearings,
   getCaseChangeLogs,
   listCases,
   updateCase
@@ -75,6 +77,22 @@ router.get(
 );
 
 router.get(
+  '/:id/hearings',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+
+    const hearings = await getCaseHearings(req.params.id, session.user);
+
+    if (!hearings) {
+      res.status(404).json({ message: 'Case not found' });
+      return;
+    }
+
+    res.json({ data: hearings });
+  })
+);
+
+router.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const session = req.sessionContext!;
@@ -95,6 +113,21 @@ router.post(
     const session = req.sessionContext!;
 
     const created = await createCase(req.body, session.user);
+    res.status(201).json({ data: created });
+  })
+);
+
+router.post(
+  '/:id/collections',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+    const created = await createCaseCollection(req.params.id, req.body, session.user);
+
+    if (!created) {
+      res.status(404).json({ message: 'Case not found' });
+      return;
+    }
+
     res.status(201).json({ data: created });
   })
 );

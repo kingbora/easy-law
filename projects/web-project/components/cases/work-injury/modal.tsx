@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 
 import {
   Button,
@@ -14,15 +15,17 @@ import {
   Row,
   Select,
   Tabs,
+  type TabsProps,
   Timeline,
   Typography
 } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { Dayjs } from 'dayjs';
 import dayjs from 'dayjs';
-import type { TrialStage } from '@/lib/cases-api';
+import type { CaseHearingRecord, CaseTimelineRecord, TrialStage } from '@/lib/cases-api';
 import styles from './modal.module.scss';
 import { useSessionStore } from '@/lib/stores/session-store';
+import type { UserRole } from '@/lib/users-api';
 
 const { TextArea } = Input;
 
@@ -56,29 +59,17 @@ const YES_NO_COOPERATION = [
 const CASE_STATUS_OPTIONS = ['未结案', '已结案', '废单'] as const;
 const CASE_CLOSED_OPTIONS = ['调解', '判决', '撤诉', '和解'] as const;
 const CASE_VOID_OPTIONS = ['退单', '跑单'] as const;
-const TIMELINE_NODE_TYPES = [
-  { label: '申请确认劳务关系', value: 'apply_labor_confirmation' },
-  { label: '收到确认劳务关系的裁决', value: 'receive_labor_confirmation_award' },
-  { label: '申请工伤认定', value: 'apply_work_injury_certification' },
-  { label: '收到工伤认定书', value: 'receive_work_injury_decision' },
-  { label: '申请劳动能力等级鉴定', value: 'apply_work_ability_appraisal' },
-  { label: '收到劳动能力等级鉴定书', value: 'receive_work_ability_conclusion' },
-  { label: '申请工伤保险待遇裁决', value: 'apply_work_injury_benefit_award' },
-  { label: '起诉立案', value: 'lawsuit_filed' },
-  { label: '立案审核通过', value: 'filing_approved' },
-  { label: '裁决时间', value: 'judgment_time' }
-] as const;
 
-const TIMELINE_NODE_LABEL_MAP = TIMELINE_NODE_TYPES.reduce<Record<TimelineNodeType, string>>((acc, item) => {
-  acc[item.value] = item.label;
-  return acc;
-}, {} as Record<TimelineNodeType, string>);
+const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
+  first_instance: '一审',
+  second_instance: '二审',
+  retrial: '再审'
+};
 
 type CaseTypeValue = (typeof CASE_TYPES)[number]['value'];
 type CaseLevelValue = (typeof CASE_LEVELS)[number]['value'];
 
 type CaseStatusValue = (typeof CASE_STATUS_OPTIONS)[number];
-type TimelineNodeType = (typeof TIMELINE_NODE_TYPES)[number]['value'];
 
 type CaseParty = {
   name?: string;
@@ -94,10 +85,11 @@ type CollectionRecord = {
   date?: Dayjs;
 };
 
-type TimelineNode = {
-  nodeType?: TimelineNodeType;
-  date?: Dayjs;
-};
+const CASE_COLLECTION_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
+  'super_admin',
+  'admin',
+  'administration'
+]);
 
 const CASE_TYPE_LABEL_MAP = CASE_TYPES.reduce<Record<CaseTypeValue, string>>((acc, item) => {
   acc[item.value] = item.label;
@@ -195,6 +187,8 @@ export interface WorkInjuryCaseFormValues {
     respondents?: CaseParty[];
   };
   lawyerInfo?: {
+    trialLawyerId?: string;
+    trialLawyerName?: string;
     hearingTime?: Dayjs;
     hearingLocation?: string;
     tribunal?: string;
@@ -203,17 +197,21 @@ export interface WorkInjuryCaseFormValues {
     contactPhone?: string;
     trialStage?: TrialStage | null;
     hearingResult?: string;
-    timeline?: TimelineNode[];
+    hearingRecords?: CaseHearingRecord[];
   };
   adminInfo?: {
     assignedLawyer?: string;
+    assignedLawyerName?: string;
     assignedAssistant?: string;
-    assignedTrialLawyer?: string;
+    assignedAssistantName?: string;
+    assignedSaleId?: string;
+    assignedSaleName?: string;
     caseStatus?: CaseStatusValue;
     closedReason?: (typeof CASE_CLOSED_OPTIONS)[number];
     voidReason?: (typeof CASE_VOID_OPTIONS)[number];
     collections?: CollectionRecord[];
   };
+  timeline?: CaseTimelineRecord[];
 }
 
 interface WorkInjuryCaseModalProps {
@@ -222,6 +220,7 @@ interface WorkInjuryCaseModalProps {
   initialValues?: WorkInjuryCaseFormValues;
   allowEdit?: boolean;
   onRequestEdit?: () => void;
+  onRequestView?: () => void;
   onCancel: () => void;
   onSubmit?: (values: WorkInjuryCaseFormValues) => Promise<void> | void;
   confirmLoading?: boolean;
@@ -243,12 +242,13 @@ const buildInitialValues = (): WorkInjuryCaseFormValues => {
       respondents: []
     },
     lawyerInfo: {
-      timeline: []
+      hearingRecords: []
     },
     adminInfo: {
       caseStatus: '未结案',
       collections: []
-    }
+    },
+    timeline: []
   };
 };
 
@@ -258,13 +258,14 @@ export default function WorkInjuryCaseModal({
   initialValues,
   allowEdit = false,
   onRequestEdit,
+  onRequestView,
   onCancel,
   onSubmit,
   confirmLoading
 }: WorkInjuryCaseModalProps) {
   const sessionUser = useSessionStore(state => state.user);
   const [form] = Form.useForm<WorkInjuryCaseFormValues>();
-  const [activeViewTab, setActiveViewTab] = useState<'basic' | 'personnel' | 'hearing' | 'assignment'>('basic');
+  const [activeViewTab, setActiveViewTab] = useState<'basic' | 'personnel' | 'hearing' | 'assignment' | 'followUp'>('basic');
   const isViewMode = mode === 'view';
   const isUpdateMode = mode === 'update';
   const isEditable = !isViewMode;
@@ -311,8 +312,12 @@ export default function WorkInjuryCaseModal({
   };
 
   const handleCancel = () => {
-    form.resetFields();
-    onCancel();
+    if (isEditable) {
+      onRequestView?.();
+    } else {
+      form.resetFields();
+      onCancel();
+    }
   };
 
   const canShowEditButton = Boolean(
@@ -320,6 +325,11 @@ export default function WorkInjuryCaseModal({
       onRequestEdit &&
       sessionUser &&
       !['lawyer', 'assistant'].includes(sessionUser.role)
+  );
+
+  const canShowCollectionSection = Boolean(
+    sessionUser &&
+    CASE_COLLECTION_ALLOWED_ROLES.has(sessionUser.role)
   );
 
   const viewFooter = [
@@ -710,37 +720,106 @@ export default function WorkInjuryCaseModal({
 
   const renderHearingDisplay = (values: WorkInjuryCaseFormValues) => {
     const lawyerInfo = values.lawyerInfo ?? {};
-    const timelineNodes = lawyerInfo.timeline ?? [];
+    const hearingRecords = lawyerInfo.hearingRecords ?? [];
+    const shouldShowStageTitle = hearingRecords.length > 1;
 
-    const timelineItems = timelineNodes.map((node, index) => ({
-      key: `${node.nodeType ?? 'node'}-${index}`,
-      children: (
-        <div>
-          <Typography.Text strong>
-            {node.nodeType ? TIMELINE_NODE_LABEL_MAP[node.nodeType as TimelineNodeType] ?? node.nodeType : '节点'}
-          </Typography.Text>
-          <div>{formatDate(node.date ?? null)}</div>
+    const renderHearingSection = (record: CaseHearingRecord, index: number) => {
+      const stageLabel = record.trialStage ? TRIAL_STAGE_LABEL_MAP[record.trialStage] ?? record.trialStage : null;
+    const sectionTitle = stageLabel ?? `庭审信息${index + 1}`;
+
+    const items: ReactNode[] = [];
+
+      if (!shouldShowStageTitle && stageLabel) {
+        items.push(
+          <Descriptions.Item key="trialStage" label="审理阶段">
+            {stageLabel}
+          </Descriptions.Item>
+        );
+      }
+
+      if (record.hearingTime) {
+        items.push(
+          <Descriptions.Item key="hearingTime" label="庭审时间">
+            {formatDate(record.hearingTime, 'YYYY-MM-DD HH:mm')}
+          </Descriptions.Item>
+        );
+      }
+
+      if (record.hearingLocation && record.hearingLocation.trim()) {
+        items.push(
+          <Descriptions.Item key="hearingLocation" label="庭审地点">
+            {formatText(record.hearingLocation)}
+          </Descriptions.Item>
+        );
+      }
+
+      if (record.tribunal && record.tribunal.trim()) {
+        items.push(
+          <Descriptions.Item key="tribunal" label="判庭">
+            {formatText(record.tribunal)}
+          </Descriptions.Item>
+        );
+      }
+
+      if (record.judge && record.judge.trim()) {
+        items.push(
+          <Descriptions.Item key="judge" label="主审法官">
+            {formatText(record.judge)}
+          </Descriptions.Item>
+        );
+      }
+
+      if (record.contactPhone && record.contactPhone.trim()) {
+        items.push(
+          <Descriptions.Item key="contactPhone" label="联系电话">
+            {formatText(record.contactPhone)}
+          </Descriptions.Item>
+        );
+      }
+
+      if (record.caseNumber && record.caseNumber.trim()) {
+        items.push(
+          <Descriptions.Item key="caseNumber" label="案号" span={2}>
+            {formatText(record.caseNumber)}
+          </Descriptions.Item>
+        );
+      }
+
+      if (record.hearingResult && record.hearingResult.trim()) {
+        items.push(
+          <Descriptions.Item key="hearingResult" label="庭审结果" span={2}>
+            <Typography.Paragraph style={{ marginBottom: 0 }}>{record.hearingResult}</Typography.Paragraph>
+          </Descriptions.Item>
+        );
+      }
+
+      if (items.length === 0) {
+        items.push(
+          <Descriptions.Item key="empty" label="庭审信息" span={2}>
+            <Typography.Text type="secondary">暂无详细信息</Typography.Text>
+          </Descriptions.Item>
+        );
+      }
+
+      return (
+        <div key={record.id ?? `hearing-${index}`}>
+          {shouldShowStageTitle ? (
+            <Typography.Title level={5}>{sectionTitle}</Typography.Title>
+          ) : null}
+          <Descriptions bordered size="small" column={2} className={styles.descriptions}>
+            {items}
+          </Descriptions>
         </div>
-      )
-    }));
+      );
+    };
 
     return (
       <div className={styles.sectionList}>
-        <Descriptions bordered size="small" column={2} className={styles.descriptions}>
-          <Descriptions.Item label="庭审时间">
-            {formatDate(lawyerInfo.hearingTime ?? null, 'YYYY-MM-DD HH:mm')}
-          </Descriptions.Item>
-          <Descriptions.Item label="庭审地点">{formatText(lawyerInfo.hearingLocation)}</Descriptions.Item>
-          <Descriptions.Item label="庭审庭次">{formatText(lawyerInfo.tribunal)}</Descriptions.Item>
-          <Descriptions.Item label="主审法官">{formatText(lawyerInfo.judge)}</Descriptions.Item>
-          <Descriptions.Item label="联系电话">{formatText(lawyerInfo.contactPhone)}</Descriptions.Item>
-        </Descriptions>
-        <Divider dashed>办案进度</Divider>
-        {timelineItems.length ? (
-          <Timeline items={timelineItems} />
+        {hearingRecords.length ? (
+          hearingRecords.map(renderHearingSection)
         ) : (
           <Typography.Text type="secondary" className={styles.emptyHint}>
-            暂无办案进度
+            暂无庭审信息
           </Typography.Text>
         )}
       </div>
@@ -750,6 +829,11 @@ export default function WorkInjuryCaseModal({
   const renderAssignmentDisplay = (values: WorkInjuryCaseFormValues) => {
     const adminInfo = values.adminInfo ?? {};
     const collections = adminInfo.collections ?? [];
+    const assignedLawyerDisplay =
+      adminInfo.assignedLawyerName ?? adminInfo.assignedLawyer ?? values.lawyerInfo?.trialLawyerName ?? null;
+    const assignedAssistantDisplay =
+      adminInfo.assignedAssistantName ?? adminInfo.assignedAssistant ?? null;
+    const salesDisplay = adminInfo.assignedSaleName ?? adminInfo.assignedSaleId ?? null;
 
     const collectionItems = collections.map((item, index) => ({
       key: `collection-${index}`,
@@ -765,14 +849,17 @@ export default function WorkInjuryCaseModal({
     return (
       <div className={styles.sectionList}>
         <Descriptions bordered size="small" column={2} className={styles.descriptions}>
+          <Descriptions.Item label="承办律师">{formatText(assignedLawyerDisplay)}</Descriptions.Item>
+          <Descriptions.Item label="律师助理">{formatText(assignedAssistantDisplay)}</Descriptions.Item>
+          <Descriptions.Item label="销售人员">{formatText(salesDisplay)}</Descriptions.Item>
           <Descriptions.Item label="案件状态">{formatText(adminInfo.caseStatus)}</Descriptions.Item>
           <Descriptions.Item label="结案原因">{formatText(adminInfo.closedReason)}</Descriptions.Item>
           <Descriptions.Item label="退单原因">{formatText(adminInfo.voidReason)}</Descriptions.Item>
-          <Descriptions.Item label="代理律师">{formatText(adminInfo.assignedLawyer)}</Descriptions.Item>
-          <Descriptions.Item label="执行律师">{formatText(adminInfo.assignedTrialLawyer)}</Descriptions.Item>
-          <Descriptions.Item label="律师助理">{formatText(adminInfo.assignedAssistant)}</Descriptions.Item>
         </Descriptions>
-        <Divider dashed>回款记录</Divider>
+        {
+          canShowCollectionSection ? 
+          <>
+          <Divider dashed>回款记录</Divider>
         {collectionItems.length ? (
           <Timeline items={collectionItems} />
         ) : (
@@ -780,38 +867,91 @@ export default function WorkInjuryCaseModal({
             暂无回款记录
           </Typography.Text>
         )}
+          </> : null
+        }
       </div>
     );
   };
 
-  const viewTabItems = useMemo(
-    () => [
-      {
-        key: 'basic',
-        label: '基本信息',
-        children: renderBasicInfoDisplay(displayValues)
-      },
-      {
-        key: 'personnel',
-        label: '人员信息',
-        children: renderPartyDisplay(displayValues)
-      },
-      sessionUser?.role !== 'sale' ? {
-        key: 'hearing',
-        label: '庭审信息',
-        children: renderHearingDisplay(displayValues)
-      } : null,
-      {
-        key: 'assignment',
-        label: '分配信息',
-        children: renderAssignmentDisplay(displayValues)
-      }
-    ].filter(item => item !== null),
-    [displayValues, sessionUser]
-  );
+  const renderFollowUpDisplay = (values: WorkInjuryCaseFormValues) => {
+    const timeline = values.timeline ?? [];
+
+    if (timeline.length === 0) {
+      return (
+        <Typography.Text type="secondary" className={styles.emptyHint}>
+          暂无跟进记录
+        </Typography.Text>
+      );
+    }
+
+    const sortedTimeline = [...timeline].sort((a, b) => {
+      const aTime = a.occurredOn ? dayjs(a.occurredOn).valueOf() : 0;
+      const bTime = b.occurredOn ? dayjs(b.occurredOn).valueOf() : 0;
+      return bTime - aTime;
+    });
+
+    return (
+      <div className={styles.sectionList}>
+        {sortedTimeline.map((item, index) => {
+          const entryKey = item.id ?? `follow-up-${index}`;
+          const followerDisplay = item.followerName ?? item.followerId ?? null;
+          return (
+            <div key={entryKey}>
+              <Descriptions bordered size="small" column={2} className={styles.descriptions}>
+                <Descriptions.Item label="时间">
+                  {formatDate(item.occurredOn ?? null)}
+                </Descriptions.Item>
+                <Descriptions.Item label="跟进人">
+                  {formatText(followerDisplay)}
+                </Descriptions.Item>
+                <Descriptions.Item label="内容" span={2}>
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+                    {formatText(item.note)}
+                  </Typography.Paragraph>
+                </Descriptions.Item>
+              </Descriptions>
+              {index < sortedTimeline.length - 1 ? <Divider dashed /> : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  type TabItem = NonNullable<TabsProps['items']>[number];
+  const baseTabItems: Array<TabItem | null> = [
+    {
+      key: 'basic',
+      label: '基本信息',
+      children: renderBasicInfoDisplay(displayValues)
+    },
+    {
+      key: 'personnel',
+      label: '人员信息',
+      children: renderPartyDisplay(displayValues)
+    },
+    sessionUser?.role !== 'sale'
+      ? {
+          key: 'hearing',
+          label: '庭审信息',
+          children: renderHearingDisplay(displayValues)
+        }
+      : null,
+    {
+      key: 'assignment',
+      label: '分配信息',
+      children: renderAssignmentDisplay(displayValues)
+    },
+    {
+      key: 'followUp',
+      label: '跟进信息',
+      children: renderFollowUpDisplay(displayValues)
+    }
+  ];
+  const viewTabItems: TabItem[] = baseTabItems.filter((item): item is TabItem => item !== null);
 
   const handleViewTabChange = (key: string) => {
-    if (key === 'basic' || key === 'personnel' || key === 'hearing' || key === 'assignment') {
+    if (key === 'basic' || key === 'personnel' || key === 'hearing' || key === 'assignment' || key === 'followUp') {
       setActiveViewTab(key);
     }
   };
