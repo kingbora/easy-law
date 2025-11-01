@@ -22,7 +22,13 @@ import {
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { Dayjs } from 'dayjs';
 import dayjs from 'dayjs';
-import type { CaseHearingRecord, CaseTimelineRecord, TrialStage } from '@/lib/cases-api';
+import {
+  CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS,
+  type CaseHearingRecord,
+  type CaseStatus,
+  type CaseTimelineRecord,
+  type TrialStage
+} from '@/lib/cases-api';
 import styles from './modal.module.scss';
 import { useSessionStore } from '@/lib/stores/session-store';
 import type { UserRole } from '@/lib/users-api';
@@ -56,7 +62,6 @@ const YES_NO_COOPERATION = [
   { label: '否', value: false }
 ] as const;
 
-const CASE_STATUS_OPTIONS = ['未结案', '已结案', '废单'] as const;
 const CASE_CLOSED_OPTIONS = ['调解', '判决', '撤诉', '和解'] as const;
 const CASE_VOID_OPTIONS = ['退单', '跑单'] as const;
 
@@ -69,7 +74,7 @@ const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
 type CaseTypeValue = (typeof CASE_TYPES)[number]['value'];
 type CaseLevelValue = (typeof CASE_LEVELS)[number]['value'];
 
-type CaseStatusValue = (typeof CASE_STATUS_OPTIONS)[number];
+type CaseStatusValue = CaseStatus;
 
 type CaseParty = {
   name?: string;
@@ -245,7 +250,7 @@ const buildInitialValues = (): WorkInjuryCaseFormValues => {
       hearingRecords: []
     },
     adminInfo: {
-      caseStatus: '未结案',
+      caseStatus: 'open',
       collections: []
     },
     timeline: []
@@ -852,7 +857,7 @@ export default function WorkInjuryCaseModal({
           <Descriptions.Item label="承办律师">{formatText(assignedLawyerDisplay)}</Descriptions.Item>
           <Descriptions.Item label="律师助理">{formatText(assignedAssistantDisplay)}</Descriptions.Item>
           <Descriptions.Item label="销售人员">{formatText(salesDisplay)}</Descriptions.Item>
-          <Descriptions.Item label="案件状态">{formatText(adminInfo.caseStatus)}</Descriptions.Item>
+          <Descriptions.Item label="案件状态">{formatOptionLabel(CASE_STATUS_LABELS, adminInfo.caseStatus ?? null)}</Descriptions.Item>
           <Descriptions.Item label="结案原因">{formatText(adminInfo.closedReason)}</Descriptions.Item>
           <Descriptions.Item label="退单原因">{formatText(adminInfo.voidReason)}</Descriptions.Item>
         </Descriptions>

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 import { Form, Modal, Select, message } from 'antd';
-import type { CaseStatus } from '@/lib/cases-api';
+import { CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS, type CaseStatus } from '@/lib/cases-api';
 
 export type ClosedReason = '调解' | '判决' | '撤诉' | '和解';
 export type VoidReason = '退单' | '跑单';
@@ -20,7 +20,7 @@ interface UpdateStatusModalProps {
   onSubmit?: (values: UpdateStatusFormValues) => Promise<void> | void;
 }
 
-const CASE_STATUS_OPTIONS: CaseStatus[] = ['未结案', '已结案', '废单'];
+const CASE_STATUS_OPTIONS: CaseStatus[] = ['open', 'closed', 'void'];
 const CLOSED_REASON_OPTIONS: ClosedReason[] = ['调解', '判决', '撤诉', '和解'];
 const VOID_REASON_OPTIONS: VoidReason[] = ['退单', '跑单'];
 
@@ -40,7 +40,7 @@ export default function UpdateStatusModal({
       return;
     }
     form.setFieldsValue({
-      caseStatus: initialValues?.caseStatus ?? '未结案',
+  caseStatus: initialValues?.caseStatus ?? 'open',
       closedReason: initialValues?.closedReason ?? null,
       voidReason: initialValues?.voidReason ?? null
     });
@@ -51,10 +51,10 @@ export default function UpdateStatusModal({
       return;
     }
     const status = changedValues.caseStatus;
-    if (status !== '已结案') {
+    if (status !== 'closed') {
       form.setFieldsValue({ closedReason: null });
     }
-    if (status !== '废单') {
+    if (status !== 'void') {
       form.setFieldsValue({ voidReason: null });
     }
   };
@@ -69,8 +69,8 @@ export default function UpdateStatusModal({
       const values = await form.validateFields();
       await onSubmit({
         caseStatus: values.caseStatus,
-        closedReason: values.caseStatus === '已结案' ? (values.closedReason ?? null) : null,
-        voidReason: values.caseStatus === '废单' ? (values.voidReason ?? null) : null
+        closedReason: values.caseStatus === 'closed' ? (values.closedReason ?? null) : null,
+        voidReason: values.caseStatus === 'void' ? (values.voidReason ?? null) : null
       });
       form.resetFields();
     } catch (error) {
@@ -102,11 +102,14 @@ export default function UpdateStatusModal({
           rules={[{ required: true, message: '请选择案件状态' }]}
         >
           <Select
-            options={CASE_STATUS_OPTIONS.map((value) => ({ label: value, value }))}
+            options={CASE_STATUS_OPTIONS.map((value) => ({
+              value,
+              label: CASE_STATUS_LABELS[value]
+            }))}
             placeholder="请选择案件状态"
           />
         </Form.Item>
-        {selectedStatus === '已结案' ? (
+        {selectedStatus === 'closed' ? (
           <Form.Item
             label="结案方式"
             name="closedReason"
@@ -118,7 +121,7 @@ export default function UpdateStatusModal({
             />
           </Form.Item>
         ) : null}
-        {selectedStatus === '废单' ? (
+        {selectedStatus === 'void' ? (
           <Form.Item
             label="废单原因"
             name="voidReason"

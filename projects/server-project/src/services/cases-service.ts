@@ -4,7 +4,6 @@ import { db } from '../db/client';
 import { departmentEnum, users } from '../db/schema/auth-schema';
 import type {
   caseLevelEnum,
-  caseStatusEnum,
   caseTypeEnum,
   participantEntityEnum,
   participantRoleEnum,
@@ -16,6 +15,7 @@ import {
   cases,
   caseHearings,
   caseTimeline,
+  caseStatusEnum,
   trialStageEnum,
   type CaseChangeDetail
 } from '../db/schema/case-schema';
@@ -646,12 +646,46 @@ function normalizeTextInput(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
+  first_instance: '一审',
+  second_instance: '二审',
+  retrial: '再审'
+};
+
 function normalizeTrialStageInput(value: TrialStage | string | null | undefined): TrialStage | null {
   if (!value) {
     return null;
   }
-  const normalized = String(value) as TrialStage;
-  return (trialStageEnum.enumValues as readonly TrialStage[]).includes(normalized) ? normalized : null;
+
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+
+  return (trialStageEnum.enumValues as readonly TrialStage[]).includes(direct as TrialStage)
+    ? (direct as TrialStage)
+    : null;
+}
+
+const CASE_STATUS_LABEL_MAP: Record<CaseStatus, string> = {
+  open: '未结案',
+  closed: '已结案',
+  void: '废单'
+};
+
+function normalizeCaseStatusInput(value: CaseStatus | string | null | undefined): CaseStatus | null {
+  if (!value) {
+    return null;
+  }
+
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+
+  return (caseStatusEnum.enumValues as readonly CaseStatus[]).includes(direct as CaseStatus)
+    ? (direct as CaseStatus)
+    : null;
 }
 
 function formatValueForLog(value: unknown): string | null {
@@ -669,7 +703,21 @@ function formatValueForLog(value: unknown): string | null {
   }
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
+    if (!trimmed) {
+      return null;
+    }
+
+    if ((trialStageEnum.enumValues as readonly TrialStage[]).includes(trimmed as TrialStage)) {
+      const stage = trimmed as TrialStage;
+      return TRIAL_STAGE_LABEL_MAP[stage] ?? stage;
+    }
+
+    if ((caseStatusEnum.enumValues as readonly CaseStatus[]).includes(trimmed as CaseStatus)) {
+      const status = trimmed as CaseStatus;
+      return CASE_STATUS_LABEL_MAP[status] ?? status;
+    }
+
+    return trimmed;
   }
   return JSON.stringify(value);
 }
@@ -875,7 +923,7 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
     values.assignedAssistantId = input.assignedAssistantId ?? null;
   }
   if (input.caseStatus !== undefined) {
-    values.caseStatus = input.caseStatus ?? '未结案';
+    values.caseStatus = normalizeCaseStatusInput(input.caseStatus) ?? 'open';
   }
   if (input.closedReason !== undefined) {
     values.closedReason = input.closedReason ?? null;
@@ -1150,7 +1198,10 @@ function buildWhereClause(options: CaseListFilters): SQL<unknown> | undefined {
     conditions.push(eq(cases.caseLevel, options.caseLevel));
   }
   if (options.caseStatus) {
-    conditions.push(eq(cases.caseStatus, options.caseStatus));
+    const normalizedStatus = normalizeCaseStatusInput(options.caseStatus);
+    if (normalizedStatus) {
+      conditions.push(eq(cases.caseStatus, normalizedStatus));
+    }
   }
 
   const trimmedSearch = options.search?.trim();

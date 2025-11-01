@@ -24,6 +24,7 @@ import {
   fetchCaseChangeLogs,
   fetchCaseById,
   fetchCases,
+  CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS,
   type CaseHearingRecord,
   type CaseParticipantInput,
   type CaseParticipantsInput,
@@ -50,9 +51,9 @@ const CASE_TYPE_LABEL_MAP: Record<CaseType, string> = {
 };
 
 const CASE_STATUS_COLOR_MAP: Record<CaseStatus, string> = {
-  未结案: 'blue',
-  已结案: 'green',
-  废单: 'default'
+  open: 'blue',
+  closed: 'green',
+  void: 'default'
 };
 
 const CASE_LEVEL_LABEL_MAP: Record<CaseLevel, string> = {
@@ -61,7 +62,7 @@ const CASE_LEVEL_LABEL_MAP: Record<CaseLevel, string> = {
   C: 'C'
 };
 
-const CASE_STATUS_OPTIONS: CaseStatus[] = ['未结案', '已结案', '废单'];
+const CASE_STATUS_OPTIONS: CaseStatus[] = ['open', 'closed', 'void'];
 
 const CASE_CREATE_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'super_admin',
@@ -602,7 +603,11 @@ export default function WorkInjuryCasesPage() {
     []
   );
   const caseStatusSelectOptions = useMemo(
-    () => CASE_STATUS_OPTIONS.map((value) => ({ value, label: value })),
+    () =>
+      CASE_STATUS_OPTIONS.map((value) => ({
+        value,
+        label: CASE_STATUS_LABELS[value]
+      })),
     []
   );
   const hasActiveFilters = useMemo(
@@ -1071,8 +1076,8 @@ export default function WorkInjuryCasesPage() {
           caseType: statusModalCase.caseType,
           caseLevel: statusModalCase.caseLevel,
           caseStatus: values.caseStatus,
-          closedReason: values.caseStatus === '已结案' ? values.closedReason ?? null : null,
-          voidReason: values.caseStatus === '废单' ? values.voidReason ?? null : null
+          closedReason: values.caseStatus === 'closed' ? values.closedReason ?? null : null,
+          voidReason: values.caseStatus === 'void' ? values.voidReason ?? null : null
         });
         message.success('案件状态已更新');
         setStatusModalOpen(false);
@@ -1333,11 +1338,11 @@ export default function WorkInjuryCasesPage() {
     if (!statusModalCase) {
       return undefined;
     }
-    const caseStatus = statusModalCase.caseStatus ?? '未结案';
+    const caseStatus: CaseStatus = statusModalCase.caseStatus ?? 'open';
     return {
       caseStatus,
-      closedReason: caseStatus === '已结案' ? castClosedReason(statusModalCase.closedReason ?? null) ?? null : null,
-      voidReason: caseStatus === '废单' ? castVoidReason(statusModalCase.voidReason ?? null) ?? null : null
+      closedReason: caseStatus === 'closed' ? castClosedReason(statusModalCase.closedReason ?? null) ?? null : null,
+      voidReason: caseStatus === 'void' ? castVoidReason(statusModalCase.voidReason ?? null) ?? null : null
     };
   }, [statusModalCase]);
 
@@ -1401,7 +1406,13 @@ export default function WorkInjuryCasesPage() {
         dataIndex: 'caseStatus',
         key: 'caseStatus',
         render: (value: CaseStatus | null) =>
-          value ? <Tag color={CASE_STATUS_COLOR_MAP[value] ?? 'blue'}>{value}</Tag> : '—'
+          value ? (
+            <Tag color={CASE_STATUS_COLOR_MAP[value] ?? 'blue'}>
+              {CASE_STATUS_LABELS[value] ?? value}
+            </Tag>
+          ) : (
+            '—'
+          )
       },
       {
         title: '省份/城市',

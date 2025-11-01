@@ -3,7 +3,13 @@ import type { UserDepartment, UserRole } from './users-api';
 
 export type CaseType = 'work_injury' | 'personal_injury' | 'other';
 export type CaseLevel = 'A' | 'B' | 'C';
-export type CaseStatus = '未结案' | '已结案' | '废单';
+export type CaseStatus = 'open' | 'closed' | 'void';
+
+export const CASE_STATUS_LABEL_MAP: Record<CaseStatus, string> = {
+  open: '未结案',
+  closed: '已结案',
+  void: '废单'
+};
 export type TrialStage = 'first_instance' | 'second_instance' | 'retrial';
 
 export type CaseParticipantEntity = 'personal' | 'organization';

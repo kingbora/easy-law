@@ -25,8 +25,8 @@ export const caseTypeEnum = pgEnum('case_type', ['work_injury', 'personal_injury
 export const caseLevelEnum = pgEnum('case_level', ['A', 'B', 'C']);
 export const participantRoleEnum = pgEnum('case_participant_role', ['claimant', 'respondent']);
 export const participantEntityEnum = pgEnum('case_participant_entity', ['personal', 'organization']);
-export const caseStatusEnum = pgEnum('case_status', ['未结案', '已结案', '废单']);
-export const trialStageEnum = pgEnum('case_trial_stage', ['一审', '二审', '再审']);
+export const caseStatusEnum = pgEnum('case_status', ['open', 'closed', 'void']);
+export const trialStageEnum = pgEnum('case_trial_stage', ['first_instance', 'second_instance', 'retrial']);
 
 export const cases = pgTable('case_record', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -55,7 +55,7 @@ export const cases = pgTable('case_record', {
   assignedSaleId: text('assigned_sale_id').references(() => users.id), // 跟进销售
   assignedLawyerId: text('assigned_lawyer_id').references(() => users.id), // 跟进律师
   assignedAssistantId: text('assigned_assistant_id').references(() => users.id), // 跟进助理
-  caseStatus: caseStatusEnum('case_status').default('未结案'), // 案件状态
+  caseStatus: caseStatusEnum('case_status').default('open'), // 案件状态
   closedReason: text('closed_reason'), // 结案原因
   voidReason: text('void_reason'), // 废单原因
   creatorId: text('creator_id').references(() => users.id), // 创建人
