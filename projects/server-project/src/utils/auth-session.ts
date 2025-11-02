@@ -1,8 +1,6 @@
 import { fromNodeHeaders } from 'better-auth/node';
 import type { Request as ExpressRequest } from 'express';
 
-import { authBasePath } from '../auth';
-
 export interface SessionUser {
   id: string;
   role: string;
@@ -24,13 +22,13 @@ export interface SessionContext {
   };
 }
 
-const AUTH_BASE_PATH = authBasePath ?? '/api/auth';
+const AUTH_BASE_PATH = process.env.AUTH_BASE_PATH;
 
 function buildRequestUrl(req: ExpressRequest): URL {
   const originHost = req.get('host') ?? 'localhost';
   const originProtocol = req.protocol ?? 'http';
   const origin = `${originProtocol}://${originHost}`;
-  const normalizedBasePath = AUTH_BASE_PATH.endsWith('/') ? AUTH_BASE_PATH.slice(0, -1) : AUTH_BASE_PATH;
+  const normalizedBasePath = AUTH_BASE_PATH?.endsWith('/') ? AUTH_BASE_PATH.slice(0, -1) : AUTH_BASE_PATH;
   return new URL(`${normalizedBasePath}/get-session`, origin);
 }
 

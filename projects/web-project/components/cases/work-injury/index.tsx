@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import dayjs, { type Dayjs } from 'dayjs';
-import { Button, Card, Dropdown, Form, Select, Space, Table, Tag, message } from 'antd';
+import { Button, Card, Form, Select, Space, Table, Tag, message } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
-import type { MenuProps } from 'antd';
-import { EllipsisOutlined, PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined } from '@ant-design/icons';
 
-import WorkInjuryCaseModal, { type WorkInjuryCaseFormValues } from './modal';
-import AssignStaffModal, { type AssignStaffFormValues } from './operations/AssignStaffModal';
-import HearingModal, { type HearingFormValues } from './operations/HearingModal';
-import FollowUpModal, { type FollowUpFormValues } from './operations/FollowUpModal';
-import UpdateStatusModal, { type UpdateStatusFormValues } from './operations/UpdateStatusModal';
-import CaseChangeLogModal from './operations/CaseChangeLogModal';
-import CaseCollectionModal from './operations/CaseCollectionModal';
-import CaseFeeModal from './operations/CaseFeeModal';
+import WorkInjuryCaseModal, {
+  type AssignStaffFormValues,
+  type CaseStatusFormValues,
+  type FeeFormValues,
+  type HearingFormValues,
+  type WorkInjuryCaseFormValues,
+  type WorkInjuryCaseTabKey
+} from './modal';
 import { useDashboardHeaderAction } from '@/app/(dashboard)/header-context';
 import { ApiError } from '@/lib/api-client';
 import { useSessionStore } from '@/lib/stores/session-store';
@@ -106,11 +105,6 @@ const sortHearings = (hearings: CaseHearingRecord[] = []): CaseHearingRecord[] =
     return resolveStageOrder(a.trialStage) - resolveStageOrder(b.trialStage);
   });
 
-const getLatestHearing = (hearings: CaseHearingRecord[] = []): CaseHearingRecord | null => {
-  const sorted = sortHearings(hearings);
-  return sorted.length ? sorted[sorted.length - 1] : null;
-};
-
 const sortHearingInputs = (
   hearings: NonNullable<CasePayload['hearings']>
 ): NonNullable<CasePayload['hearings']> =>
@@ -138,32 +132,6 @@ const mapHearingRecordToInput = (
   trialStage: record.trialStage ?? null,
   hearingResult: toNullableText(record.hearingResult ?? null)
 });
-
-const collectUsedTrialStages = (hearings: CaseHearingRecord[] = []): Set<TrialStage> => {
-  const usedStages = new Set<TrialStage>();
-  hearings.forEach((item) => {
-    if (item.trialStage) {
-      usedStages.add(item.trialStage);
-    }
-  });
-  return usedStages;
-};
-
-const resolveAvailableTrialStages = (hearings: CaseHearingRecord[] = []): TrialStage[] => {
-  const usedStages = collectUsedTrialStages(hearings);
-  return TRIAL_STAGE_SEQUENCE.filter((stage, index) => {
-    if (usedStages.has(stage)) {
-      return false;
-    }
-    const prerequisites = TRIAL_STAGE_SEQUENCE.slice(0, index);
-    return prerequisites.every((requiredStage) => usedStages.has(requiredStage));
-  });
-};
-
-const resolveDisabledTrialStages = (hearings: CaseHearingRecord[] = []): TrialStage[] => {
-  const availableStages = new Set(resolveAvailableTrialStages(hearings));
-  return TRIAL_STAGE_SEQUENCE.filter((stage) => !availableStages.has(stage));
-};
 
 function toNullableText(value?: string | null): string | null {
   if (value === null || value === undefined) {
@@ -361,6 +329,8 @@ function mapCaseRecordToFormValues(record: CaseRecord): WorkInjuryCaseFormValues
       caseStatus: record.caseStatus ?? undefined,
       closedReason: castClosedReason(record.closedReason ?? undefined),
       voidReason: castVoidReason(record.voidReason ?? undefined),
+      salesCommission: record.salesCommission ?? null,
+      handlingFee: record.handlingFee ?? null,
       collections
     },
     timeline: record.timeline ?? []
@@ -504,36 +474,11 @@ export default function WorkInjuryCasesPage() {
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newCaseModalOpen, setNewCaseModalOpen] = useState(false);
-  const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [assignModalCase, setAssignModalCase] = useState<CaseRecord | null>(null);
-  const [assignSubmitting, setAssignSubmitting] = useState(false);
-  const [hearingModalOpen, setHearingModalOpen] = useState(false);
-  const [hearingModalCase, setHearingModalCase] = useState<CaseRecord | null>(null);
-  const [hearingSubmitting, setHearingSubmitting] = useState(false);
-  const [hearingLawyerOptions, setHearingLawyerOptions] = useState<Array<{ value: string; label: string }>>([]);
-  const [hearingLawyerLoading, setHearingLawyerLoading] = useState(false);
-  const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
-  const [followUpModalCase, setFollowUpModalCase] = useState<CaseRecord | null>(null);
-  const [followSubmitting, setFollowSubmitting] = useState(false);
-  const [statusModalOpen, setStatusModalOpen] = useState(false);
-  const [statusModalCase, setStatusModalCase] = useState<CaseRecord | null>(null);
-  const [statusSubmitting, setStatusSubmitting] = useState(false);
-  const [logModalOpen, setLogModalOpen] = useState(false);
-  const [logModalCase, setLogModalCase] = useState<CaseRecord | null>(null);
-  const [logModalLoading, setLogModalLoading] = useState(false);
-  const [logModalLogs, setLogModalLogs] = useState<CaseChangeLog[]>([]);
-  const [feeModalOpen, setFeeModalOpen] = useState(false);
-  const [feeModalCase, setFeeModalCase] = useState<CaseRecord | null>(null);
-  const [feeModalLoading, setFeeModalLoading] = useState(false);
-  const [feeModalSubmitting, setFeeModalSubmitting] = useState(false);
-  const [collectionModalOpen, setCollectionModalOpen] = useState(false);
-  const [collectionModalCase, setCollectionModalCase] = useState<CaseRecord | null>(null);
-  const [collectionSubmitting, setCollectionSubmitting] = useState(false);
   const [caseModalOpen, setCaseModalOpen] = useState(false);
   const [caseModalMode, setCaseModalMode] = useState<'view' | 'update'>('view');
   const [caseModalCase, setCaseModalCase] = useState<CaseRecord | null>(null);
   const [caseModalCanEdit, setCaseModalCanEdit] = useState(false);
-  const [caseModalSubmitting, setCaseModalSubmitting] = useState(false);
+  const [caseModalInitialTab, setCaseModalInitialTab] = useState<WorkInjuryCaseTabKey | undefined>(undefined);
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
     pageSize: DEFAULT_PAGE_SIZE,
@@ -547,38 +492,6 @@ export default function WorkInjuryCasesPage() {
   const [filters, setFilters] = useState<CaseFilters>({});
   const changeLogCacheRef = useRef<Map<string, CaseChangeLog[]>>(new Map());
   const currentUser = useSessionStore((state) => state.user);
-  const hearingModalDepartment = useMemo<UserDepartment | null>(() => {
-    if (hearingModalCase?.department) {
-      return hearingModalCase.department;
-    }
-    if (!currentUser) {
-      return PAGE_DEPARTMENT;
-    }
-    if (currentUser.role === 'super_admin') {
-      return PAGE_DEPARTMENT;
-    }
-    return currentUser.department ?? null;
-  }, [hearingModalCase, currentUser]);
-  const hearingModalAssignedLawyerId = hearingModalCase?.assignedLawyerId ?? null;
-  const hearingModalAssignedLawyerName = hearingModalCase?.assignedLawyerName ?? null;
-  const hearingModalLatestHearing = useMemo(
-    () => (hearingModalCase ? getLatestHearing(hearingModalCase.hearings ?? []) : null),
-    [hearingModalCase]
-  );
-  const hearingModalLatestTrialLawyerId = hearingModalLatestHearing?.trialLawyerId ?? null;
-  const hearingModalLatestTrialLawyerName = hearingModalLatestHearing?.trialLawyerName ?? null;
-  const hearingModalAvailableStages = useMemo<TrialStage[]>(() => {
-    const hearings = hearingModalCase?.hearings ?? [];
-    return resolveAvailableTrialStages(hearings);
-  }, [hearingModalCase]);
-  const hearingModalDisabledStages = useMemo<TrialStage[]>(() => {
-    const hearings = hearingModalCase?.hearings ?? [];
-    return resolveDisabledTrialStages(hearings);
-  }, [hearingModalCase]);
-  const hearingModalNextStage = useMemo<TrialStage | null>(
-    () => (hearingModalAvailableStages.length > 0 ? hearingModalAvailableStages[0] : null),
-    [hearingModalAvailableStages]
-  );
 
   const currentPage = pagination.current ?? 1;
   const currentPageSize = pagination.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -755,73 +668,6 @@ export default function WorkInjuryCasesPage() {
     }
   }, [canCreateCase]);
 
-  useEffect(() => {
-    if (!hearingModalOpen) {
-      setHearingLawyerOptions([]);
-      setHearingLawyerLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setHearingLawyerLoading(true);
-
-    void fetchAssignableStaff(hearingModalDepartment ? { department: hearingModalDepartment } : undefined)
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-
-        const lawyerOptionMap = new Map<string, string>();
-        response.lawyers.forEach((lawyer) => {
-          lawyerOptionMap.set(lawyer.id, lawyer.name ?? '未命名律师');
-        });
-
-        const ensureOption = (id?: string | null, label?: string | null) => {
-          if (!id) {
-            return;
-          }
-          if (!lawyerOptionMap.has(id)) {
-            lawyerOptionMap.set(id, label ?? '未命名律师');
-          }
-        };
-
-        ensureOption(hearingModalLatestTrialLawyerId, hearingModalLatestTrialLawyerName);
-        ensureOption(hearingModalAssignedLawyerId, hearingModalAssignedLawyerName);
-        if (currentUser?.role === 'lawyer') {
-          ensureOption(currentUser.id, currentUser.name ?? '当前律师');
-        }
-
-        const nextOptions = Array.from(lawyerOptionMap.entries()).map(([value, label]) => ({ value, label }));
-        setHearingLawyerOptions(nextOptions);
-      })
-      .catch((error) => {
-        if (cancelled) {
-          return;
-        }
-        const errorMessage = error instanceof ApiError ? error.message : '获取律师列表失败，请稍后重试';
-        message.error(errorMessage);
-        setHearingLawyerOptions([]);
-      })
-      .finally(() => {
-        if (cancelled) {
-          return;
-        }
-        setHearingLawyerLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    hearingModalOpen,
-    hearingModalDepartment,
-    hearingModalLatestTrialLawyerId,
-    hearingModalLatestTrialLawyerName,
-    hearingModalAssignedLawyerId,
-    hearingModalAssignedLawyerName,
-    currentUser
-  ]);
-
   const canUpdateCaseRecord = useCallback(
     (record: CaseRecord) => {
       if (!currentUser) {
@@ -924,11 +770,34 @@ export default function WorkInjuryCasesPage() {
     await loadCases(nextPage, nextSize);
   }, [loadCases, pagination]);
 
+  const mutateCaseRecord = useCallback(
+    async (
+      targetCase: CaseRecord,
+      mutation: () => Promise<CaseRecord>,
+      successMessage?: string
+    ) => {
+      const updatedRecord = await mutation();
+      if (successMessage) {
+        message.success(successMessage);
+      }
+      changeLogCacheRef.current.delete(targetCase.id);
+      setCaseModalCase(prev => (prev && prev.id === targetCase.id ? updatedRecord : prev));
+      await refreshCases();
+      return mapCaseRecordToFormValues(updatedRecord);
+    },
+    [refreshCases, setCaseModalCase]
+  );
+
   const openCaseDetailModal = useCallback(
-    async (record: CaseRecord, mode: 'view' | 'update' = 'view') => {
+    async (
+      record: CaseRecord,
+      options?: { mode?: 'view' | 'update'; tab?: WorkInjuryCaseTabKey }
+    ) => {
+      const { mode = 'view', tab } = options ?? {};
       const hide = message.loading('正在加载案件详情...', 0);
       try {
         setCaseModalCanEdit(false);
+        setCaseModalInitialTab(tab);
         const detail = await fetchCaseById(record.id);
         setCaseModalCase(detail);
         const editable = canUpdateCaseRecord(detail);
@@ -950,42 +819,67 @@ export default function WorkInjuryCasesPage() {
     [canUpdateCaseRecord]
   );
 
-  const handleAssignSubmit = useCallback(
+  const handleCaseModalAssignmentSave = useCallback(
     async (values: AssignStaffFormValues) => {
-      if (!assignModalCase) {
-        return;
+      if (!caseModalCase) {
+        message.error('未找到案件信息');
+        return undefined;
       }
-      const caseId = assignModalCase.id;
-      setAssignSubmitting(true);
       try {
-        await updateCaseApi(caseId, {
-          caseType: assignModalCase.caseType,
-          caseLevel: assignModalCase.caseLevel,
-          assignedLawyerId: values.assignedLawyerId ?? null,
-          assignedAssistantId: values.assignedAssistantId ?? null
-        });
-        message.success('人员分配已更新');
-        setAssignModalOpen(false);
-        setAssignModalCase(null);
-        changeLogCacheRef.current.delete(caseId);
-        await refreshCases();
+        return await mutateCaseRecord(
+          caseModalCase,
+          () =>
+            updateCaseApi(caseModalCase.id, {
+              caseType: caseModalCase.caseType,
+              caseLevel: caseModalCase.caseLevel,
+              assignedLawyerId: values.assignedLawyerId ?? null,
+              assignedAssistantId: values.assignedAssistantId ?? null
+            }),
+          '人员分配已更新'
+        );
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '更新人员分配失败，请稍后重试';
         message.error(errorMessage);
-      } finally {
-        setAssignSubmitting(false);
+        return undefined;
       }
     },
-    [assignModalCase, refreshCases]
+    [caseModalCase, mutateCaseRecord]
   );
 
-  const handleHearingSubmit = useCallback(
-    async (values: HearingFormValues) => {
-      if (!hearingModalCase) {
-        return;
+  const handleCaseModalStatusSave = useCallback(
+    async (values: CaseStatusFormValues) => {
+      if (!caseModalCase) {
+        message.error('未找到案件信息');
+        return undefined;
       }
-      const caseId = hearingModalCase.id;
-      setHearingSubmitting(true);
+      try {
+        return await mutateCaseRecord(
+          caseModalCase,
+          () =>
+            updateCaseApi(caseModalCase.id, {
+              caseType: caseModalCase.caseType,
+              caseLevel: caseModalCase.caseLevel,
+              caseStatus: values.caseStatus,
+              closedReason: values.caseStatus === 'closed' ? values.closedReason ?? null : null,
+              voidReason: values.caseStatus === 'void' ? values.voidReason ?? null : null
+            }),
+          '案件状态已更新'
+        );
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '更新案件状态失败，请稍后重试';
+        message.error(errorMessage);
+        return undefined;
+      }
+    },
+    [caseModalCase, mutateCaseRecord]
+  );
+
+  const handleCaseModalHearingAdd = useCallback(
+    async (values: HearingFormValues) => {
+      if (!caseModalCase) {
+        message.error('未找到案件信息');
+        return undefined;
+      }
       try {
         const hearingPayload = {
           trialLawyerId: toNullableText(values.trialLawyerId ?? null),
@@ -999,291 +893,221 @@ export default function WorkInjuryCasesPage() {
           hearingResult: toNullableText(values.hearingResult ?? null)
         } satisfies NonNullable<CasePayload['hearings']>[number];
 
-        const existingHearings = (hearingModalCase.hearings ?? []).map(mapHearingRecordToInput);
+        const existingHearings = (caseModalCase.hearings ?? []).map(mapHearingRecordToInput);
         const deduplicatedHearings = hearingPayload.trialStage
-          ? existingHearings.filter((item) => item.trialStage !== hearingPayload.trialStage)
+          ? existingHearings.filter(item => item.trialStage !== hearingPayload.trialStage)
           : existingHearings;
         const nextHearings = sortHearingInputs([...deduplicatedHearings, hearingPayload]);
 
-        await updateCaseApi(caseId, {
-          caseType: hearingModalCase.caseType,
-          caseLevel: hearingModalCase.caseLevel,
-          hearings: nextHearings
-        });
-        message.success('庭审信息添加成功');
-        setHearingModalOpen(false);
-        setHearingModalCase(null);
-        changeLogCacheRef.current.delete(caseId);
-        await refreshCases();
+        return await mutateCaseRecord(
+          caseModalCase,
+          () =>
+            updateCaseApi(caseModalCase.id, {
+              caseType: caseModalCase.caseType,
+              caseLevel: caseModalCase.caseLevel,
+              hearings: nextHearings
+            }),
+          '庭审信息添加成功'
+        );
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '新增庭审信息失败，请稍后重试';
         message.error(errorMessage);
-      } finally {
-        setHearingSubmitting(false);
+        return undefined;
       }
     },
-    [hearingModalCase, refreshCases]
+    [caseModalCase, mutateCaseRecord]
   );
 
-  const handleFollowUpSubmit = useCallback(
-    async (values: Required<FollowUpFormValues>) => {
-      if (!followUpModalCase) {
-        return;
+  const handleCaseModalFollowUpAdd = useCallback(
+    async (values: { occurredOn: Dayjs; note: string | null }) => {
+      if (!caseModalCase) {
+        message.error('未找到案件信息');
+        return undefined;
       }
       const occurredOn = formatDayValue(values.occurredOn ?? null);
       if (!occurredOn) {
         message.error('请选择有效的发生日期');
-        return;
+        return undefined;
       }
-      setFollowSubmitting(true);
       try {
-        const existingTimeline = mapTimelineRecordsToInputs(followUpModalCase);
+        const existingTimeline = mapTimelineRecordsToInputs(caseModalCase);
         existingTimeline.push({
           occurredOn,
           note: values.note ?? null,
           followerId: currentUser?.id ?? null
         });
-        const caseId = followUpModalCase.id;
-        await updateCaseApi(caseId, {
-          caseType: followUpModalCase.caseType,
-          caseLevel: followUpModalCase.caseLevel,
-          timeline: existingTimeline
-        });
-        message.success('跟进备注已添加');
-        setFollowUpModalOpen(false);
-        setFollowUpModalCase(null);
-        changeLogCacheRef.current.delete(caseId);
-        await refreshCases();
+        return await mutateCaseRecord(
+          caseModalCase,
+          () =>
+            updateCaseApi(caseModalCase.id, {
+              caseType: caseModalCase.caseType,
+              caseLevel: caseModalCase.caseLevel,
+              timeline: existingTimeline
+            }),
+          '跟进备注已添加'
+        );
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '保存跟进备注失败，请稍后重试';
         message.error(errorMessage);
-      } finally {
-        setFollowSubmitting(false);
+        return undefined;
       }
     },
-    [followUpModalCase, currentUser, refreshCases]
+    [caseModalCase, currentUser, mutateCaseRecord]
   );
 
-  const handleStatusSubmit = useCallback(
-    async (values: UpdateStatusFormValues) => {
-      if (!statusModalCase) {
-        return;
-      }
-      const caseId = statusModalCase.id;
-      setStatusSubmitting(true);
-      try {
-        await updateCaseApi(caseId, {
-          caseType: statusModalCase.caseType,
-          caseLevel: statusModalCase.caseLevel,
-          caseStatus: values.caseStatus,
-          closedReason: values.caseStatus === 'closed' ? values.closedReason ?? null : null,
-          voidReason: values.caseStatus === 'void' ? values.voidReason ?? null : null
-        });
-        message.success('案件状态已更新');
-        setStatusModalOpen(false);
-        setStatusModalCase(null);
-        changeLogCacheRef.current.delete(caseId);
-        await refreshCases();
-      } catch (error) {
-        const errorMessage = error instanceof ApiError ? error.message : '更新案件状态失败，请稍后重试';
-        message.error(errorMessage);
-      } finally {
-        setStatusSubmitting(false);
-      }
-    },
-    [refreshCases, statusModalCase]
-  );
-
-  const handleCaseModalSubmit = useCallback(
-    async (values: WorkInjuryCaseFormValues) => {
+  const handleCaseModalCollectionAdd = useCallback(
+    async (values: { amount: number; receivedAt: Dayjs }) => {
       if (!caseModalCase) {
-        return;
+        message.error('未找到案件信息');
+        return undefined;
       }
-      const caseId = caseModalCase.id;
-      setCaseModalSubmitting(true);
+      const receivedAt = values.receivedAt ? values.receivedAt.format('YYYY-MM-DD') : null;
+      if (!receivedAt) {
+        message.error('请选择回款日期');
+        return undefined;
+      }
       try {
-        const payload = mapFormToCasePayload(values, caseModalCase.department ?? null);
-        await updateCaseApi(caseId, payload);
-        message.success('案件信息已更新');
-        setCaseModalOpen(false);
-        setCaseModalCase(null);
-        changeLogCacheRef.current.delete(caseId);
-        await refreshCases();
-      } catch (error) {
-        const errorMessage = error instanceof ApiError ? error.message : '更新案件信息失败，请稍后重试';
-        message.error(errorMessage);
-      } finally {
-        setCaseModalSubmitting(false);
-      }
-    },
-    [caseModalCase, refreshCases]
-  );
-
-  const handleFeeSubmit = useCallback(
-    async (values: { salesCommission: string | null; handlingFee: string | null }) => {
-      if (!feeModalCase) {
-        return;
-      }
-      setFeeModalSubmitting(true);
-      try {
-        await updateCaseApi(feeModalCase.id, {
-          caseType: feeModalCase.caseType,
-          caseLevel: feeModalCase.caseLevel,
-          salesCommission: values.salesCommission,
-          handlingFee: values.handlingFee
-        });
-        message.success('费用信息已更新');
-        changeLogCacheRef.current.delete(feeModalCase.id);
-        setFeeModalOpen(false);
-        setFeeModalCase(null);
-        await refreshCases();
-      } catch (error) {
-        const errorMessage = error instanceof ApiError ? error.message : '更新费用信息失败，请稍后重试';
-        message.error(errorMessage);
-      } finally {
-        setFeeModalSubmitting(false);
-      }
-    },
-    [feeModalCase, refreshCases]
-  );
-
-  const handleCollectionSubmit = useCallback(
-    async (values: { amount: number; receivedAt: string }) => {
-      if (!collectionModalCase) {
-        return;
-      }
-      const caseId = collectionModalCase.id;
-      setCollectionSubmitting(true);
-      try {
-        await createCaseCollectionApi(caseId, {
-          amount: values.amount,
-          receivedAt: values.receivedAt
-        });
-        message.success('回款记录已添加');
-        setCollectionModalOpen(false);
-        setCollectionModalCase(null);
-        changeLogCacheRef.current.delete(caseId);
-        await refreshCases();
+        return await mutateCaseRecord(
+          caseModalCase,
+          async () => {
+            await createCaseCollectionApi(caseModalCase.id, {
+              amount: values.amount,
+              receivedAt
+            });
+            return fetchCaseById(caseModalCase.id);
+          },
+          '回款记录已添加'
+        );
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '新增回款记录失败，请稍后重试';
         message.error(errorMessage);
-      } finally {
-        setCollectionSubmitting(false);
+        return undefined;
       }
     },
-    [collectionModalCase, refreshCases]
+    [caseModalCase, mutateCaseRecord]
   );
 
-  const handleActionSelect = useCallback(
-    (actionKey: string, record: CaseRecord) => {
-      switch (actionKey) {
-        case 'assign':
-          if (!canAssignStaffToCase(record)) {
-            message.error('您没有权限分配人员');
-            return;
-          }
-          setAssignModalCase(record);
-          setAssignModalOpen(true);
-          break;
-        case 'hearing':
-          if (!canUpdateHearingRecord(record)) {
-            message.error('您没有权限新增庭审信息');
-            return;
-          }
-          {
-            const availableStages = resolveAvailableTrialStages(record.hearings ?? []);
-            if (availableStages.length === 0) {
-              message.warning('所有审理阶段均已记录或前序阶段未完成，无法继续新增');
-              return;
-            }
-          }
-          setHearingModalCase(record);
-          setHearingModalOpen(true);
-          break;
-        case 'follow_up':
-          if (!canUpdateCaseRecord(record)) {
-            message.error('您没有权限添加跟进备注');
-            return;
-          }
-          setFollowUpModalCase(record);
-          setFollowUpModalOpen(true);
-          break;
-        case 'update_status':
-          if (!canUpdateCaseRecord(record)) {
-            message.error('您没有权限更新案件状态');
-            return;
-          }
-          setStatusModalCase(record);
-          setStatusModalOpen(true);
-          break;
-        case 'add_collection': {
-          if (!canCreateCollectionRecord(record)) {
-            message.error('您没有权限新增回款记录');
-            return;
-          }
-          setCollectionModalCase(record);
-          setCollectionModalOpen(true);
-          break;
-        }
-        case 'fee_detail': {
-          if (!canManageCaseFee(record)) {
-            message.error('您没有权限查看费用明细');
-            return;
-          }
-          setFeeModalOpen(true);
-          setFeeModalLoading(true);
-          setFeeModalCase(null);
-          void fetchCaseById(record.id)
-            .then((detail) => {
-              setFeeModalCase(detail);
-            })
-            .catch((error) => {
-              const errorMessage = error instanceof ApiError ? error.message : '获取费用信息失败，请稍后重试';
-              message.error(errorMessage);
-              setFeeModalOpen(false);
-            })
-            .finally(() => {
-              setFeeModalLoading(false);
-            });
-          break;
-        }
-        case 'view_logs': {
-          setLogModalCase(record);
-          setLogModalOpen(true);
-          const cached = changeLogCacheRef.current.get(record.id);
-          if (cached) {
-            setLogModalLogs(cached);
-            setLogModalLoading(false);
-            break;
-          }
-          setLogModalLogs([]);
-          setLogModalLoading(true);
-          void fetchCaseChangeLogs(record.id)
-            .then((logs) => {
-              changeLogCacheRef.current.set(record.id, logs);
-              setLogModalLogs(logs);
-            })
-            .catch((error) => {
-              const errorMessage = error instanceof ApiError ? error.message : '获取变更日志失败，请稍后重试';
-              message.error(errorMessage);
-            })
-            .finally(() => {
-              setLogModalLoading(false);
-            });
-          break;
-        }
-        default:
-          break;
+  const handleCaseModalFeeUpdate = useCallback(
+    async (values: FeeFormValues) => {
+      if (!caseModalCase) {
+        message.error('未找到案件信息');
+        return undefined;
+      }
+      try {
+        return await mutateCaseRecord(
+          caseModalCase,
+          () =>
+            updateCaseApi(caseModalCase.id, {
+              caseType: caseModalCase.caseType,
+              caseLevel: caseModalCase.caseLevel,
+              salesCommission: values.salesCommission ?? null,
+              handlingFee: values.handlingFee ?? null
+            }),
+          '费用信息已更新'
+        );
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '更新费用信息失败，请稍后重试';
+        message.error(errorMessage);
+        return undefined;
       }
     },
-    [
-      canAssignStaffToCase,
-      canCreateCollectionRecord,
-      canManageCaseFee,
-      canUpdateCaseRecord,
-      canUpdateHearingRecord
-    ]
+    [caseModalCase, mutateCaseRecord]
   );
+
+  const handleCaseModalBasicInfoSave = useCallback(
+    async (basicInfo: WorkInjuryCaseFormValues['basicInfo']) => {
+      if (!caseModalCase) {
+        message.error('未找到案件信息');
+        return undefined;
+      }
+      const basic = basicInfo ?? {};
+      try {
+        return await mutateCaseRecord(
+          caseModalCase,
+          () =>
+            updateCaseApi(caseModalCase.id, {
+              caseType: (basic.caseType ?? caseModalCase.caseType) as CasePayload['caseType'],
+              caseLevel: (basic.caseLevel ?? caseModalCase.caseLevel) as CasePayload['caseLevel'],
+              provinceCity: toNullableText(basic.provinceCity ?? null),
+              targetAmount: basic.targetAmount ?? null,
+              feeStandard: toNullableText(basic.feeStandard ?? null),
+              agencyFeeEstimate: basic.agencyFeeEstimate ?? null,
+              dataSource: toNullableText(basic.dataSource ?? null),
+              hasContract: basic.hasContract ?? null,
+              hasSocialSecurity: basic.hasSocialSecurity ?? null,
+              entryDate: formatDayValue(basic.entryDate ?? null),
+              injuryLocation: toNullableText(basic.injuryLocation ?? null),
+              injurySeverity: toNullableText(basic.injurySeverity ?? null),
+              injuryCause: toNullableText(basic.injuryCause ?? null),
+              workInjuryCertified: basic.workInjuryCertified ?? null,
+              monthlySalary: basic.monthlySalary ?? null,
+              appraisalLevel: toNullableText(basic.appraisalLevel ?? null),
+              appraisalEstimate: toNullableText(basic.appraisalEstimate ?? null),
+              existingEvidence: toNullableText(basic.existingEvidence ?? null),
+              customerCooperative: basic.customerCooperative ?? null,
+              witnessCooperative: basic.witnessCooperative ?? null,
+              remark: toNullableText(basic.remark ?? null),
+              department: caseModalCase.department ?? null
+            }),
+          '基本信息已保存'
+        );
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '保存基本信息失败，请稍后重试';
+        message.error(errorMessage);
+        return undefined;
+      }
+    },
+    [caseModalCase, mutateCaseRecord]
+  );
+
+  const handleCaseModalPartiesSave = useCallback(
+    async (parties: WorkInjuryCaseFormValues['parties']) => {
+      if (!caseModalCase) {
+        message.error('未找到案件信息');
+        return undefined;
+      }
+      const participants = mapParticipants(parties);
+      if (!participants?.claimants || participants.claimants.length === 0) {
+        message.error('请至少添加一位当事人');
+        return undefined;
+      }
+      try {
+        return await mutateCaseRecord(
+          caseModalCase,
+          () =>
+            updateCaseApi(caseModalCase.id, {
+              caseType: caseModalCase.caseType,
+              caseLevel: caseModalCase.caseLevel,
+              participants
+            }),
+          '当事人信息已保存'
+        );
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '保存当事人信息失败，请稍后重试';
+        message.error(errorMessage);
+        return undefined;
+      }
+    },
+    [caseModalCase, mutateCaseRecord]
+  );
+
+  const handleLoadAssignableStaff = useCallback(() => {
+    const department = caseModalCase?.department ?? currentUser?.department ?? null;
+    return fetchAssignableStaff(department ? { department } : undefined);
+  }, [caseModalCase, currentUser]);
+
+  const handleLoadChangeLogs = useCallback(async () => {
+    if (!caseModalCase) {
+      return [] as CaseChangeLog[];
+    }
+    const cached = changeLogCacheRef.current.get(caseModalCase.id);
+    if (cached) {
+      return cached;
+    }
+    const logs = await fetchCaseChangeLogs(caseModalCase.id);
+    changeLogCacheRef.current.set(caseModalCase.id, logs);
+    return logs;
+  }, [caseModalCase]);
 
   const handleCaseTitleClick = useCallback(
     (record: CaseRecord) => {
@@ -1297,25 +1121,7 @@ export default function WorkInjuryCasesPage() {
     setCaseModalCase(null);
     setCaseModalMode('view');
     setCaseModalCanEdit(false);
-    setCaseModalSubmitting(false);
-  }, []);
-
-  const handleLogModalClose = useCallback(() => {
-    setLogModalOpen(false);
-    setLogModalCase(null);
-  }, []);
-
-  const handleFeeModalClose = useCallback(() => {
-    setFeeModalOpen(false);
-    setFeeModalCase(null);
-    setFeeModalLoading(false);
-    setFeeModalSubmitting(false);
-  }, []);
-
-  const handleCollectionModalClose = useCallback(() => {
-    setCollectionModalOpen(false);
-    setCollectionModalCase(null);
-    setCollectionSubmitting(false);
+    setCaseModalInitialTab(undefined);
   }, []);
 
   const handleCaseModalEdit = useCallback(() => {
@@ -1334,52 +1140,25 @@ export default function WorkInjuryCasesPage() {
     [caseModalCase]
   );
 
-  const statusModalInitialValues = useMemo<UpdateStatusFormValues | undefined>(() => {
-    if (!statusModalCase) {
-      return undefined;
-    }
-    const caseStatus: CaseStatus = statusModalCase.caseStatus ?? 'open';
-    return {
-      caseStatus,
-      closedReason: caseStatus === 'closed' ? castClosedReason(statusModalCase.closedReason ?? null) ?? null : null,
-      voidReason: caseStatus === 'void' ? castVoidReason(statusModalCase.voidReason ?? null) ?? null : null
-    };
-  }, [statusModalCase]);
-
-  const hearingModalInitialValues = useMemo<HearingFormValues>(() => {
-    const defaultTrialLawyerId = (() => {
-      if (hearingModalLatestTrialLawyerId) {
-        return hearingModalLatestTrialLawyerId;
-      }
-      if (currentUser?.role === 'lawyer' && currentUser.id) {
-        return currentUser.id;
-      }
-      if (hearingModalAssignedLawyerId) {
-        return hearingModalAssignedLawyerId;
-      }
-      return null;
-    })();
-
-    const latestHearing = hearingModalLatestHearing;
-    const defaultTrialStage = hearingModalNextStage;
-    return {
-      trialLawyerId: defaultTrialLawyerId,
-      hearingTime: null,
-      hearingLocation: latestHearing?.hearingLocation ?? null,
-      tribunal: latestHearing?.tribunal ?? null,
-      judge: latestHearing?.judge ?? null,
-      caseNumber: latestHearing?.caseNumber ?? null,
-      contactPhone: latestHearing?.contactPhone ?? null,
-      trialStage: defaultTrialStage ?? null,
-      hearingResult: null
-    } satisfies HearingFormValues;
-  }, [
-    hearingModalLatestHearing,
-    hearingModalLatestTrialLawyerId,
-    hearingModalAssignedLawyerId,
-    hearingModalNextStage,
-    currentUser
-  ]);
+  const caseModalPermissions = useMemo(
+    () => ({
+      canEditAssignments: caseModalCase ? canAssignStaffToCase(caseModalCase) : false,
+      canUpdateStatus: caseModalCase ? canUpdateCaseRecord(caseModalCase) : false,
+      canAddHearings: caseModalCase ? canUpdateHearingRecord(caseModalCase) : false,
+      canAddFollowUps: Boolean(caseModalCase),
+      canAddCollections: caseModalCase ? canCreateCollectionRecord(caseModalCase) : false,
+      canUpdateFees: caseModalCase ? canManageCaseFee(caseModalCase) : false,
+      canViewChangeLogs: Boolean(caseModalCase)
+    }),
+    [
+      caseModalCase,
+      canAssignStaffToCase,
+      canCreateCollectionRecord,
+      canManageCaseFee,
+      canUpdateCaseRecord,
+      canUpdateHearingRecord
+    ]
+  );
 
   const columns = useMemo<ColumnsType<CaseRecord>>(
     () => [
@@ -1419,83 +1198,9 @@ export default function WorkInjuryCasesPage() {
         dataIndex: 'provinceCity',
         key: 'provinceCity',
         render: (value: string | null) => value ?? '—'
-      },
-      {
-        title: '操作',
-        key: 'actions',
-        fixed: 'right',
-        width: 60,
-        render: (_, record) => {
-          const items: MenuProps['items'] = [];
-          if (canAssignStaffToCase(record)) {
-            items.push({
-              key: 'assign',
-              label: '分配律师',
-              disabled: !canAssignStaffToCase(record)
-            });
-          }
-          if (canUpdateHearingRecord(record)) {
-            items.push({
-              key: 'hearing',
-              label: '新增庭审',
-              disabled: !canUpdateCaseRecord(record)
-            });
-          }
-          if (canUpdateCaseRecord(record)) {
-            items.push({
-              key: 'follow_up',
-              label: '跟进备注',
-              disabled: !canUpdateCaseRecord(record)
-            });
-            items.push({
-              key: 'update_status',
-              label: '更新状态',
-              disabled: !canUpdateCaseRecord(record)
-            });
-          }
-          if (canManageCaseFee(record)) {
-            items.push({
-              key: 'fee_detail',
-              label: '费用明细',
-              disabled: !canManageCaseFee(record)
-            });
-          }
-          if (canCreateCollectionRecord(record)) {
-            items.push({
-              key: 'add_collection',
-              label: '新增回款记录',
-              disabled: !canCreateCollectionRecord(record)
-            });
-          }
-          items.push({
-            key: 'view_logs',
-            label: '查看变更日志'
-          });
-          return (
-            <Dropdown
-              menu={{
-                items,
-                onClick: ({ key }) => handleActionSelect(key as string, record)
-              }}
-              trigger={['click']}
-            >
-              <Button
-                  type='text'
-                  icon={<EllipsisOutlined />}
-                  aria-label='案件操作'
-                />
-            </Dropdown>
-          );
-        },
       }
     ],
     [
-  canAssignStaffToCase,
-  canCreateCollectionRecord,
-      canManageCaseFee,
-      canUpdateCaseRecord,
-      canUpdateHearingRecord,
-      handleActionSelect,
       handleCaseTitleClick
     ]
   );
@@ -1560,90 +1265,32 @@ export default function WorkInjuryCasesPage() {
         />
       ) : null}
 
-      <AssignStaffModal
-        open={assignModalOpen}
-        caseDepartment={assignModalCase?.department ?? currentUser?.department ?? null}
-        initialValues={{
-          assignedLawyerId: assignModalCase?.assignedLawyerId ?? null,
-          assignedAssistantId: assignModalCase?.assignedAssistantId ?? null
-        }}
-        confirmLoading={assignSubmitting}
-        onCancel={() => {
-          setAssignModalOpen(false);
-          setAssignModalCase(null);
-        }}
-        onSubmit={handleAssignSubmit}
-      />
-
-      <HearingModal
-        open={hearingModalOpen}
-        initialValues={hearingModalInitialValues}
-        lawyerOptions={hearingLawyerOptions}
-        lawyerOptionsLoading={hearingLawyerLoading}
-        confirmLoading={hearingSubmitting}
-        disabledStages={hearingModalDisabledStages}
-        onCancel={() => {
-          setHearingModalOpen(false);
-          setHearingModalCase(null);
-        }}
-        onSubmit={handleHearingSubmit}
-      />
-
-      <FollowUpModal
-        open={followUpModalOpen}
-        confirmLoading={followSubmitting}
-        onCancel={() => {
-          setFollowUpModalOpen(false);
-          setFollowUpModalCase(null);
-        }}
-        onSubmit={handleFollowUpSubmit}
-      />
-
-      <UpdateStatusModal
-        open={statusModalOpen}
-        initialValues={statusModalInitialValues}
-        confirmLoading={statusSubmitting}
-        onCancel={() => {
-          setStatusModalOpen(false);
-          setStatusModalCase(null);
-        }}
-        onSubmit={handleStatusSubmit}
-      />
-
-      <CaseFeeModal
-        open={feeModalOpen}
-        loading={feeModalLoading}
-        submitting={feeModalSubmitting}
-        caseRecord={feeModalCase}
-        onClose={handleFeeModalClose}
-        onSubmit={handleFeeSubmit}
-      />
-
-      <CaseCollectionModal
-        open={collectionModalOpen}
-        confirmLoading={collectionSubmitting}
-        onCancel={handleCollectionModalClose}
-        onSubmit={handleCollectionSubmit}
-      />
-
-      <CaseChangeLogModal
-        open={logModalOpen}
-        loading={logModalLoading}
-        logs={logModalLogs}
-        caseTitle={logModalCase ? buildCaseTitle(logModalCase) : undefined}
-        onClose={handleLogModalClose}
-      />
-
       <WorkInjuryCaseModal
         open={caseModalOpen}
         mode={caseModalMode}
         initialValues={caseModalInitialValues}
+        initialActiveTab={caseModalInitialTab}
         allowEdit={caseModalCanEdit}
         onRequestEdit={handleCaseModalEdit}
         onRequestView={handleCaseModalView}
         onCancel={closeCaseModal}
-        onSubmit={caseModalMode === 'update' ? handleCaseModalSubmit : undefined}
-        confirmLoading={caseModalMode === 'update' ? caseModalSubmitting : undefined}
+  onSaveBasicInfo={caseModalMode === 'update' ? handleCaseModalBasicInfoSave : undefined}
+  onSaveParties={caseModalMode === 'update' ? handleCaseModalPartiesSave : undefined}
+        onSaveAssignment={handleCaseModalAssignmentSave}
+        onSaveCaseStatus={handleCaseModalStatusSave}
+        onAddHearing={handleCaseModalHearingAdd}
+        onAddFollowUp={handleCaseModalFollowUpAdd}
+        onAddCollection={handleCaseModalCollectionAdd}
+        onUpdateFees={handleCaseModalFeeUpdate}
+        onLoadAssignableStaff={caseModalCase ? handleLoadAssignableStaff : undefined}
+        onLoadChangeLogs={caseModalCase ? handleLoadChangeLogs : undefined}
+        canEditAssignments={caseModalPermissions.canEditAssignments}
+        canUpdateStatus={caseModalPermissions.canUpdateStatus}
+        canAddHearings={caseModalPermissions.canAddHearings}
+        canAddFollowUps={caseModalPermissions.canAddFollowUps}
+        canAddCollections={caseModalPermissions.canAddCollections}
+        canUpdateFees={caseModalPermissions.canUpdateFees}
+        canViewChangeLogs={caseModalPermissions.canViewChangeLogs}
       />
     </Space>
   );

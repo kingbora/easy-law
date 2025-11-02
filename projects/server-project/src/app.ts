@@ -21,12 +21,16 @@ app.use(
     credentials: true
   })
 );
-app.all('/api/auth/*', toNodeHandler(auth));
+app.all(`${process.env.AUTH_BASE_PATH}/*`, toNodeHandler(auth));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use('/api/cases', requireSession, casesRouter);
+app.use('/restful/api/cases', requireSession, casesRouter);
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
 app.use(notFoundHandler);
 app.use(errorHandler);

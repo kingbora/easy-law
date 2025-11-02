@@ -13,8 +13,7 @@ const baseURL =
       ? 'https://easy-lay.top' 
       : `http://localhost:3000`;
 
-const basePath = process.env.AUTH_BASE_PATH ?? '/api/auth';
-export const authBasePath = basePath;
+const basePath = process.env.AUTH_BASE_PATH;
 
 export const auth = betterAuth({
   basePath,

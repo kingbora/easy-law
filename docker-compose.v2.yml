@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  frontend-v2:
+    image: ${FRONTEND_IMAGE_V2}
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE_URL=https://www.mydomain.com
+      - NEXT_PUBLIC_RESTFUL_BASE_URL=https://www.mydomain.com/restful
+    networks:
+      - app-network
+    restart: always
+
+  backend-v2:
+    image: ${BACKEND_IMAGE_V2}
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+    networks:
+      - app-network
+    restart: always
+
+networks:
+  app-network:
+    driver: bridge
