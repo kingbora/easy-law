@@ -14,14 +14,15 @@
     "db:push": "pnpm --filter server-project db:push",
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
-    "lint": "pnpm -r lint",
-    "lint:fix": "pnpm -r exec eslint --fix .",
+    "lint": "pnpm exec eslint .",
+    "lint:fix": "pnpm exec eslint --fix .",
     "clean": "pnpm -r clean && rimraf node_modules",
     "lint-staged": "lint-staged"
   },
   "devDependencies": {
     "rimraf": "^6.0.1",
     "eslint": "^8.57.0",
+    "eslint-config-next": "^14.2.5",
     "husky": "^9.0.11",
     "lint-staged": "^15.2.2"
   },

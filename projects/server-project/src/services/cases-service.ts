@@ -233,7 +233,7 @@ export interface CaseDTO {
   remark: string | null;
   department: (typeof cases.$inferSelect)['department'];
   assignedSaleId: string | null;
-  ownerName: string | null;
+  assignedSaleName: string | null;
   assignedLawyerId: string | null;
   assignedLawyerName: string | null;
   assignedAssistantId: string | null;
@@ -284,7 +284,7 @@ type CaseWithRelations = CaseRecord & {
   collections?: CaseCollectionRecord[];
   timeline?: CaseTimelineRecordWithFollower[];
   hearings?: CaseHearingRecordWithRelations[];
-  owner?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
+  assignedSale?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedAssistant?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
 };
@@ -325,7 +325,7 @@ type CaseAccessProjection = Pick<
 interface CaseAccessContext {
   allowAll: boolean;
   departments: Set<(typeof departmentEnum.enumValues)[number]>;
-  ownerIds: Set<string>;
+  assignedSaleIds: Set<string>;
   assignedLawyerIds: Set<string>;
   assignedAssistantIds: Set<string>;
   hearingTrialLawyerIds: Set<string>;
@@ -337,7 +337,7 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
     return {
       allowAll: true,
       departments: new Set(),
-      ownerIds: new Set(),
+      assignedSaleIds: new Set(),
       assignedLawyerIds: new Set(),
       assignedAssistantIds: new Set(),
       hearingTrialLawyerIds: new Set(),
@@ -348,7 +348,7 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
   const context: CaseAccessContext = {
     allowAll: false,
     departments: new Set(),
-    ownerIds: new Set([user.id]),
+    assignedSaleIds: new Set([user.id]),
     assignedLawyerIds: new Set([user.id]),
     assignedAssistantIds: new Set([user.id]),
     hearingTrialLawyerIds: new Set([user.id]),
@@ -372,7 +372,7 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
       .filter((member) => member.role === 'assistant')
       .forEach((assistant) => {
         context.assignedAssistantIds.add(assistant.id);
-        context.ownerIds.add(assistant.id);
+        context.assignedSaleIds.add(assistant.id);
       });
   }
 
@@ -388,7 +388,7 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
     if (supervisor?.role === 'lawyer') {
       context.assignedLawyerIds.add(supervisor.id);
       context.hearingTrialLawyerIds.add(supervisor.id);
-      context.ownerIds.add(supervisor.id);
+      context.assignedSaleIds.add(supervisor.id);
     }
   }
 
@@ -441,9 +441,9 @@ function buildAccessWhere(context: CaseAccessContext): SQL<unknown> | undefined 
     orConditions.push(eq(cases.department, department));
   }
 
-  const ownerCondition = buildColumnCondition(cases.assignedSaleId, context.ownerIds);
-  if (ownerCondition) {
-    orConditions.push(ownerCondition);
+  const assignedSaleCondition = buildColumnCondition(cases.assignedSaleId, context.assignedSaleIds);
+  if (assignedSaleCondition) {
+    orConditions.push(assignedSaleCondition);
   }
 
   const assignedLawyerCondition = buildColumnCondition(cases.assignedLawyerId, context.assignedLawyerIds);
@@ -477,7 +477,7 @@ function canAccessCase(context: CaseAccessContext, record: CaseAccessProjection)
     return true;
   }
 
-  if (record.assignedSaleId && context.ownerIds.has(record.assignedSaleId)) {
+  if (record.assignedSaleId && context.assignedSaleIds.has(record.assignedSaleId)) {
     return true;
   }
 
@@ -1144,7 +1144,7 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     remark: record.remark ?? null,
     department: record.department ?? null,
     assignedSaleId: record.assignedSaleId ?? null,
-    ownerName: record.owner?.name ?? null,
+    assignedSaleName: record.assignedSale?.name ?? null,
     assignedLawyerId: record.assignedLawyerId ?? null,
     assignedLawyerName: record.assignedLawyer?.name ?? null,
     assignedAssistantId: record.assignedAssistantId ?? null,

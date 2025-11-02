@@ -5,8 +5,8 @@ import {
   BookOutlined,
   FolderOpenOutlined,
   HomeOutlined,
+  LockOutlined,
   LogoutOutlined,
-  MailOutlined,
   RightOutlined,
   TeamOutlined,
   UserOutlined
@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import zhCN from 'antd/locale/zh_CN';
 import { authClient } from '@/lib/auth-client';
 import ProfileModal from '@/components/profile/ProfileModal';
+import ResetPasswordModal from '@/components/profile/ResetPasswordModal';
 import { ApiError } from '@/lib/api-client';
 import { updateUser, type UserRole } from '@/lib/users-api';
 import { useSessionStore } from '@/lib/stores/session-store';
@@ -108,6 +109,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [headerAction, setHeaderAction] = useState<ReactNode | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const [siderCollapsed, setSiderCollapsed] = useState(false);
   
   useEffect(() => {
@@ -206,8 +209,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       setProfileModalOpen(true);
       return;
     }
-    if (key === 'email') {
-      router.push('/settings/email');
+    if (key === 'password-reset') {
+      setPasswordModalOpen(true);
       return;
     }
     if (key === 'signout') {
@@ -228,6 +231,33 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       }
     }
   };
+
+  const handlePasswordSubmit = useCallback(
+    async ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) => {
+      setPasswordSaving(true);
+      try {
+        const result = await authClient.changePassword({
+          currentPassword,
+          newPassword
+        });
+
+        if (result.error) {
+          message.error(result.error.message ?? '重置密码失败，请稍后重试');
+          return;
+        }
+
+        message.success('密码已重置');
+        setPasswordModalOpen(false);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : '重置密码失败，请稍后重试';
+        message.error(errorMessage);
+      } finally {
+        setPasswordSaving(false);
+      }
+    },
+    []
+  );
 
   const uploadAvatar = useCallback(async (file: File): Promise<string> => {
     const formData = new FormData();
@@ -348,9 +378,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         icon: <UserOutlined />
       },
       {
-        key: 'email',
-        label: '邮箱认证',
-        icon: <MailOutlined />
+        key: 'password-reset',
+        label: '重置密码',
+        icon: <LockOutlined />
       },
       { type: 'divider' },
       {
@@ -454,6 +484,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           onCancel={() => setProfileModalOpen(false)}
           onSubmit={handleProfileSubmit}
           confirmLoading={profileSaving}
+        />
+        <ResetPasswordModal
+          open={passwordModalOpen}
+          onCancel={() => setPasswordModalOpen(false)}
+          onSubmit={handlePasswordSubmit}
+          confirmLoading={passwordSaving}
         />
     </DashboardHeaderActionProvider>
     </ConfigProvider>
