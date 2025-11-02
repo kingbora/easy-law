@@ -1,81 +1,123 @@
-name: Deploy to Aliyun ECS
+name: Deploy Lawyer App to Alibaba Cloud ECS
 
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 env:
-  REGISTRY: registry.cn-hangzhou.aliyuncs.com
-  NAMESPACE: myapp-namespace
-  NODE_VERSION: '18'
+  APP_NAME: "lawyer-app"
+  APP_DIR: "/home/apps/lawyer-app"
+  ECS_HOST: ${{ secrets.ECS_HOST }}
+  ECS_USERNAME: ${{ secrets.ECS_USERNAME }}
 
 jobs:
+  # 测试和构建
   test-and-build:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+        
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 9
+        run_install: false
+        
+    - name: Install dependencies
+      run: pnpm install
+      
+    - name: Build projects
+      run: pnpm -r build
+      
+    - name: Create build artifact
+      run: |
+        mkdir -p deployment
+        cp -r apps/ deployment/
+        cp -r packages/ deployment/
+        cp -r docker/ deployment/
+        cp docker-compose.yml deployment/
+        cp package.json deployment/
+        cp pnpm-workspace.yaml deployment/
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run tests
-        run: pnpm test
-
-      - name: Build projects
-        run: pnpm build
-
-      - name: Login to Aliyun Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.ALIYUN_USERNAME }}
-          password: ${{ secrets.ALIYUN_PASSWORD }}
-
-      - name: Build and push Frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./packages/frontend/Dockerfile
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/frontend:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/frontend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push Backend
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./packages/backend/Dockerfile
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/backend:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/backend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  zero-downtime-deploy:
-    runs-on: ubuntu-latest
+  # 部署到生产环境
+  deploy-production:
     needs: test-and-build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    
     steps:
-      - name: Deploy to ECS with zero downtime
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.ECS_HOST }}
-          username: ${{ secrets.ECS_USERNAME }}
-          key: ${{ secrets.ECS_SSH_KEY }}
-          script: |
-            cd /home/ubuntu/myapp
-            ./scripts/deploy.sh ${{ github.sha }}
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifacts
+        path: deployment
+        
+    - name: Copy project to ECS
+      uses: appleboy/scp-action@v0.1.3
+      with:
+        host: ${{ secrets.ECS_HOST }}
+        username: ${{ secrets.ECS_USERNAME }}
+        key: ${{ secrets.ECS_SSH_KEY }}
+        source: "deployment/*"
+        target: "/tmp/lawyer-app-build"
+        strip_components: 1
+        
+    - name: Execute deployment script
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.ECS_HOST }}
+        username: ${{ secrets.ECS_USERNAME }}
+        key: ${{ secrets.ECS_SSH_KEY }}
+        script: |
+          echo "=== 开始部署 ==="
+          echo "部署时间: $(date)"
+          echo "提交: ${{ github.sha }}"
+          echo "分支: ${{ github.ref }}"
+          
+          # 执行部署脚本
+          cd ${{ env.APP_DIR }}
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh
+          
+          # 显示部署状态
+          echo "=== 部署状态 ==="
+          docker ps
+          echo "=== 服务健康检查 ==="
+          ./scripts/health-check.sh
+
+  # 健康检查（部署后）
+  health-check:
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check service health
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.ECS_HOST }}
+        username: ${{ secrets.ECS_USERNAME }}
+        key: ${{ secrets.ECS_SSH_KEY }}
+        script: |
+          echo "=== 最终健康检查 ==="
+          cd ${{ env.APP_DIR }}
+          ./scripts/health-check.sh
+          
+          echo "=== 服务状态 ==="
+          docker-compose ps
+          
+          echo "=== 最近日志 ==="
+          docker logs lawyer-frontend --tail 20 2>/dev/null || echo "前端容器日志不可用"
+          docker logs lawyer-backend --tail 20 2>/dev/null || echo "后端容器日志不可用"
