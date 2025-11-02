@@ -31,16 +31,23 @@ jobs:
       uses: pnpm/action-setup@v2
       with:
         version: 9
-        # 移除了 run_install: false，让 action 自动安装 pnpm
         
     - name: Install dependencies
       run: pnpm install
-      # 或者明确指定 pnpm 路径
-      # run: npx pnpm install
       
     - name: Build projects
       run: pnpm -r build
       
+    - name: Create deployment directory
+      run: |
+        mkdir -p deployment
+        cp -r projects/ deployment/
+        cp -r packages/ deployment/
+        cp -r docker/ deployment/
+        cp docker-compose.yml deployment/
+        cp package.json deployment/
+        cp pnpm-workspace.yaml deployment/
+        
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -52,6 +59,7 @@ jobs:
   deploy-production:
     needs: test-and-build
     if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
     
     steps:
     - name: Download build artifacts
@@ -110,7 +118,7 @@ jobs:
           cd ${{ env.APP_DIR }}
           ./scripts/health-check.sh
           
-          echo "=== 服务状态 ===""
+          echo "=== 服务状态 ==="
           docker-compose ps
           
           echo "=== 最近日志 ==="
