@@ -2,9 +2,9 @@ name: Deploy Lawyer App to Alibaba Cloud ECS
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 env:
   APP_NAME: "lawyer-app"
