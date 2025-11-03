@@ -43,7 +43,7 @@ jobs:
       run: |
         mkdir -p deployment
         # 复制整个工程（包括node_modules和构建产物）
-        cp -r . deployment/
+        rsync -av --exclude='deployment' . deployment/ || true
         # 创建SSL证书目录
         mkdir -p deployment/nginx/ssl
         # 确保包含所有必要文件
