@@ -9,12 +9,13 @@ on:
 env:
   APP_NAME: "lawyer-app"
   APP_DIR: "/home/apps/lawyer-app"
+  NGINX_CONF_DIR: /etc/nginx
   ECS_HOST: ${{ secrets.ECS_HOST }}
   ECS_USERNAME: ${{ secrets.ECS_USERNAME }}
 
 jobs:
-  # 测试和构建
-  test-and-build:
+  # 构建打包
+  build-and-package:
     runs-on: ubuntu-latest
     
     steps:
@@ -30,7 +31,7 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'pnpm'  # 现在 pnpm 已经安装，可以设置缓存了
+        cache: 'pnpm'
         
     - name: Install dependencies
       run: pnpm install
@@ -41,12 +42,13 @@ jobs:
     - name: Create deployment directory
       run: |
         mkdir -p deployment
-        cp -r projects/ deployment/
-        cp -r packages/ deployment/
-        cp -r docker/ deployment/
-        cp docker-compose.yml deployment/
-        cp package.json deployment/
-        cp pnpm-workspace.yaml deployment/
+        # 复制整个工程（包括node_modules和构建产物）
+        cp -r . deployment/
+        # 创建SSL证书目录
+        mkdir -p deployment/nginx/ssl
+        # 确保包含所有必要文件
+        ls -la deployment/projects/web-project/.next/ || echo "Next.js构建目录不存在"
+        ls -la deployment/projects/server-project/dist/ || echo "后端构建目录不存在"
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -54,10 +56,45 @@ jobs:
         name: build-artifacts
         path: deployment
         retention-days: 1
-
+  
+  # 构建Docker镜像
+  build-docker-images:
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifacts
+        path: deployment
+        
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build frontend image
+      run: |
+        cd deployment
+        docker build -t lawyer-frontend:latest -f docker/frontend.Dockerfile .
+        docker save lawyer-frontend:latest -o frontend-image.tar
+        
+    - name: Build backend image
+      run: |
+        cd deployment
+        docker build -t lawyer-backend:latest -f docker/backend.Dockerfile .
+        docker save lawyer-backend:latest -o backend-image.tar
+        
+    - name: Upload docker images artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-images
+        path: |
+          deployment/frontend-image.tar
+          deployment/backend-image.tar
+        retention-days: 1
+  
   # 部署到生产环境
   deploy-production:
-    needs: test-and-build
+    needs: build-docker-images
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     
@@ -75,7 +112,7 @@ jobs:
         username: ${{ secrets.ECS_USERNAME }}
         key: ${{ secrets.ECS_SSH_KEY }}
         source: "deployment/*"
-        target: "/tmp/lawyer-app-build"
+        target: ${{ env.APP_DIR }}
         strip_components: 1
         
     - name: Execute deployment script
@@ -89,17 +126,26 @@ jobs:
           echo "部署时间: $(date)"
           echo "提交: ${{ github.sha }}"
           echo "分支: ${{ github.ref }}"
+
+          echo "=== 复制Nginx配置文件和SSL证书 ==="
+          sudo mkdir -p $NGINX_CONF_DIR/conf.d
+          cp -r $APP_DIR/nginx/conf.d/*.conf $NGINX_CONF_DIR/conf.d/
+          # 创建SSL证书目录（如果不存在）
+          sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/ssl
+          # 写入证书文件
+          echo "${{ secrets.SSL_CERT }}" | sudo tee ${{ env.NGINX_CONF_DIR }}/ssl/${{ env.APP_NAME }}.crt > /dev/null
+          echo "${{ secrets.SSL_KEY }}" | sudo tee ${{ env.NGINX_CONF_DIR }}/ssl/${{ env.APP_NAME }}.key > /dev/null
+          echo "Nginx配置文件已更新"
           
           # 执行部署脚本
-          cd ${{ env.APP_DIR }}
-          chmod +x scripts/deploy.sh
-          ./scripts/deploy.sh
+          chmod +x $APP_DIR/scripts/deploy.sh
+          $APP_DIR/scripts/deploy.sh
           
-          # 显示部署状态
-          echo "=== 部署状态 ==="
-          docker ps
-          echo "=== 服务健康检查 ==="
-          ./scripts/health-check.sh
+          echo "=== 部署完成 ==="
+          echo "Nginx状态:"
+          systemctl status nginx --no-pager -l
+          echo "服务状态:"
+          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
   # 健康检查（部署后）
   health-check:
@@ -115,8 +161,8 @@ jobs:
         key: ${{ secrets.ECS_SSH_KEY }}
         script: |
           echo "=== 最终健康检查 ==="
-          cd ${{ env.APP_DIR }}
-          ./scripts/health-check.sh
+          chmod +x $APP_DIR/scripts/health-check.sh
+          $APP_DIR/scripts/health-check.sh
           
           echo "=== 服务状态 ==="
           docker-compose ps
