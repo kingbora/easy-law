@@ -111,7 +111,11 @@ jobs:
         host: ${{ secrets.ECS_HOST }}
         username: ${{ secrets.ECS_USERNAME }}
         key: ${{ secrets.ECS_SSH_KEY }}
-        source: "deployment/*"
+        source: |
+          deployment/scripts
+          deployment/nginx
+          deployment/frontend-image.tar
+          deployment/backend-image.tar
         target: ${{ env.APP_DIR }}
         strip_components: 1
         
@@ -128,8 +132,8 @@ jobs:
           echo "分支: ${{ github.ref }}"
 
           echo "=== 复制Nginx配置文件和SSL证书 ==="
-          sudo mkdir -p $NGINX_CONF_DIR/conf.d
-          cp -r $APP_DIR/nginx/conf.d/*.conf $NGINX_CONF_DIR/conf.d/
+          sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/conf.d
+          cp -r ${{ env.APP_DIR }}/nginx/conf.d/*.conf ${{ env.NGINX_CONF_DIR }}/conf.d/
           # 创建SSL证书目录（如果不存在）
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/ssl
           # 写入证书文件
@@ -138,8 +142,8 @@ jobs:
           echo "Nginx配置文件已更新"
           
           # 执行部署脚本
-          chmod +x $APP_DIR/scripts/deploy.sh
-          $APP_DIR/scripts/deploy.sh
+          chmod +x ${{ env.APP_DIR }}/scripts/deploy.sh
+          ${{ env.APP_DIR }}/scripts/deploy.sh
           
           echo "=== 部署完成 ==="
           echo "Nginx状态:"
@@ -161,8 +165,8 @@ jobs:
         key: ${{ secrets.ECS_SSH_KEY }}
         script: |
           echo "=== 最终健康检查 ==="
-          chmod +x $APP_DIR/scripts/health-check.sh
-          $APP_DIR/scripts/health-check.sh
+          chmod +x ${{ env.APP_DIR }}/scripts/health-check.sh
+          ${{ env.APP_DIR }}/scripts/health-check.sh
           
           echo "=== 服务状态 ==="
           docker-compose ps
