@@ -111,11 +111,7 @@ jobs:
         host: ${{ secrets.ECS_HOST }}
         username: ${{ secrets.ECS_USERNAME }}
         key: ${{ secrets.ECS_SSH_KEY }}
-        source: |
-          deployment/scripts
-          deployment/nginx
-          deployment/frontend-image.tar
-          deployment/backend-image.tar
+        source: "deployment/*"
         target: ${{ env.APP_DIR }}
         strip_components: 1
         
