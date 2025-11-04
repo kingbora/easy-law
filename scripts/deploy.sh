@@ -57,7 +57,7 @@ check_backend_health() {
 get_current_frontend_port() {
     if [ -f "/etc/nginx/conf.d/lawyer-app-upstream.conf" ]; then
         grep -A5 "upstream frontend_servers" /etc/nginx/conf.d/lawyer-app-upstream.conf 2>/dev/null | \
-        grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{print $1}' || echo ""
+        grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{gsub(/;.*/, "", $1); print $1}' || echo ""
     else
         echo ""
     fi
@@ -67,7 +67,7 @@ get_current_frontend_port() {
 get_current_backend_port() {
     if [ -f "/etc/nginx/conf.d/lawyer-app-upstream.conf" ]; then
         grep -A5 "upstream backend_servers" /etc/nginx/conf.d/lawyer-app-upstream.conf 2>/dev/null | \
-        grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{print $1}' || echo ""
+        grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{gsub(/;.*/, "", $1); print $1}' || echo ""
     else
         echo ""
     fi
