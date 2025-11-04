@@ -46,18 +46,30 @@ jobs:
       run: |
         mkdir -p deployment
         # 仅复制镜像构建和部署所需文件
-        rsync -av docker/ deployment/docker/
-        rsync -av scripts/ deployment/scripts/
-        rsync -av nginx/ deployment/nginx/
-        rsync -av node_modules/ deployment/node_modules/
-        rsync -av projects/web-project/node_modules/ deployment/projects/web-project/node_modules/
-        rsync -av projects/web-project/.next/ deployment/projects/web-project/.next/
-        rsync -av projects/web-project/next.config.mjs deployment/projects/web-project/next.config.mjs
-        rsync -av projects/web-project/package.json deployment/projects/web-project/package.json
-        rsync -av projects/server-project/node_modules/ deployment/projects/server-project/node_modules/
-        rsync -av projects/server-project/package.json deployment/projects/server-project/package.json
-        rsync -av projects/server-project/dist/ deployment/projects/server-project/dist/
-        rsync -av package.json deployment/package.json
+        mkdir -p deployment/{docker,scripts,nginx,projects,node_modules}
+
+        rsync -a docker/ deployment/docker/
+        rsync -a scripts/ deployment/scripts/
+        rsync -a nginx/ deployment/nginx/
+        rsync -a node_modules/ deployment/node_modules/
+
+        mkdir -p deployment/projects/web-project
+        mkdir -p deployment/projects/web-project/node_modules
+        mkdir -p deployment/projects/web-project/.next
+
+        rsync -a projects/web-project/node_modules/ deployment/projects/web-project/node_modules/
+        rsync -a projects/web-project/.next/ deployment/projects/web-project/.next/
+        rsync -a projects/web-project/next.config.mjs deployment/projects/web-project/next.config.mjs
+        rsync -a projects/web-project/package.json deployment/projects/web-project/package.json
+        
+        mkdir -p deployment/projects/server-project
+        mkdir -p deployment/projects/server-project/node_modules
+        mkdir -p deployment/projects/server-project/dist
+
+        rsync -a projects/server-project/node_modules/ deployment/projects/server-project/node_modules/
+        rsync -a projects/server-project/package.json deployment/projects/server-project/package.json
+        rsync -a projects/server-project/dist/ deployment/projects/server-project/dist/
+        rsync -a package.json deployment/package.json
 
         # 创建SSL证书目录
         mkdir -p deployment/nginx/ssl
