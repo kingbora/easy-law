@@ -84,7 +84,7 @@ jobs:
         
         echo "=== 测试服务启动 ==="
         # 启动容器并测试服务
-        docker run -d --name test-lawyer-app -p 3000:3000 -p 4000:4000 lawyer-app:latest -e DATABASE_URL="${{ secrets.DATABASE_URL }}"
+        docker run -d --name test-lawyer-app -p 3000:3000 -p 4000:4000 -e DATABASE_URL="${{ secrets.DATABASE_URL }}" lawyer-app:latest
         
         echo "等待服务启动..."
         sleep 30
