@@ -15,4 +15,4 @@ USER nodejs
 
 EXPOSE 3000 4000
 
-CMD ["pnpm", "start"]
+CMD ["sh", "-c", "pnpm --filter server-project start & pnpm --filter web-project start & wait"]

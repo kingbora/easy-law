@@ -1,6 +1,8 @@
 import { fromNodeHeaders } from 'better-auth/node';
 import type { Request as ExpressRequest } from 'express';
 
+import { AUTH_BASE_PATH } from '../app';
+
 export interface SessionUser {
   id: string;
   role: string;
@@ -21,8 +23,6 @@ export interface SessionContext {
     token?: string;
   };
 }
-
-const AUTH_BASE_PATH = process.env.AUTH_BASE_PATH;
 
 function buildRequestUrl(req: ExpressRequest): URL {
   const originHost = req.get('host') ?? 'localhost';

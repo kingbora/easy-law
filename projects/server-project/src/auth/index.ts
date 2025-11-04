@@ -3,6 +3,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { admin } from 'better-auth/plugins';
 import { localization } from 'better-auth-localization';
 
+import { AUTH_BASE_PATH } from '../app';
 import { db } from '../db/client';
 import { users, accounts, sessions, verifications } from '../db/schema/auth-schema';
 
@@ -13,7 +14,7 @@ const baseURL =
       ? 'https://easy-lay.top' 
       : `http://localhost:3000`;
 
-const basePath = process.env.AUTH_BASE_PATH;
+const basePath = AUTH_BASE_PATH;
 
 export const auth = betterAuth({
   basePath,
