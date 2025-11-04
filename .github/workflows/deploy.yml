@@ -89,6 +89,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+    - name: Download docker artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-images
+        path: docker-artifacts
+        
     - name: Download build artifacts
       uses: actions/download-artifact@v4
       with:
@@ -98,7 +104,7 @@ jobs:
     - name: Copy deployment necessary files
       run: |
         mkdir -p publish
-        cp deployment/app-image.tar publish/
+        cp docker-artifacts/app-image.tar publish/
         cp -r deployment/nginx publish/nginx
         cp -r deployment/scripts publish/scripts
         
