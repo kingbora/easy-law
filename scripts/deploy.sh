@@ -252,7 +252,8 @@ upstream backend_servers {
 }
 EOF
 
-sudo cp /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
+# 复制 upstream 配置文件到 nginx 目录，若已存在则直接覆盖
+sudo cp -f /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
 rm -f /tmp/lawyer-app-upstream.conf
 
 # 验证并重载Nginx
@@ -277,7 +278,7 @@ upstream backend_servers {
     server 127.0.0.1:$CURRENT_BACKEND_PORT;
 }
 EOF
-        sudo cp /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
+        sudo cp -f /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
         rm -f /tmp/lawyer-app-upstream.conf
         sudo nginx -t && sudo systemctl reload nginx
     fi
