@@ -218,6 +218,7 @@ if ! docker run -d --name "$CONTAINER_NAME" \
     -v $APP_DIR/shared/data:/app/data \
     -e NODE_ENV=production \
     -e DATABASE_URL="$DATABASE_URL" \
+    -e CROSS_ORIGIN="https://yourdomain.com" \
     lawyer-app:latest; then
     log "✗ 应用服务启动失败"
     docker logs "$CONTAINER_NAME" 2>/dev/null || true
