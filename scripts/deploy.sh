@@ -242,7 +242,7 @@ fi
 # 更新Nginx配置
 log "更新Nginx upstream指向新端口..."
 sudo mkdir -p /etc/nginx/conf.d
-sudo cat > /etc/nginx/conf.d/lawyer-app-upstream.conf << EOF
+cat > /tmp/lawyer-app-upstream.conf << EOF
 upstream frontend_servers {
     server 127.0.0.1:$NEXT_FRONTEND_PORT;
 }
@@ -251,6 +251,9 @@ upstream backend_servers {
     server 127.0.0.1:$NEXT_BACKEND_PORT;
 }
 EOF
+
+sudo cp /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
+rm -f /tmp/lawyer-app-upstream.conf
 
 # 验证并重载Nginx
 if verify_nginx_config; then
@@ -265,7 +268,7 @@ else
     log "✗ Nginx配置验证失败，回滚upstream配置"
     # 恢复原有配置
     if [ -n "$CURRENT_FRONTEND_PORT" ] && [ -n "$CURRENT_BACKEND_PORT" ]; then
-        cat > /etc/nginx/conf.d/lawyer-app-upstream.conf << EOF
+        cat > /tmp/lawyer-app-upstream.conf << EOF
 upstream frontend_servers {
     server 127.0.0.1:$CURRENT_FRONTEND_PORT;
 }
@@ -274,6 +277,8 @@ upstream backend_servers {
     server 127.0.0.1:$CURRENT_BACKEND_PORT;
 }
 EOF
+        sudo cp /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
+        rm -f /tmp/lawyer-app-upstream.conf
         sudo nginx -t && sudo systemctl reload nginx
     fi
     exit 1
