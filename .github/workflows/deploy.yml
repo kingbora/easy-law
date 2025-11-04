@@ -43,9 +43,14 @@ jobs:
       run: |
         mkdir -p deployment
         # 复制整个工程，包括以.开头的文件
-        rsync -av --exclude='deployment' --include='.*' . deployment/ || true
-        # 列举deployment目录3级内容
-        find . -maxdepth 3 -type f -o -type d | sort
+        rsync -av \
+        --include='.*' \
+        --include='*/' \
+        --exclude='deployment' \
+        --exclude='.git' \
+        . deployment/ || true
+        # 输出node_modules-3层目录结构
+        find deployment/node_modules -maxdepth 3 -type d
         # 创建SSL证书目录
         mkdir -p deployment/nginx/ssl
         
