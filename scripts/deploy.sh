@@ -42,7 +42,7 @@ check_backend_health() {
             log "✓ 后端服务健康 (端口: $port)"
             return 0
         fi
-        if [ $i -eq 1 ]; then then
+        if [ $i -eq 1 ]; then
             log "等待后端服务启动... ($i/$max_retries)"
         elif [ $((i % 5)) -eq 0 ]; then
             log "仍在等待后端服务启动... ($i/$max_retries)"
@@ -126,20 +126,31 @@ cleanup_old_containers() {
     
     log "清理旧容器..."
     
-    # 停止并移除将要使用端口上的旧容器
-    for port in "${FRONTEND_PORTS[@]}"; do
-        if [ "$port" = "$next_frontend_port" ]; then
-            # 这是我们要使用的端口，确保没有冲突
-            docker stop "app-frontend-$port" 2>/dev/null || true
-            docker rm "app-frontend-$port" 2>/dev/null || true
-        else
-            # 停止其他端口的旧容器
-            docker stop "app-$port-${BACKEND_PORTS[0]}" 2>/dev/null || true
-            docker stop "app-$port-${BACKEND_PORTS[1]}" 2>/dev/null || true
-            docker rm "app-$port-${BACKEND_PORTS[0]}" 2>/dev/null || true
-            docker rm "app-$port-${BACKEND_PORTS[1]}" 2>/dev/null || true
+    # 清理所有与app相关的容器，不管状态如何
+    for container in $(docker ps -a --filter "name=app-" --format "{{.Names}}"); do
+        log "停止并移除容器: $container"
+        docker stop "$container" 2>/dev/null || true
+        docker rm "$container" 2>/dev/null || true
+    done
+    
+    # 特别清理将要使用的端口上的任何容器
+    log "检查端口占用情况..."
+    for port in "${FRONTEND_PORTS[@]}" "${BACKEND_PORTS[@]}"; do
+        local port_container=$(docker ps -a --format "table {{.Names}}\t{{.Ports}}" | grep ":${port}->" | awk '{print $1}')
+        if [ -n "$port_container" ]; then
+            log "发现占用端口 $port 的容器: $port_container，正在清理..."
+            docker stop "$port_container" 2>/dev/null || true
+            docker rm "$port_container" 2>/dev/null || true
         fi
     done
+    
+    # 再次检查并强制清理任何遗留的app容器
+    local remaining_containers=$(docker ps -a --filter "name=app-" --format "{{.Names}}" | wc -l)
+    if [ "$remaining_containers" -gt 0 ]; then
+        log "强制清理遗留的app容器..."
+        docker ps -a --filter "name=app-" --format "{{.Names}}" | xargs -r docker stop
+        docker ps -a --filter "name=app-" --format "{{.Names}}" | xargs -r docker rm
+    fi
 }
 
 # 验证Nginx配置
