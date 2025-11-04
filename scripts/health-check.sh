@@ -62,8 +62,20 @@ check_nginx_service() {
             return 1
         fi
     else
-        log "✗ Nginx服务未运行"
-        return 1
+        log "✗ Nginx服务未运行，尝试启动..."
+        if sudo systemctl start nginx; then
+            log "✓ Nginx服务已成功启动"
+            # 再次验证配置
+            if sudo nginx -t; then
+                log "✓ Nginx配置验证通过"
+            else
+                log "✗ Nginx配置验证失败"
+                return 1
+            fi
+        else
+            log "✗ Nginx服务启动失败"
+            return 1
+        fi
     fi
     return 0
 }
