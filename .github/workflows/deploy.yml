@@ -34,7 +34,7 @@ jobs:
         cache: 'pnpm'
         
     - name: Install dependencies
-      run: pnpm install
+      run: pnpm install --prod --frozen-lockfile
       
     - name: Build projects
       run: pnpm build
@@ -42,15 +42,17 @@ jobs:
     - name: Create deployment directory
       run: |
         mkdir -p deployment
-        # 复制整个工程，包括以.开头的文件
-        rsync -av \
-        --include='.*' \
-        --include='*/' \
-        --exclude='deployment' \
-        --exclude='.git' \
-        . deployment/ || true
-        # 输出node_modules-3层目录结构
-        find deployment/node_modules -maxdepth 3 -type d
+        # 仅复制镜像构建和部署所需文件
+        cp -r docker deployment/docker
+        cp -r scripts deployment/scripts
+        cp -r nginx deployment/nginx
+        cp -r node_modules deployment/node_modules
+        cp -r projects/server-project/dist deployment/server-project/dist
+        cp -r projects/web-project/.next deployment/web-project/.next
+        cp projects/web-project/next.config.mjs deployment/web-project/next.config.mjs
+        cp projects/server-project/package.json deployment/server-project/package.json
+        cp projects/web-project/package.json deployment/web-project/package.json
+        cp package.json deployment/package.json
         # 创建SSL证书目录
         mkdir -p deployment/nginx/ssl
         
@@ -59,6 +61,7 @@ jobs:
       with:
         name: build-artifacts
         path: deployment
+        include-hidden-files: true  # 包含隐藏文件
         retention-days: 1
   
   # 构建Docker镜像
