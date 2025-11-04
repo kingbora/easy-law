@@ -42,8 +42,10 @@ jobs:
     - name: Create deployment directory
       run: |
         mkdir -p deployment
-        # 复制整个工程
-        rsync -av --exclude='deployment' . deployment/ || true
+        # 复制整个工程，包括以.开头的文件
+        rsync -av --exclude='deployment' --include='.*' . deployment/ || true
+        # 列举deployment目录3级内容
+        find . -maxdepth 3 -type f -o -type d | sort
         # 创建SSL证书目录
         mkdir -p deployment/nginx/ssl
         
@@ -73,10 +75,6 @@ jobs:
         cd deployment
         echo "=== 构建Docker镜像 ==="
         docker build -t lawyer-app:latest -f docker/Dockerfile .
-
-        echo "=== 测试Docker镜像 ==="
-         echo "检查镜像中的文件结构:"
-        docker run --rm lawyer-app:latest find /app -name "*.js" -type f | grep -E "(index|server)" | head -10
         
         echo "=== 测试服务启动 ==="
         # 启动容器并测试服务
