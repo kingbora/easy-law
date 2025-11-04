@@ -46,28 +46,29 @@ jobs:
       run: |
         mkdir -p deployment
         # 仅复制镜像构建和部署所需文件
-        rsync -av \
-          docker/ \
-          scripts/ \
-          nginx/ \
-          node_modules/ \
-          projects/web-project/node_modules/ \
-          projects/web-project/.next/ \
-          projects/web-project/next.config.mjs \
-          projects/web-project/package.json \
-          projects/server-project/node_modules/ \
-          projects/server-project/package.json \
-          projects/server-project/dist/ \
-          package.json \
-          deployment/
+        rsync -av docker/ deployment/docker/
+        rsync -av scripts/ deployment/scripts/
+        rsync -av nginx/ deployment/nginx/
+        rsync -av node_modules/ deployment/node_modules/
+        rsync -av projects/web-project/node_modules/ deployment/projects/web-project/node_modules/
+        rsync -av projects/web-project/.next/ deployment/projects/web-project/.next/
+        rsync -av projects/web-project/next.config.mjs deployment/projects/web-project/next.config.mjs
+        rsync -av projects/web-project/package.json deployment/projects/web-project/package.json
+        rsync -av projects/server-project/node_modules/ deployment/projects/server-project/node_modules/
+        rsync -av projects/server-project/package.json deployment/projects/server-project/package.json
+        rsync -av projects/server-project/dist/ deployment/projects/server-project/dist/
+        rsync -av package.json deployment/package.json
+
         # 创建SSL证书目录
         mkdir -p deployment/nginx/ssl
       
     - name: Build and test image
       run: |
         cd deployment
+        echo "=== 当前目录结构 ==="
+        ls -la
         echo "=== 构建Docker镜像 ==="
-        docker build -t lawyer-app:latest -f ./docker/Dockerfile .
+        docker build -t lawyer-app:latest -f docker/Dockerfile .
         
         echo "=== 测试服务启动 ==="
         # 启动容器并测试服务
