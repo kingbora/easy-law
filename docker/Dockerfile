@@ -5,6 +5,10 @@ WORKDIR /app
 # 复制整个构建好的工程（包括所有必要文件）
 COPY . .
 
+# 启用 corepack 并激活 pnpm 9 版本
+RUN corepack enable
+RUN corepack prepare pnpm@9 --activate
+
 # 创建非root用户
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nodejs -u 1001
@@ -15,4 +19,4 @@ USER nodejs
 
 EXPOSE 3000 4000
 
-CMD ["sh", "-c", "node projects/server-project/dist/index.js & node projects/web-project/.next/standalone/server.js & wait"]
+CMD ["pnpm", "start"]

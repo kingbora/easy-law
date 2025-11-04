@@ -14,6 +14,7 @@
     "db:push": "pnpm --filter server-project db:push",
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
+    "start": "pnpm --filter server-project start & pnpm --filter web-project start",
     "lint": "pnpm exec eslint .",
     "lint:fix": "pnpm exec eslint --fix .",
     "clean": "pnpm -r clean && rimraf node_modules",

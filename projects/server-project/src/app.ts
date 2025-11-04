@@ -4,11 +4,10 @@ import cors from 'cors';
 import express from 'express';
 
 import { auth } from './auth';
+import { AUTH_BASE_PATH } from './constants';
 import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
 import { requireSession } from './middlewares/session';
 import casesRouter from './routes/cases';
-
-export const AUTH_BASE_PATH = '/restful/api/auth';
 
 const app = express();
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';

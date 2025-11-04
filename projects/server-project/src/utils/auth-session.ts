@@ -1,7 +1,7 @@
 import { fromNodeHeaders } from 'better-auth/node';
 import type { Request as ExpressRequest } from 'express';
 
-import { AUTH_BASE_PATH } from '../app';
+import { AUTH_BASE_PATH } from '../constants';
 
 export interface SessionUser {
   id: string;
