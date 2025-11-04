@@ -33,11 +33,13 @@ import {
   type CaseStatus,
   type CaseLevel,
   type CaseTimelineInput,
+  type CaseTimeNodeType,
   type TrialStage,
   type CaseType,
   type CaseCollectionInput,
   type CaseChangeLog,
-  updateCase as updateCaseApi
+  updateCase as updateCaseApi,
+  updateCaseTimeNodes
 } from '@/lib/cases-api';
 import type { UserDepartment, UserRole } from '@/lib/users-api';
 
@@ -79,6 +81,13 @@ const CASE_COLLECTION_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'super_admin',
   'admin',
   'administration'
+]);
+
+const CASE_TIME_NODE_EDIT_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
+  'super_admin',
+  'admin',
+  'lawyer',
+  'assistant'
 ]);
 
 const PAGE_DEPARTMENT: UserDepartment = 'work_injury';
@@ -333,7 +342,8 @@ function mapCaseRecordToFormValues(record: CaseRecord): WorkInjuryCaseFormValues
       handlingFee: record.handlingFee ?? null,
       collections
     },
-    timeline: record.timeline ?? []
+    timeline: record.timeline ?? [],
+    timeNodes: record.timeNodes ?? []
   } satisfies WorkInjuryCaseFormValues;
 }
 
@@ -726,6 +736,33 @@ export default function WorkInjuryCasesPage() {
     [currentUser]
   );
 
+  const canManageTimeNodesForCase = useCallback(
+    (record: CaseRecord) => {
+      if (!currentUser || !CASE_TIME_NODE_EDIT_ALLOWED_ROLES.has(currentUser.role as UserRole)) {
+        return false;
+      }
+      if (currentUser.role === 'super_admin') {
+        return true;
+      }
+      if (currentUser.role === 'admin') {
+        return Boolean(currentUser.department && record.department === currentUser.department);
+      }
+      if (currentUser.role === 'lawyer') {
+        const isAssignedTrialLawyer = (record.hearings ?? []).some(
+          (hearing) => hearing.trialLawyerId === currentUser.id
+        );
+        return record.assignedLawyerId === currentUser.id || isAssignedTrialLawyer;
+      }
+      if (currentUser.role === 'assistant') {
+        return (
+          record.assignedAssistantId === currentUser.id || record.assignedSaleId === currentUser.id
+        );
+      }
+      return false;
+    },
+    [currentUser]
+  );
+
   const canManageCaseFee = useCallback(
     (record: CaseRecord) => {
       if (!currentUser) {
@@ -955,6 +992,38 @@ export default function WorkInjuryCasesPage() {
     [caseModalCase, currentUser, mutateCaseRecord]
   );
 
+  const handleCaseModalTimeNodesSave = useCallback(
+    async (entries: Array<{ nodeType: CaseTimeNodeType; occurredOn: Dayjs }>) => {
+      if (!caseModalCase) {
+        message.error('未找到案件信息');
+        return undefined;
+      }
+
+      const payload = entries.map(item => ({
+        nodeType: item.nodeType,
+        occurredOn: formatDayValue(item.occurredOn) ?? item.occurredOn.format('YYYY-MM-DD')
+      }));
+
+      try {
+        const updatedNodes = await updateCaseTimeNodes(caseModalCase.id, payload);
+        const updatedRecord: CaseRecord = {
+          ...caseModalCase,
+          timeNodes: updatedNodes
+        };
+        changeLogCacheRef.current.delete(caseModalCase.id);
+        setCaseModalCase(updatedRecord);
+        await refreshCases();
+        message.success('时间节点已更新');
+        return mapCaseRecordToFormValues(updatedRecord);
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '更新时间节点失败，请稍后重试';
+        message.error(errorMessage);
+        return undefined;
+      }
+    },
+    [caseModalCase, refreshCases, setCaseModalCase]
+  );
+
   const handleCaseModalCollectionAdd = useCallback(
     async (values: { amount: number; receivedAt: Dayjs }) => {
       if (!caseModalCase) {
@@ -1116,6 +1185,13 @@ export default function WorkInjuryCasesPage() {
     [openCaseDetailModal]
   );
 
+  const handleOpenTimeNodes = useCallback(
+    (record: CaseRecord) => {
+      void openCaseDetailModal(record, { tab: 'timeNodes' });
+    },
+    [openCaseDetailModal]
+  );
+
   const closeCaseModal = useCallback(() => {
     setCaseModalOpen(false);
     setCaseModalCase(null);
@@ -1148,13 +1224,15 @@ export default function WorkInjuryCasesPage() {
       canAddFollowUps: Boolean(caseModalCase),
       canAddCollections: caseModalCase ? canCreateCollectionRecord(caseModalCase) : false,
       canUpdateFees: caseModalCase ? canManageCaseFee(caseModalCase) : false,
-      canViewChangeLogs: Boolean(caseModalCase)
+      canViewChangeLogs: Boolean(caseModalCase),
+      canManageTimeNodes: caseModalCase ? canManageTimeNodesForCase(caseModalCase) : false
     }),
     [
       caseModalCase,
       canAssignStaffToCase,
       canCreateCollectionRecord,
       canManageCaseFee,
+      canManageTimeNodesForCase,
       canUpdateCaseRecord,
       canUpdateHearingRecord
     ]
@@ -1198,10 +1276,39 @@ export default function WorkInjuryCasesPage() {
         dataIndex: 'provinceCity',
         key: 'provinceCity',
         render: (value: string | null) => value ?? '—'
+      },
+      {
+        title: '操作',
+        key: 'actions',
+        render: (_, record) => (
+          <Space size={4}>
+            <Button
+              type="link"
+              onClick={event => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleCaseTitleClick(record);
+              }}
+            >
+              查看详情
+            </Button>
+            <Button
+              type="link"
+              onClick={event => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleOpenTimeNodes(record);
+              }}
+            >
+              查看时间节点
+            </Button>
+          </Space>
+        )
       }
     ],
     [
-      handleCaseTitleClick
+      handleCaseTitleClick,
+      handleOpenTimeNodes
     ]
   );
 
@@ -1282,6 +1389,7 @@ export default function WorkInjuryCasesPage() {
         onAddFollowUp={handleCaseModalFollowUpAdd}
         onAddCollection={handleCaseModalCollectionAdd}
         onUpdateFees={handleCaseModalFeeUpdate}
+        onSaveTimeNodes={handleCaseModalTimeNodesSave}
         onLoadAssignableStaff={caseModalCase ? handleLoadAssignableStaff : undefined}
         onLoadChangeLogs={caseModalCase ? handleLoadChangeLogs : undefined}
         canEditAssignments={caseModalPermissions.canEditAssignments}
@@ -1291,6 +1399,7 @@ export default function WorkInjuryCasesPage() {
         canAddCollections={caseModalPermissions.canAddCollections}
         canUpdateFees={caseModalPermissions.canUpdateFees}
         canViewChangeLogs={caseModalPermissions.canViewChangeLogs}
+        canManageTimeNodes={caseModalPermissions.canManageTimeNodes}
       />
     </Space>
   );

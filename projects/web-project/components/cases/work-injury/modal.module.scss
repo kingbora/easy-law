@@ -85,6 +85,12 @@
   }
 }
 
+.tabLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .modalTitle {
   display: flex;
   align-items: center;

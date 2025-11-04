@@ -9,6 +9,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid
 } from 'drizzle-orm/pg-core';
 
@@ -27,6 +28,19 @@ export const participantRoleEnum = pgEnum('case_participant_role', ['claimant', 
 export const participantEntityEnum = pgEnum('case_participant_entity', ['personal', 'organization']);
 export const caseStatusEnum = pgEnum('case_status', ['open', 'closed', 'void']);
 export const trialStageEnum = pgEnum('case_trial_stage', ['first_instance', 'second_instance', 'retrial']);
+export const caseTimeNodeTypeEnum = pgEnum('case_time_node_type', [
+  'apply_employment_confirmation',
+  'labor_arbitration_decision',
+  'submit_injury_certification',
+  'receive_injury_certification',
+  'submit_disability_assessment',
+  'receive_disability_assessment',
+  'apply_insurance_arbitration',
+  'insurance_arbitration_decision',
+  'file_lawsuit',
+  'lawsuit_review_approved',
+  'final_judgement'
+]);
 
 export const cases = pgTable('case_record', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -122,6 +136,23 @@ export const caseTimeline = pgTable('case_timeline', {
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
 
+export const caseTimeNodes = pgTable(
+  'case_time_node',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    caseId: uuid('case_id')
+      .notNull()
+      .references(() => cases.id, { onDelete: 'cascade' }),
+    nodeType: caseTimeNodeTypeEnum('node_type').notNull(),
+    occurredOn: date('occurred_on').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull()
+  },
+  table => ({
+    caseTimeNodeUnique: uniqueIndex('case_time_node_case_type_ui').on(table.caseId, table.nodeType)
+  })
+);
+
 export const caseChangeLogs = pgTable('case_change_log', {
   id: uuid('id').primaryKey().defaultRandom(),
   caseId: uuid('case_id')
@@ -162,6 +193,7 @@ export const casesRelations = relations(cases, ({ many, one }) => ({
   hearings: many(caseHearings),
   participants: many(caseParticipants),
   collections: many(caseCollections),
+  timeNodes: many(caseTimeNodes),
   timeline: many(caseTimeline),
   changeLogs: many(caseChangeLogs)
 }));
@@ -188,6 +220,13 @@ export const caseTimelineRelations = relations(caseTimeline, ({ one }) => ({
   follower: one(users, {
     fields: [caseTimeline.followerId],
     references: [users.id]
+  })
+}));
+
+export const caseTimeNodeRelations = relations(caseTimeNodes, ({ one }) => ({
+  case: one(cases, {
+    fields: [caseTimeNodes.caseId],
+    references: [cases.id]
   })
 }));
 

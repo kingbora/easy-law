@@ -14,6 +14,8 @@ import {
   caseParticipants,
   cases,
   caseHearings,
+  caseTimeNodeTypeEnum,
+  caseTimeNodes,
   caseTimeline,
   caseStatusEnum,
   trialStageEnum,
@@ -49,12 +51,37 @@ const CASE_COLLECTION_ALLOWED_ROLES = new Set<SessionUser['role']>([
   'administration'
 ]);
 
+const BASIC_INFO_FIELD_KEYS = [
+  'caseType',
+  'caseLevel',
+  'provinceCity',
+  'targetAmount',
+  'feeStandard',
+  'agencyFeeEstimate',
+  'dataSource',
+  'hasContract',
+  'hasSocialSecurity',
+  'entryDate',
+  'injuryLocation',
+  'injurySeverity',
+  'injuryCause',
+  'workInjuryCertified',
+  'monthlySalary',
+  'appraisalLevel',
+  'appraisalEstimate',
+  'existingEvidence',
+  'customerCooperative',
+  'witnessCooperative',
+  'remark'
+] as const;
+
 export type CaseType = (typeof caseTypeEnum.enumValues)[number];
 export type CaseLevel = (typeof caseLevelEnum.enumValues)[number];
 export type CaseStatus = (typeof caseStatusEnum.enumValues)[number];
 export type ParticipantRole = (typeof participantRoleEnum.enumValues)[number];
 export type ParticipantEntity = (typeof participantEntityEnum.enumValues)[number];
 export type TrialStage = (typeof trialStageEnum.enumValues)[number];
+export type CaseTimeNodeType = (typeof caseTimeNodeTypeEnum.enumValues)[number];
 
 export interface CaseParticipantInput {
   entityType?: ParticipantEntity | null;
@@ -84,6 +111,11 @@ export interface CaseTimelineInput {
   occurredOn: string | Date;
   note: string;
   followerId?: string | null;
+}
+
+export interface CaseTimeNodeInput {
+  nodeType: CaseTimeNodeType;
+  occurredOn: string | Date;
 }
 
 export interface CaseHearingInput {
@@ -192,6 +224,14 @@ export interface CaseTimelineDTO {
   followerName: string | null;
 }
 
+export interface CaseTimeNodeDTO {
+  id: string;
+  nodeType: CaseTimeNodeType;
+  occurredOn: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CaseHearingDTO {
   id: string;
   trialLawyerId: string | null;
@@ -250,6 +290,7 @@ export interface CaseDTO {
     respondents: CaseParticipantDTO[];
   };
   collections: CaseCollectionDTO[];
+  timeNodes: CaseTimeNodeDTO[];
   timeline: CaseTimelineDTO[];
   hearings: CaseHearingDTO[];
 }
@@ -269,6 +310,7 @@ type CaseRecord = typeof cases.$inferSelect;
 type CaseParticipantRecord = typeof caseParticipants.$inferSelect;
 type CaseCollectionRecord = typeof caseCollections.$inferSelect;
 type CaseTimelineRecord = typeof caseTimeline.$inferSelect;
+type CaseTimeNodeRecord = typeof caseTimeNodes.$inferSelect;
 type CaseHearingRecord = typeof caseHearings.$inferSelect;
 type CaseHearingRecordWithRelations = CaseHearingRecord & {
   trialLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
@@ -282,6 +324,7 @@ type CaseTimelineRecordWithFollower = CaseTimelineRecord & {
 type CaseWithRelations = CaseRecord & {
   participants?: CaseParticipantRecord[];
   collections?: CaseCollectionRecord[];
+  timeNodes?: CaseTimeNodeRecord[];
   timeline?: CaseTimelineRecordWithFollower[];
   hearings?: CaseHearingRecordWithRelations[];
   assignedSale?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
@@ -652,6 +695,39 @@ const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
   retrial: '再审'
 };
 
+const CASE_TIME_NODE_DEFINITIONS: ReadonlyArray<{ type: CaseTimeNodeType; label: string }> = [
+  { type: 'apply_employment_confirmation', label: '申请确认劳动关系' },
+  { type: 'labor_arbitration_decision', label: '确认劳动裁决时间' },
+  { type: 'submit_injury_certification', label: '提交工伤认定申请' },
+  { type: 'receive_injury_certification', label: '收到工伤认定书' },
+  { type: 'submit_disability_assessment', label: '提交劳动能力等级鉴定' },
+  { type: 'receive_disability_assessment', label: '收到鉴定书' },
+  { type: 'apply_insurance_arbitration', label: '申请工伤保险待遇仲裁' },
+  { type: 'insurance_arbitration_decision', label: '工伤保险待遇裁决时间' },
+  { type: 'file_lawsuit', label: '起诉立案' },
+  { type: 'lawsuit_review_approved', label: '立案审核通过' },
+  { type: 'final_judgement', label: '裁决时间' }
+];
+
+const CASE_TIME_NODE_SEQUENCE: CaseTimeNodeType[] = CASE_TIME_NODE_DEFINITIONS.map(
+  definition => definition.type
+);
+
+const CASE_TIME_NODE_LABEL_MAP = CASE_TIME_NODE_DEFINITIONS.reduce<Record<CaseTimeNodeType, string>>(
+  (acc, definition) => {
+    acc[definition.type] = definition.label;
+    return acc;
+  },
+  {} as Record<CaseTimeNodeType, string>
+);
+
+const CASE_TIME_NODE_EDIT_ALLOWED_ROLES = new Set<SessionUser['role']>([
+  'super_admin',
+  'admin',
+  'lawyer',
+  'assistant'
+]);
+
 function normalizeTrialStageInput(value: TrialStage | string | null | undefined): TrialStage | null {
   if (!value) {
     return null;
@@ -664,6 +740,25 @@ function normalizeTrialStageInput(value: TrialStage | string | null | undefined)
 
   return (trialStageEnum.enumValues as readonly TrialStage[]).includes(direct as TrialStage)
     ? (direct as TrialStage)
+    : null;
+}
+
+function normalizeTimeNodeTypeInput(
+  value: CaseTimeNodeType | string | null | undefined
+): CaseTimeNodeType | null {
+  if (!value) {
+    return null;
+  }
+
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+
+  return (caseTimeNodeTypeEnum.enumValues as readonly CaseTimeNodeType[]).includes(
+    direct as CaseTimeNodeType
+  )
+    ? (direct as CaseTimeNodeType)
     : null;
 }
 
@@ -1052,6 +1147,16 @@ function mapTimeline(record: CaseTimelineRecordWithFollower): CaseTimelineDTO {
   };
 }
 
+function mapTimeNode(record: CaseTimeNodeRecord): CaseTimeNodeDTO {
+  return {
+    id: record.id,
+    nodeType: record.nodeType as CaseTimeNodeType,
+    occurredOn: formatDateOnly(record.occurredOn) ?? formatDateOnly(new Date())!,
+    createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
+    updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString()
+  } satisfies CaseTimeNodeDTO;
+}
+
 function mapHearing(record?: CaseHearingRecordWithRelations | null): CaseHearingDTO | null {
   if (!record) {
     return null;
@@ -1104,6 +1209,13 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
       return aDate - bDate;
     })
     .map(mapTimeline);
+
+  const timeNodes = [...(record.timeNodes ?? [])]
+    .sort((a, b) =>
+      CASE_TIME_NODE_SEQUENCE.indexOf(a.nodeType as CaseTimeNodeType) -
+      CASE_TIME_NODE_SEQUENCE.indexOf(b.nodeType as CaseTimeNodeType)
+    )
+    .map(mapTimeNode);
 
   const hearings = [...(record.hearings ?? [])]
     .sort((a, b) => {
@@ -1161,6 +1273,7 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
       respondents
     },
     collections,
+    timeNodes,
     timeline,
     hearings
   };
@@ -1363,6 +1476,7 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
       },
       participants: true,
       collections: true,
+      timeNodes: true,
       timeline: {
         with: {
           follower: true
@@ -1442,6 +1556,7 @@ export async function getCaseById(id: string, user: SessionUser) {
       },
       participants: true,
       collections: true,
+      timeNodes: true,
       timeline: {
         with: {
           follower: true
@@ -1605,6 +1720,14 @@ export async function updateCase(id: string, input: CaseInput, user: SessionUser
     caseValues.updaterId = user.id;
     caseValues.updatedAt = new Date();
 
+    if (user.role === 'lawyer' || user.role === 'assistant') {
+      BASIC_INFO_FIELD_KEYS.forEach(field => {
+        if (field in caseValues) {
+          (caseValues as Record<string, unknown>)[field] = existing[field as keyof typeof existing];
+        }
+      });
+    }
+
     if (input.department === undefined) {
       if (existing.department) {
         caseValues.department = existing.department;
@@ -1674,6 +1797,9 @@ export async function updateCase(id: string, input: CaseInput, user: SessionUser
     }
 
     if (input.hearings !== undefined) {
+      if (user.role === 'administration') {
+        throw new AuthorizationError('行政角色无权编辑庭审信息');
+      }
       await tx.delete(caseHearings).where(eq(caseHearings.caseId, id));
       const processedHearings = await applyDefaultTrialLawyerList(input.hearings, user);
       const hearingValues = normalizeHearingInputs(processedHearings, id);
@@ -1861,6 +1987,153 @@ export async function createCaseCollection(
 
     return mapCollection(created);
   });
+}
+
+export async function updateCaseTimeNodes(
+  caseId: string,
+  inputs: CaseTimeNodeInput[],
+  user: SessionUser
+): Promise<CaseTimeNodeDTO[] | null> {
+  ensureCasePermission(user, 'update');
+
+  if (!inputs || inputs.length === 0) {
+    throw new BadRequestError('请选择要记录的时间节点');
+  }
+
+  const normalizedEntries: Array<{ nodeType: CaseTimeNodeType; occurredOn: string }> = [];
+  const seenTypes = new Set<CaseTimeNodeType>();
+
+  for (const item of inputs) {
+    const nodeType = normalizeTimeNodeTypeInput(item?.nodeType ?? null);
+    if (!nodeType) {
+      throw new BadRequestError('不支持的时间节点');
+    }
+
+    const occurredOn = normalizeDateInput(item?.occurredOn ?? null);
+    if (!occurredOn) {
+      throw new BadRequestError('请选择有效的时间');
+    }
+
+    if (seenTypes.has(nodeType)) {
+      throw new BadRequestError('同一时间节点存在重复记录');
+    }
+
+    seenTypes.add(nodeType);
+    normalizedEntries.push({ nodeType, occurredOn });
+  }
+
+  if (normalizedEntries.length === 0) {
+    throw new BadRequestError('请选择要记录的时间节点');
+  }
+
+  const accessContext = await buildCaseAccessContext(user);
+
+  const projection = await db.query.cases.findFirst({
+    where: eq(cases.id, caseId),
+    columns: {
+      id: true,
+      department: true,
+      assignedSaleId: true,
+      assignedLawyerId: true,
+      assignedAssistantId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
+    }
+  });
+
+  if (!projection) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, projection)) {
+    throw new AuthorizationError();
+  }
+
+  if (!CASE_TIME_NODE_EDIT_ALLOWED_ROLES.has(user.role)) {
+    throw new AuthorizationError('您没有权限编辑时间节点');
+  }
+
+  const existingNodes = await db.query.caseTimeNodes.findMany({
+    where: eq(caseTimeNodes.caseId, caseId)
+  });
+
+  const existingMap = new Map<CaseTimeNodeType, CaseTimeNodeRecord>();
+  existingNodes.forEach(node => {
+    existingMap.set(node.nodeType as CaseTimeNodeType, node);
+  });
+
+  const changes: Array<{ nodeType: CaseTimeNodeType; previous: string | null; current: string }> = [];
+
+  normalizedEntries.forEach(({ nodeType, occurredOn }) => {
+    const previous = existingMap.get(nodeType);
+    const previousDate = previous ? formatDateOnly(previous.occurredOn) : null;
+    if (!previousDate || previousDate !== occurredOn) {
+      changes.push({ nodeType, previous: previousDate, current: occurredOn });
+    }
+  });
+
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(caseTimeNodes)
+      .values(
+        normalizedEntries.map(({ nodeType, occurredOn }) => ({
+          caseId,
+          nodeType,
+          occurredOn
+        }))
+      )
+      .onConflictDoUpdate({
+        target: [caseTimeNodes.caseId, caseTimeNodes.nodeType],
+        set: {
+          occurredOn: sql`excluded.occurred_on`,
+          updatedAt: sql`now()`
+        }
+      });
+
+    if (changes.length > 0) {
+      await tx
+        .update(cases)
+        .set({
+          updatedAt: new Date(),
+          updaterId: user.id
+        })
+        .where(eq(cases.id, caseId));
+
+      const actor = extractActorContext(user);
+      const description = changes
+        .map(change => {
+          const previousLabel = change.previous ?? '未记录';
+          return `${CASE_TIME_NODE_LABEL_MAP[change.nodeType]}：${previousLabel} → ${change.current}`;
+        })
+        .join('；');
+
+      await tx.insert(caseChangeLogs).values({
+        caseId,
+        action: 'update_time_node',
+        description,
+        changes: null,
+        actorId: actor.actorId,
+        actorName: actor.actorName,
+        actorRole: actor.actorRole
+      });
+    }
+  });
+
+  const refreshedNodes = await db.query.caseTimeNodes.findMany({
+    where: eq(caseTimeNodes.caseId, caseId)
+  });
+
+  return refreshedNodes
+    .sort((a, b) =>
+      CASE_TIME_NODE_SEQUENCE.indexOf(a.nodeType as CaseTimeNodeType) -
+      CASE_TIME_NODE_SEQUENCE.indexOf(b.nodeType as CaseTimeNodeType)
+    )
+    .map(mapTimeNode);
 }
 
 export async function getCaseHearings(

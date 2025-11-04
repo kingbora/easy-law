@@ -9,7 +9,8 @@ import {
   getCaseHearings,
   getCaseChangeLogs,
   listCases,
-  updateCase
+  updateCase,
+  updateCaseTimeNodes
 } from '../services/cases-service';
 import { asyncHandler } from '../utils/async-handler';
 
@@ -138,6 +139,28 @@ router.put(
     const session = req.sessionContext!;
 
     const updated = await updateCase(req.params.id, req.body, session.user);
+
+    if (!updated) {
+      res.status(404).json({ message: 'Case not found' });
+      return;
+    }
+
+    res.json({ data: updated });
+  })
+);
+
+router.put(
+  '/:id/time-nodes',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+    const payload = Array.isArray(req.body) ? req.body : req.body?.timeNodes;
+
+    if (!Array.isArray(payload) || payload.length === 0) {
+      res.status(400).json({ message: '请提供要更新的时间节点' });
+      return;
+    }
+
+    const updated = await updateCaseTimeNodes(req.params.id, payload, session.user);
 
     if (!updated) {
       res.status(404).json({ message: 'Case not found' });

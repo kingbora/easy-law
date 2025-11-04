@@ -12,6 +12,7 @@ module.exports = {
   },
   rules: {
     'react/react-in-jsx-scope': 'off',
-    'react/jsx-uses-react': 'off'
+    'react/jsx-uses-react': 'off',
+    '@next/next/no-html-link-for-pages': 'off'
   }
 };

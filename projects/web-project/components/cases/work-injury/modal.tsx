@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   App,
   Button,
@@ -32,6 +32,8 @@ import {
   type CaseChangeLog,
   type CaseStatus,
   type CaseTimelineRecord,
+  type CaseTimeNodeRecord,
+  type CaseTimeNodeType,
   type TrialStage,
   type AssignableStaffResponse
 } from '@/lib/cases-api';
@@ -46,6 +48,7 @@ type TabKey =
   | 'parties'
   | 'hearing'
   | 'staff'
+  | 'timeNodes'
   | 'followUp'
   | 'changeLog'
   | 'fees';
@@ -59,9 +62,28 @@ const TAB_LABEL_MAP: Record<TabKey, string> = {
   parties: '当事人信息',
   hearing: '庭审信息',
   staff: '相关人员',
+  timeNodes: '时间节点',
   followUp: '跟进备注',
   changeLog: '变更日志',
   fees: '费用明细'
+};
+
+const TAB_ICON_MAP: Partial<Record<TabKey, ReactNode>> = {
+  timeNodes: <ClockCircleOutlined />
+};
+
+const buildTabLabel = (key: TabKey): ReactNode => {
+  const icon = TAB_ICON_MAP[key];
+  const label = TAB_LABEL_MAP[key];
+  if (!icon) {
+    return label;
+  }
+  return (
+    <span className={styles.tabLabel}>
+      {icon}
+      <span>{label}</span>
+    </span>
+  );
 };
 
 const isTabKey = (key: string): key is TabKey => key in TAB_LABEL_MAP;
@@ -101,6 +123,36 @@ const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
   second_instance: '二审',
   retrial: '再审'
 };
+
+const CASE_TIME_NODE_DEFINITIONS: ReadonlyArray<{ type: CaseTimeNodeType; label: string }> = [
+  { type: 'apply_employment_confirmation', label: '申请确认劳动关系' },
+  { type: 'labor_arbitration_decision', label: '确认劳动裁决时间' },
+  { type: 'submit_injury_certification', label: '提交工伤认定申请' },
+  { type: 'receive_injury_certification', label: '收到工伤认定书' },
+  { type: 'submit_disability_assessment', label: '提交劳动能力等级鉴定' },
+  { type: 'receive_disability_assessment', label: '收到鉴定书' },
+  { type: 'apply_insurance_arbitration', label: '申请工伤保险待遇仲裁' },
+  { type: 'insurance_arbitration_decision', label: '工伤保险待遇裁决时间' },
+  { type: 'file_lawsuit', label: '起诉立案' },
+  { type: 'lawsuit_review_approved', label: '立案审核通过' },
+  { type: 'final_judgement', label: '裁决时间' }
+];
+
+const CASE_TIME_NODE_LABEL_MAP = CASE_TIME_NODE_DEFINITIONS.reduce<Record<CaseTimeNodeType, string>>(
+  (acc, definition) => {
+    acc[definition.type] = definition.label;
+    return acc;
+  },
+  {} as Record<CaseTimeNodeType, string>
+);
+
+const CASE_TIME_NODE_ORDER_MAP = CASE_TIME_NODE_DEFINITIONS.reduce<Record<CaseTimeNodeType, number>>(
+  (acc, definition, index) => {
+    acc[definition.type] = index;
+    return acc;
+  },
+  {} as Record<CaseTimeNodeType, number>
+);
 
 const CASE_STATUS_OPTIONS: CaseStatusValue[] = ['open', 'closed', 'void'];
 
@@ -214,6 +266,8 @@ export interface FeeFormValues {
   salesCommission?: string | null;
   handlingFee?: string | null;
 }
+
+type TimeNodeFormValues = Partial<Record<CaseTimeNodeType, Dayjs | null>>;
 
 const CASE_COLLECTION_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'super_admin',
@@ -353,6 +407,7 @@ export interface WorkInjuryCaseFormValues {
     handlingFee?: string | null;
   };
   timeline?: CaseTimelineRecord[];
+  timeNodes?: CaseTimeNodeRecord[];
 }
 
 interface WorkInjuryCaseModalProps {
@@ -392,6 +447,9 @@ interface WorkInjuryCaseModalProps {
   onUpdateFees?: (
     values: FeeFormValues
   ) => Promise<WorkInjuryCaseFormValues | void>;
+  onSaveTimeNodes?: (
+    values: Array<{ nodeType: CaseTimeNodeType; occurredOn: Dayjs }>
+  ) => Promise<WorkInjuryCaseFormValues | void>;
   onLoadAssignableStaff?: () => Promise<AssignableStaffResponse>;
   onLoadChangeLogs?: () => Promise<CaseChangeLog[]>;
   canEditAssignments?: boolean;
@@ -401,6 +459,7 @@ interface WorkInjuryCaseModalProps {
   canAddCollections?: boolean;
   canUpdateFees?: boolean;
   canViewChangeLogs?: boolean;
+  canManageTimeNodes?: boolean;
 }
 const buildInitialValues = (): WorkInjuryCaseFormValues => {
 
@@ -427,7 +486,8 @@ const buildInitialValues = (): WorkInjuryCaseFormValues => {
       salesCommission: null,
       handlingFee: null
     },
-    timeline: []
+    timeline: [],
+    timeNodes: []
   };
 };
 
@@ -450,6 +510,7 @@ export default function WorkInjuryCaseModal({
   onAddFollowUp,
   onAddCollection,
   onUpdateFees,
+  onSaveTimeNodes,
   onLoadAssignableStaff,
   onLoadChangeLogs,
   canEditAssignments = false,
@@ -458,7 +519,8 @@ export default function WorkInjuryCaseModal({
   canAddFollowUps = false,
   canAddCollections = false,
   canUpdateFees = false,
-  canViewChangeLogs = false
+  canViewChangeLogs = false,
+  canManageTimeNodes = false
 }: WorkInjuryCaseModalProps) {
   const sessionUser = useSessionStore(state => state.user);
   const { message } = App.useApp();
@@ -468,6 +530,7 @@ export default function WorkInjuryCaseModal({
   const [followUpForm] = Form.useForm<FollowUpFormValues>();
   const [collectionForm] = Form.useForm<CollectionFormValues>();
   const [feeForm] = Form.useForm<FeeFormValues>();
+  const [timeNodeForm] = Form.useForm<TimeNodeFormValues>();
   const [activeTab, setActiveTab] = useState<TabKey>(DEFAULT_ACTIVE_TAB);
   const [dirtySections, setDirtySections] = useState<Set<string>>(new Set());
   const [assignableStaff, setAssignableStaff] = useState<AssignableStaffResponse | null>(null);
@@ -483,6 +546,7 @@ export default function WorkInjuryCaseModal({
   const [followUpSaving, setFollowUpSaving] = useState(false);
   const [collectionSaving, setCollectionSaving] = useState(false);
   const [feeSaving, setFeeSaving] = useState(false);
+  const [timeNodeSaving, setTimeNodeSaving] = useState(false);
   const [changeLogs, setChangeLogs] = useState<CaseChangeLog[] | null>(null);
   const [changeLogsLoading, setChangeLogsLoading] = useState(false);
   const [changeLogsLoaded, setChangeLogsLoaded] = useState(false);
@@ -525,6 +589,8 @@ export default function WorkInjuryCaseModal({
           return dirtySections.has('assignment');
         case 'hearing':
           return dirtySections.has('hearing');
+        case 'timeNodes':
+          return dirtySections.has('timeNodes');
         case 'followUp':
           return dirtySections.has('followUp');
         case 'fees':
@@ -539,6 +605,8 @@ export default function WorkInjuryCaseModal({
 
   const isUpdateMode = mode === 'update';
   const isEditable = !isViewMode;
+  const isRestrictedEditor = sessionUser ? ['lawyer', 'assistant'].includes(sessionUser.role) : false;
+  const canEditBasicInfo = isEditable && (!isRestrictedEditor || mode === 'create');
   const mainFormSaving = Boolean(confirmLoading);
 
   const baseInitialValues = useMemo(() => {
@@ -586,22 +654,50 @@ export default function WorkInjuryCaseModal({
     () => resolveDisabledTrialStages(hearingRecords),
     [hearingRecords]
   );
-  const lawyerOptions = useMemo(
-    () =>
-      (assignableStaff?.lawyers ?? []).map(member => ({
+  const assignedLawyerId = displayValues.adminInfo?.assignedLawyer ?? null;
+  const assignedLawyerName = displayValues.adminInfo?.assignedLawyerName ?? null;
+  const assignedAssistantId = displayValues.adminInfo?.assignedAssistant ?? null;
+  const assignedAssistantName = displayValues.adminInfo?.assignedAssistantName ?? null;
+
+  const lawyerOptions = useMemo(() => {
+    const optionMap = new Map<string, { value: string; label: string }>();
+    (assignableStaff?.lawyers ?? []).forEach(member => {
+      optionMap.set(member.id, {
         value: member.id,
         label: member.name ?? '未命名成员'
-      })),
-    [assignableStaff]
-  );
-  const assistantOptions = useMemo(
-    () =>
-      (assignableStaff?.assistants ?? []).map(member => ({
+      });
+    });
+
+    if (assignedLawyerId) {
+      const existingLabel = optionMap.get(assignedLawyerId)?.label;
+      optionMap.set(assignedLawyerId, {
+        value: assignedLawyerId,
+        label: assignedLawyerName ?? existingLabel ?? '已分配成员'
+      });
+    }
+
+    return Array.from(optionMap.values());
+  }, [assignableStaff?.lawyers, assignedLawyerId, assignedLawyerName]);
+
+  const assistantOptions = useMemo(() => {
+    const optionMap = new Map<string, { value: string; label: string }>();
+    (assignableStaff?.assistants ?? []).forEach(member => {
+      optionMap.set(member.id, {
         value: member.id,
         label: member.name ?? '未命名成员'
-      })),
-    [assignableStaff]
-  );
+      });
+    });
+
+    if (assignedAssistantId) {
+      const existingLabel = optionMap.get(assignedAssistantId)?.label;
+      optionMap.set(assignedAssistantId, {
+        value: assignedAssistantId,
+        label: assignedAssistantName ?? existingLabel ?? '已分配成员'
+      });
+    }
+
+    return Array.from(optionMap.values());
+  }, [assignableStaff?.assistants, assignedAssistantId, assignedAssistantName]);
   const caseStatusSelectOptions = useMemo(
     () =>
       CASE_STATUS_OPTIONS.map(status => ({
@@ -619,6 +715,17 @@ export default function WorkInjuryCaseModal({
       })),
     [disabledTrialStages]
   );
+
+  const buildTimeNodeFormValues = useCallback((nodes?: CaseTimeNodeRecord[]): TimeNodeFormValues => {
+    const values: TimeNodeFormValues = {};
+    CASE_TIME_NODE_DEFINITIONS.forEach(definition => {
+      values[definition.type] = null;
+    });
+    (nodes ?? []).forEach(node => {
+      values[node.nodeType] = node.occurredOn ? dayjs(node.occurredOn) : null;
+    });
+    return values;
+  }, []);
 
   const syncFormsFromValues = useCallback(
     (values: WorkInjuryCaseFormValues) => {
@@ -664,6 +771,8 @@ export default function WorkInjuryCaseModal({
         receivedAt: dayjs()
       });
 
+      timeNodeForm.setFieldsValue(buildTimeNodeFormValues(values.timeNodes));
+
       clearDirty('assignment');
       clearDirty('hearing');
       clearDirty('followUp');
@@ -671,8 +780,9 @@ export default function WorkInjuryCaseModal({
       clearDirty('fee');
       clearDirty('basic');
       clearDirty('parties');
+      clearDirty('timeNodes');
     },
-  [assignmentForm, clearDirty, collectionForm, feeForm, followUpForm, form, hearingForm]
+  [assignmentForm, buildTimeNodeFormValues, clearDirty, collectionForm, feeForm, followUpForm, form, hearingForm, timeNodeForm]
   );
 
   const applyUpdatedValues = useCallback(
@@ -950,13 +1060,13 @@ export default function WorkInjuryCaseModal({
   }, [activeTab, cachedDisplayValues, confirmDiscardChanges, form, isEditable, onCancel, onRequestView, resetDirty, syncFormsFromValues]);
 
   const handleBasicInfoReset = useCallback(() => {
-    if (!isEditable) {
+    if (!canEditBasicInfo) {
       return;
     }
     const nextBasicInfo = displayValues.basicInfo ?? {};
     form.setFieldsValue({ basicInfo: nextBasicInfo });
     clearDirty('basic');
-  }, [clearDirty, displayValues, form, isEditable]);
+  }, [canEditBasicInfo, clearDirty, displayValues, form]);
 
   const handlePartiesReset = useCallback(() => {
     if (!isEditable) {
@@ -1021,8 +1131,57 @@ export default function WorkInjuryCaseModal({
     clearDirty('followUp');
   }, [clearDirty, followUpForm, isEditable]);
 
+  const handleTimeNodeReset = useCallback(() => {
+    timeNodeForm.setFieldsValue(buildTimeNodeFormValues(displayValues.timeNodes));
+    clearDirty('timeNodes');
+  }, [buildTimeNodeFormValues, clearDirty, displayValues.timeNodes, timeNodeForm]);
+
+  const handleTimeNodeSave = useCallback(async () => {
+    if (!onSaveTimeNodes || !canManageTimeNodes) {
+      return;
+    }
+
+    const formValues = timeNodeForm.getFieldsValue() as TimeNodeFormValues;
+    const payload = CASE_TIME_NODE_DEFINITIONS.reduce<Array<{ nodeType: CaseTimeNodeType; occurredOn: Dayjs }>>(
+      (acc, definition) => {
+        const value = formValues[definition.type];
+        if (value) {
+          acc.push({ nodeType: definition.type, occurredOn: value });
+        }
+        return acc;
+      },
+      []
+    );
+
+    if (payload.length === 0) {
+      message.error('请至少填写一个时间节点');
+      return;
+    }
+
+    setTimeNodeSaving(true);
+    try {
+      const updated = await onSaveTimeNodes(payload);
+      if (updated !== undefined) {
+        applyUpdatedValues(updated);
+        message.success('时间节点已更新');
+      }
+      clearDirty('timeNodes');
+    } catch (error) {
+      message.error('保存时间节点失败，请稍后重试');
+    } finally {
+      setTimeNodeSaving(false);
+    }
+  }, [
+    applyUpdatedValues,
+    canManageTimeNodes,
+    clearDirty,
+    message,
+    onSaveTimeNodes,
+    timeNodeForm
+  ]);
+
   const handleBasicInfoSave = useCallback(async () => {
-    if (!isEditable) {
+    if (!canEditBasicInfo) {
       return;
     }
     try {
@@ -1068,9 +1227,9 @@ export default function WorkInjuryCaseModal({
     }
   }, [
     applyUpdatedValues,
+    canEditBasicInfo,
     clearDirty,
     form,
-    isEditable,
     isUpdateMode,
     message,
     mode,
@@ -1136,12 +1295,7 @@ export default function WorkInjuryCaseModal({
     onSubmit
   ]);
 
-  const canShowEditButton = Boolean(
-    allowEdit &&
-      onRequestEdit &&
-      sessionUser &&
-      !['lawyer', 'assistant'].includes(sessionUser.role)
-  );
+  const canShowEditButton = Boolean(allowEdit && onRequestEdit && sessionUser);
 
   const canShowCollectionSection = Boolean(
     sessionUser &&
@@ -1749,9 +1903,11 @@ export default function WorkInjuryCaseModal({
   );
 
   const canAddMoreHearings = availableTrialStages.length > 0;
+  const canShowHearingForm = Boolean(onAddHearing && canAddHearings);
+
   const hearingEditPane = (
     <div className={styles.sectionList}>
-      {onAddHearing ? (
+      {canShowHearingForm ? (
         <>
           <Typography.Title level={5}>新增庭审记录</Typography.Title>
           {!canAddMoreHearings ? (
@@ -1838,14 +1994,54 @@ export default function WorkInjuryCaseModal({
               </Col>
             </Row>
           </Form>
+          <Divider dashed />
         </>
-      ) : (
-        <Typography.Text type="secondary" className={styles.emptyHint}>
-          暂无权限新增庭审记录
-        </Typography.Text>
-      )}
-      <Divider dashed />
+      ) : null}
       {renderHearingDisplay(displayValues)}
+    </div>
+  );
+
+  const timeNodePane = (
+    <div className={styles.sectionList}>
+      {isEditable ? (
+        <>
+          {canManageTimeNodes ? (
+            <>
+              <Typography.Title level={5}>维护时间节点</Typography.Title>
+              <Form
+                form={timeNodeForm}
+                layout="vertical"
+                component={false}
+                onValuesChange={() => markDirty('timeNodes')}
+              >
+                <Row gutter={16}>
+                  {CASE_TIME_NODE_DEFINITIONS.map(definition => (
+                    <Col span={12} key={definition.type}>
+                      <Form.Item label={definition.label} name={definition.type}>
+                        <DatePicker
+                          style={{ width: '100%' }}
+                          placeholder="请选择日期"
+                          allowClear
+                          format="YYYY-MM-DD"
+                        />
+                      </Form.Item>
+                    </Col>
+                  ))}
+                </Row>
+              </Form>
+              <Divider dashed />
+            </>
+          ) : (
+            <>
+              <Typography.Text type="secondary" className={styles.emptyHint}>
+                当前角色不可编辑时间节点
+              </Typography.Text>
+              <Divider dashed />
+            </>
+          )}
+        </>
+      ) : null}
+      {renderTimeNodeDisplay(displayValues)}
     </div>
   );
 
@@ -2074,6 +2270,42 @@ export default function WorkInjuryCaseModal({
         )}
       </div>
     );
+  }
+
+  function renderTimeNodeDisplay(values: WorkInjuryCaseFormValues) {
+    const nodes = values.timeNodes ?? [];
+
+    if (!nodes.length) {
+      return (
+        <Typography.Text type="secondary" className={styles.emptyHint}>
+          暂无时间节点记录
+        </Typography.Text>
+      );
+    }
+
+    const sortedNodes = [...nodes].sort((a, b) => {
+      const orderA = CASE_TIME_NODE_ORDER_MAP[a.nodeType] ?? Number.MAX_SAFE_INTEGER;
+      const orderB = CASE_TIME_NODE_ORDER_MAP[b.nodeType] ?? Number.MAX_SAFE_INTEGER;
+      if (orderA === orderB) {
+        const timeA = a.occurredOn ? dayjs(a.occurredOn).valueOf() : Number.MAX_SAFE_INTEGER;
+        const timeB = b.occurredOn ? dayjs(b.occurredOn).valueOf() : Number.MAX_SAFE_INTEGER;
+        return timeA - timeB;
+      }
+      return orderA - orderB;
+    });
+
+    const items = sortedNodes.map(node => ({
+      key: `${node.nodeType}-${node.id}`,
+      color: 'blue',
+      children: (
+        <div>
+          <Typography.Text strong>{CASE_TIME_NODE_LABEL_MAP[node.nodeType] ?? node.nodeType}</Typography.Text>
+          <div>{formatDate(node.occurredOn ?? null)}</div>
+        </div>
+      )
+    }));
+
+    return <Timeline items={items} />;
   }
 
   const renderAssignmentDisplay = (values: WorkInjuryCaseFormValues) => {
@@ -2382,12 +2614,12 @@ export default function WorkInjuryCaseModal({
     const items: TabItem[] = [
       {
         key: 'basic',
-        label: TAB_LABEL_MAP.basic,
-        children: isEditable ? basicInfoPane : renderBasicInfoDisplay(displayValues)
+        label: buildTabLabel('basic'),
+        children: canEditBasicInfo ? basicInfoPane : renderBasicInfoDisplay(displayValues)
       },
       {
         key: 'parties',
-        label: TAB_LABEL_MAP.parties,
+        label: buildTabLabel('parties'),
         children: isEditable ? personnelPane : renderPartyDisplay(displayValues)
       }
     ];
@@ -2395,7 +2627,7 @@ export default function WorkInjuryCaseModal({
     if (sessionUser?.role !== 'sale') {
       items.push({
         key: 'hearing',
-        label: TAB_LABEL_MAP.hearing,
+        label: buildTabLabel('hearing'),
         children: isEditable ? hearingEditPane : renderHearingDisplay(displayValues)
       });
     }
@@ -2403,20 +2635,26 @@ export default function WorkInjuryCaseModal({
     if (sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant') {
       items.push({
         key: 'staff',
-        label: TAB_LABEL_MAP.staff,
+        label: buildTabLabel('staff'),
         children: isEditable ? staffEditPane : renderAssignmentDisplay(displayValues)
       });
     }
 
+    items.push({
+      key: 'timeNodes',
+      label: buildTabLabel('timeNodes'),
+      children: timeNodePane
+    });
+
     items.push(
       {
         key: 'followUp',
-        label: TAB_LABEL_MAP.followUp,
+        label: buildTabLabel('followUp'),
         children: followUpEditPane
       },
       {
         key: 'changeLog',
-        label: TAB_LABEL_MAP.changeLog,
+        label: buildTabLabel('changeLog'),
         children: isEditable ? changeLogEditPane : renderChangeLogDisplay(changeLogs, changeLogsLoading)
       }
     );
@@ -2424,7 +2662,7 @@ export default function WorkInjuryCaseModal({
     if (sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant') {
       items.push({
         key: 'fees',
-        label: TAB_LABEL_MAP.fees,
+        label: buildTabLabel('fees'),
         children: isEditable ? feesEditPane : renderFeeDisplay(displayValues)
       });
     }
@@ -2453,7 +2691,7 @@ export default function WorkInjuryCaseModal({
         </Button>
       ];
 
-      if (activeTab === 'basic' && (onSubmit || onSaveBasicInfo)) {
+      if (activeTab === 'basic' && canEditBasicInfo && (onSubmit || onSaveBasicInfo)) {
         const basicDirty = hasTabChanges('basic');
         const basicSavingState = mode === 'create' ? mainFormSaving : basicInfoSaving;
         buttons.push(
@@ -2469,7 +2707,7 @@ export default function WorkInjuryCaseModal({
             type="primary"
             onClick={() => void handleBasicInfoSave()}
             loading={basicSavingState}
-            disabled={!isEditable || !basicDirty}
+            disabled={!canEditBasicInfo || !basicDirty}
           >
             保存基本信息
           </Button>
@@ -2520,7 +2758,7 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'hearing' && onAddHearing) {
+      if (activeTab === 'hearing' && onAddHearing && canAddHearings) {
         buttons.push(
           <Button
             key="hearing-reset"
@@ -2537,6 +2775,28 @@ export default function WorkInjuryCaseModal({
             disabled={!canAddHearings || !canAddMoreHearings}
           >
             保存庭审信息
+          </Button>
+        );
+      }
+
+      if (activeTab === 'timeNodes' && onSaveTimeNodes) {
+        const timeNodesDirty = hasTabChanges('timeNodes');
+        buttons.push(
+          <Button
+            key="timeNodes-reset"
+            onClick={handleTimeNodeReset}
+            disabled={timeNodeSaving || !timeNodesDirty}
+          >
+            重置
+          </Button>,
+          <Button
+            key="timeNodes-save"
+            type="primary"
+            onClick={() => void handleTimeNodeSave()}
+            loading={timeNodeSaving}
+            disabled={!canManageTimeNodes || !timeNodesDirty}
+          >
+            保存时间节点
           </Button>
         );
       }
@@ -2564,6 +2824,7 @@ export default function WorkInjuryCaseModal({
       activeTab,
       assignmentSaving,
       basicInfoSaving,
+  canEditBasicInfo,
       canAddFollowUps,
       canAddHearings,
       canAddMoreHearings,
@@ -2581,18 +2842,23 @@ export default function WorkInjuryCaseModal({
       handleHearingSave,
       handlePartiesReset,
       handlePartiesSave,
+      handleTimeNodeReset,
+      handleTimeNodeSave,
       hasTabChanges,
       hearingSaving,
       isEditable,
       mainFormSaving,
       mode,
+      onSaveTimeNodes,
       onAddFollowUp,
       onAddHearing,
       onSaveAssignment,
       onSaveBasicInfo,
       onSaveParties,
       onSubmit,
-      partiesSaving
+      partiesSaving,
+      timeNodeSaving,
+      canManageTimeNodes
     ]
   );
 

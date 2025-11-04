@@ -4,6 +4,18 @@ import type { UserDepartment, UserRole } from './users-api';
 export type CaseType = 'work_injury' | 'personal_injury' | 'other';
 export type CaseLevel = 'A' | 'B' | 'C';
 export type CaseStatus = 'open' | 'closed' | 'void';
+export type CaseTimeNodeType =
+  | 'apply_employment_confirmation'
+  | 'labor_arbitration_decision'
+  | 'submit_injury_certification'
+  | 'receive_injury_certification'
+  | 'submit_disability_assessment'
+  | 'receive_disability_assessment'
+  | 'apply_insurance_arbitration'
+  | 'insurance_arbitration_decision'
+  | 'file_lawsuit'
+  | 'lawsuit_review_approved'
+  | 'final_judgement';
 
 export const CASE_STATUS_LABEL_MAP: Record<CaseStatus, string> = {
   open: '未结案',
@@ -66,6 +78,14 @@ export interface CaseChangeLog {
   createdAt: string;
 }
 
+export interface CaseTimeNodeRecord {
+  id: string;
+  nodeType: CaseTimeNodeType;
+  occurredOn: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CaseParticipantsGroup {
   claimants?: CaseParticipant[];
   respondents?: CaseParticipant[];
@@ -126,6 +146,7 @@ export interface CaseRecord {
   updatedAt: string;
   participants: CaseParticipantsGroup;
   collections: CaseCollectionRecord[];
+  timeNodes: CaseTimeNodeRecord[];
   timeline: CaseTimelineRecord[];
   hearings: CaseHearingRecord[];
 }
@@ -196,6 +217,11 @@ export interface CaseTimelineInput {
   followerId?: string | null;
 }
 
+export interface CaseTimeNodeInput {
+  nodeType: CaseTimeNodeType;
+  occurredOn: string | Date;
+}
+
 export interface CaseHearingInput {
   trialLawyerId?: string | null;
   hearingTime?: string | Date | null;
@@ -243,6 +269,7 @@ export interface CasePayload {
   collections?: CaseCollectionInput[];
   timeline?: CaseTimelineInput[];
   hearings?: CaseHearingInput[] | null;
+  timeNodes?: CaseTimeNodeInput[];
 }
 
 interface CaseDetailResponse {
@@ -317,6 +344,17 @@ export async function fetchCaseChangeLogs(id: string): Promise<CaseChangeLog[]> 
 
 export async function fetchCaseHearings(id: string): Promise<CaseHearingRecord[]> {
   const response = await apiFetch<{ data: CaseHearingRecord[] }>(`/api/cases/${id}/hearings`);
+  return response.data;
+}
+
+export async function updateCaseTimeNodes(
+  caseId: string,
+  payload: CaseTimeNodeInput[]
+): Promise<CaseTimeNodeRecord[]> {
+  const response = await apiFetch<{ data: CaseTimeNodeRecord[] }>(`/api/cases/${caseId}/time-nodes`, {
+    method: 'PUT',
+    body: payload
+  });
   return response.data;
 }
 
