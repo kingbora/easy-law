@@ -5,7 +5,7 @@ APP_NAME="lawyer-app"
 APP_DIR="/home/apps/$APP_NAME"
 DEPLOY_DATE=$(date +%Y%m%d_%H%M%S)
 
-# 端口定义
+# 端口定义 - 分别定义前后端端口
 FRONTEND_PORTS=(3000 3001)
 BACKEND_PORTS=(4000 4001)
 
@@ -13,33 +13,60 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 }
 
-check_service_health() {
+check_frontend_health() {
     local port=$1
-    local endpoint=$2
-    local service_name=$3
     local max_retries=20
     
     for i in $(seq 1 $max_retries); do
-        if curl -s -f "http://localhost:${port}${endpoint}" >/dev/null 2>&1; then
-            log "✓ $service_name 健康 (端口: $port)"
+        if curl -s -f "http://localhost:${port}/api/health" >/dev/null 2>&1; then
+            log "✓ 前端服务健康 (端口: $port)"
             return 0
         fi
         if [ $i -eq 1 ]; then
-            log "等待 $service_name 启动... ($i/$max_retries)"
+            log "等待前端服务启动... ($i/$max_retries)"
         elif [ $((i % 5)) -eq 0 ]; then
-            log "仍在等待 $service_name 启动... ($i/$max_retries)"
+            log "仍在等待前端服务启动... ($i/$max_retries)"
         fi
         sleep 3
     done
-    log "✗ $service_name 健康检查失败 (端口: $port)"
+    log "✗ 前端服务健康检查失败 (端口: $port)"
     return 1
 }
 
-# 获取当前运行的端口
-get_current_upstream_port() {
-    local upstream_name=$1
-    if [ -f "/etc/nginx/lawyer-app-upstream.conf" ]; then
-        grep -A5 "upstream $upstream_name" /etc/nginx/lawyer-app-upstream.conf 2>/dev/null | \
+check_backend_health() {
+    local port=$1
+    local max_retries=20
+    
+    for i in $(seq 1 $max_retries); do
+        if curl -s -f "http://localhost:${port}/health" >/dev/null 2>&1; then
+            log "✓ 后端服务健康 (端口: $port)"
+            return 0
+        fi
+        if [ $i -eq 1 ]; then then
+            log "等待后端服务启动... ($i/$max_retries)"
+        elif [ $((i % 5)) -eq 0 ]; then
+            log "仍在等待后端服务启动... ($i/$max_retries)"
+        fi
+        sleep 3
+    done
+    log "✗ 后端服务健康检查失败 (端口: $port)"
+    return 1
+}
+
+# 获取当前运行的前端端口
+get_current_frontend_port() {
+    if [ -f "/etc/nginx/conf.d/lawyer-app-upstream.conf" ]; then
+        grep -A5 "upstream frontend_servers" /etc/nginx/conf.d/lawyer-app-upstream.conf 2>/dev/null | \
+        grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{print $1}' || echo ""
+    else
+        echo ""
+    fi
+}
+
+# 获取当前运行的后端端口
+get_current_backend_port() {
+    if [ -f "/etc/nginx/conf.d/lawyer-app-upstream.conf" ]; then
+        grep -A5 "upstream backend_servers" /etc/nginx/conf.d/lawyer-app-upstream.conf 2>/dev/null | \
         grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{print $1}' || echo ""
     else
         echo ""
@@ -59,7 +86,7 @@ get_next_port() {
     
     for port in "${ports[@]}"; do
         if [ "$port" != "$current_port" ]; then
-            echo $port
+            echo "$port"
             return
         fi
     done
@@ -88,7 +115,8 @@ setup_environment() {
     log "设置部署环境..."
     
     # 创建应用目录
-    mkdir -p $APP_DIR/shared/{logs,data}
+    sudo mkdir -p $APP_DIR/shared/{logs,data}
+    sudo chown -R $USER:$USER $APP_DIR/shared
 }
 
 # 停止并清理旧容器
@@ -102,22 +130,21 @@ cleanup_old_containers() {
     for port in "${FRONTEND_PORTS[@]}"; do
         if [ "$port" = "$next_frontend_port" ]; then
             # 这是我们要使用的端口，确保没有冲突
-            docker stop "frontend-$port" 2>/dev/null || true
-            docker rm "frontend-$port" 2>/dev/null || true
-        fi
-    done
-    
-    for port in "${BACKEND_PORTS[@]}"; do
-        if [ "$port" = "$next_backend_port" ]; then
-            docker stop "backend-$port" 2>/dev/null || true
-            docker rm "backend-$port" 2>/dev/null || true
+            docker stop "app-frontend-$port" 2>/dev/null || true
+            docker rm "app-frontend-$port" 2>/dev/null || true
+        else
+            # 停止其他端口的旧容器
+            docker stop "app-$port-${BACKEND_PORTS[0]}" 2>/dev/null || true
+            docker stop "app-$port-${BACKEND_PORTS[1]}" 2>/dev/null || true
+            docker rm "app-$port-${BACKEND_PORTS[0]}" 2>/dev/null || true
+            docker rm "app-$port-${BACKEND_PORTS[1]}" 2>/dev/null || true
         fi
     done
 }
 
 # 验证Nginx配置
 verify_nginx_config() {
-    if ! nginx -t; then
+    if ! sudo nginx -t; then
         log "✗ Nginx配置验证失败"
         return 1
     fi
@@ -128,8 +155,8 @@ verify_nginx_config() {
 log "开始智能部署流程..."
 
 # 检查镜像文件
-if [ ! -f "$APP_DIR/frontend-image.tar" ] || [ ! -f "$APP_DIR/backend-image.tar" ]; then
-    log "错误: 未找到Docker镜像文件"
+if [ ! -f "$APP_DIR/app-image.tar" ]; then
+    log "错误: 未找到Docker镜像文件 app-image.tar"
     exit 1
 fi
 
@@ -138,12 +165,11 @@ setup_environment
 
 # 加载新镜像
 log "加载Docker镜像..."
-docker load -i $APP_DIR/frontend-image.tar
-docker load -i $APP_DIR/backend-image.tar
+docker load -i "$APP_DIR/app-image.tar"
 
 # 获取当前和下一个端口
-CURRENT_FRONTEND_PORT=$(get_current_upstream_port "frontend_servers")
-CURRENT_BACKEND_PORT=$(get_current_upstream_port "backend_servers")
+CURRENT_FRONTEND_PORT=$(get_current_frontend_port)
+CURRENT_BACKEND_PORT=$(get_current_backend_port)
 
 NEXT_FRONTEND_PORT=$(get_next_port "$CURRENT_FRONTEND_PORT" FRONTEND_PORTS[@])
 NEXT_BACKEND_PORT=$(get_next_port "$CURRENT_BACKEND_PORT" BACKEND_PORTS[@])
@@ -157,48 +183,54 @@ log "  - 下一后端端口: $NEXT_BACKEND_PORT"
 # 清理旧容器
 cleanup_old_containers "$NEXT_FRONTEND_PORT" "$NEXT_BACKEND_PORT"
 
-# 启动新版本服务
-log "启动新版本服务..."
-log "启动前端服务 (端口: $NEXT_FRONTEND_PORT)..."
-if ! docker run -d --name "frontend-$NEXT_FRONTEND_PORT" \
-    -p $NEXT_FRONTEND_PORT:3000 \
-    -v $APP_DIR/shared/logs:/app/logs \
-    lawyer-frontend:latest; then
-    log "✗ 前端服务启动失败"
-    docker logs "frontend-$NEXT_FRONTEND_PORT" 2>/dev/null || true
+# 检查端口是否可用
+if ! is_port_available "$NEXT_FRONTEND_PORT"; then
+    log "错误: 前端端口 $NEXT_FRONTEND_PORT 已被占用"
     exit 1
 fi
 
-log "启动后端服务 (端口: $NEXT_BACKEND_PORT)..."
-if ! docker run -d --name "backend-$NEXT_BACKEND_PORT" \
+if ! is_port_available "$NEXT_BACKEND_PORT"; then
+    log "错误: 后端端口 $NEXT_BACKEND_PORT 已被占用"
+    exit 1
+fi
+
+# 启动新版本服务
+log "启动统一应用服务..."
+log "前端端口: $NEXT_FRONTEND_PORT, 后端端口: $NEXT_BACKEND_PORT"
+
+CONTAINER_NAME="app-$NEXT_FRONTEND_PORT-$NEXT_BACKEND_PORT"
+
+if ! docker run -d --name "$CONTAINER_NAME" \
+    -p $NEXT_FRONTEND_PORT:3000 \
     -p $NEXT_BACKEND_PORT:4000 \
     -v $APP_DIR/shared/logs:/app/logs \
     -v $APP_DIR/shared/data:/app/data \
-    lawyer-backend:latest; then
-    log "✗ 后端服务启动失败"
-    docker logs "backend-$NEXT_BACKEND_PORT" 2>/dev/null || true
-    # 清理已启动的前端服务
-    docker stop "frontend-$NEXT_FRONTEND_PORT" 2>/dev/null || true
+    -e NODE_ENV=production \
+    -e DATABASE_URL="$DATABASE_URL" \
+    lawyer-app:latest; then
+    log "✗ 应用服务启动失败"
+    docker logs "$CONTAINER_NAME" 2>/dev/null || true
     exit 1
 fi
 
 # 等待新服务就绪
 log "等待新服务启动..."
-if ! check_service_health "$NEXT_FRONTEND_PORT" "/api/health" "前端新实例"; then
-    log "前端新实例健康检查失败，查看日志:"
-    docker logs "frontend-$NEXT_FRONTEND_PORT"
+if ! check_frontend_health "$NEXT_FRONTEND_PORT"; then
+    log "前端服务健康检查失败，查看日志:"
+    docker logs "$CONTAINER_NAME"
     exit 1
 fi
 
-if ! check_service_health "$NEXT_BACKEND_PORT" "/health" "后端新实例"; then
-    log "后端新实例健康检查失败，查看日志:"
-    docker logs "backend-$NEXT_BACKEND_PORT"
+if ! check_backend_health "$NEXT_BACKEND_PORT"; then
+    log "后端服务健康检查失败，查看日志:"
+    docker logs "$CONTAINER_NAME"
     exit 1
 fi
 
 # 更新Nginx配置
 log "更新Nginx upstream指向新端口..."
-cat > /etc/nginx/lawyer-app-upstream.conf << EOF
+sudo mkdir -p /etc/nginx/conf.d
+cat > /tmp/lawyer-app-upstream.conf << EOF
 upstream frontend_servers {
     server 127.0.0.1:$NEXT_FRONTEND_PORT;
 }
@@ -208,10 +240,13 @@ upstream backend_servers {
 }
 EOF
 
+sudo cp /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
+rm -f /tmp/lawyer-app-upstream.conf
+
 # 验证并重载Nginx
 if verify_nginx_config; then
     log "重载Nginx配置..."
-    if systemctl reload nginx; then
+    if sudo systemctl reload nginx; then
         log "✓ Nginx重载成功，流量已切换到新实例"
     else
         log "✗ Nginx重载失败"
@@ -221,7 +256,7 @@ else
     log "✗ Nginx配置验证失败，回滚upstream配置"
     # 恢复原有配置
     if [ -n "$CURRENT_FRONTEND_PORT" ] && [ -n "$CURRENT_BACKEND_PORT" ]; then
-        cat > /etc/nginx/lawyer-app-upstream.conf << EOF
+        cat > /tmp/lawyer-app-upstream.conf << EOF
 upstream frontend_servers {
     server 127.0.0.1:$CURRENT_FRONTEND_PORT;
 }
@@ -230,6 +265,9 @@ upstream backend_servers {
     server 127.0.0.1:$CURRENT_BACKEND_PORT;
 }
 EOF
+        sudo cp /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
+        rm -f /tmp/lawyer-app-upstream.conf
+        sudo nginx -t && sudo systemctl reload nginx
     fi
     exit 1
 fi
@@ -239,16 +277,14 @@ log "等待新服务稳定..."
 sleep 10
 
 # 停止旧版本服务（如果存在）
-if [ -n "$CURRENT_FRONTEND_PORT" ] && [ "$CURRENT_FRONTEND_PORT" != "$NEXT_FRONTEND_PORT" ]; then
-    log "停止旧前端服务 (端口: $CURRENT_FRONTEND_PORT)..."
-    docker stop "frontend-$CURRENT_FRONTEND_PORT" 2>/dev/null || true
-    docker rm "frontend-$CURRENT_FRONTEND_PORT" 2>/dev/null || true
-fi
-
-if [ -n "$CURRENT_BACKEND_PORT" ] && [ "$CURRENT_BACKEND_PORT" != "$NEXT_BACKEND_PORT" ]; then
-    log "停止旧后端服务 (端口: $CURRENT_BACKEND_PORT)..."
-    docker stop "backend-$CURRENT_BACKEND_PORT" 2>/dev/null || true
-    docker rm "backend-$CURRENT_BACKEND_PORT" 2>/dev/null || true
+if [ -n "$CURRENT_FRONTEND_PORT" ] && [ -n "$CURRENT_BACKEND_PORT" ] && \
+   { [ "$CURRENT_FRONTEND_PORT" != "$NEXT_FRONTEND_PORT" ] || \
+     [ "$CURRENT_BACKEND_PORT" != "$NEXT_BACKEND_PORT" ]; }; then
+    
+    OLD_CONTAINER_NAME="app-$CURRENT_FRONTEND_PORT-$CURRENT_BACKEND_PORT"
+    log "停止旧应用服务: $OLD_CONTAINER_NAME"
+    docker stop "$OLD_CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$OLD_CONTAINER_NAME" 2>/dev/null || true
 fi
 
 # 清理资源
@@ -257,18 +293,17 @@ docker image prune -f
 
 # 最终健康检查
 log "执行最终健康检查..."
-check_service_health "$NEXT_FRONTEND_PORT" "/api/health" "前端服务"
-check_service_health "$NEXT_BACKEND_PORT" "/health" "后端服务"
+if check_frontend_health "$NEXT_FRONTEND_PORT" && check_backend_health "$NEXT_BACKEND_PORT"; then
+    log "✓ 所有服务健康检查通过"
+else
+    log "✗ 健康检查未通过"
+    exit 1
+fi
 
 log "=== 部署完成 ==="
 log "部署时间: $DEPLOY_DATE"
 log "当前运行端口 - 前端: $NEXT_FRONTEND_PORT, 后端: $NEXT_BACKEND_PORT"
 log "服务状态:"
-docker ps --filter "name=frontend-*" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-docker ps --filter "name=backend-*" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
-# 清理临时文件
-log "清理临时文件..."
-rm -rf $APP_DIR
+docker ps --filter "name=app-*" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 log "部署完成!"

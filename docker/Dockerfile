@@ -13,6 +13,6 @@ RUN adduser -S nodejs -u 1001
 RUN chown -R nodejs:nodejs /app
 USER nodejs
 
-EXPOSE 4000
+EXPOSE 3000 4000
 
-CMD ["node", "projects/server-project/dist/server.js"]
+CMD ["pnpm", "start"]

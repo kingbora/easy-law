@@ -38,17 +38,14 @@ jobs:
       
     - name: Build projects
       run: pnpm -r build
-      
+
     - name: Create deployment directory
       run: |
         mkdir -p deployment
-        # 复制整个工程（包括node_modules和构建产物）
+        # 复制整个工程
         rsync -av --exclude='deployment' . deployment/ || true
         # 创建SSL证书目录
         mkdir -p deployment/nginx/ssl
-        # 确保包含所有必要文件
-        ls -la deployment/projects/web-project/.next/ || echo "Next.js构建目录不存在"
-        ls -la deployment/projects/server-project/dist/ || echo "后端构建目录不存在"
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -71,25 +68,18 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
       
-    - name: Build frontend image
+    - name: Build image
       run: |
         cd deployment
-        docker build -t lawyer-frontend:latest -f docker/frontend.Dockerfile .
-        docker save lawyer-frontend:latest -o frontend-image.tar
-        
-    - name: Build backend image
-      run: |
-        cd deployment
-        docker build -t lawyer-backend:latest -f docker/backend.Dockerfile .
-        docker save lawyer-backend:latest -o backend-image.tar
+        docker build -t lawyer-app:latest -f docker/Dockerfile .
+        docker save lawyer-app:latest -o app-image.tar
         
     - name: Upload docker images artifacts
       uses: actions/upload-artifact@v4
       with:
         name: docker-images
         path: |
-          deployment/frontend-image.tar
-          deployment/backend-image.tar
+          deployment/app-image.tar
         retention-days: 1
   
   # 部署到生产环境
@@ -104,6 +94,13 @@ jobs:
       with:
         name: build-artifacts
         path: deployment
+
+    - name: Copy deployment necessary files
+      run: |
+        mkdir -p publish
+        cp deployment/app-image.tar publish/
+        cp -r deployment/nginx publish/nginx
+        cp -r deployment/scripts publish/scripts
         
     - name: Copy project to ECS
       uses: appleboy/scp-action@v0.1.3
@@ -111,7 +108,7 @@ jobs:
         host: ${{ secrets.ECS_HOST }}
         username: ${{ secrets.ECS_USERNAME }}
         key: ${{ secrets.ECS_SSH_KEY }}
-        source: "deployment/*"
+        source: "publish/*"
         target: ${{ env.APP_DIR }}
         strip_components: 1
         
@@ -127,15 +124,19 @@ jobs:
           echo "提交: ${{ github.sha }}"
           echo "分支: ${{ github.ref }}"
 
-          echo "=== 复制Nginx配置文件和SSL证书 ==="
+          # 设置环境变量
+          export DATABASE_URL="${{ secrets.DATABASE_URL }}"
+          
+          echo "=== 复制Nginx配置文件 ==="
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/conf.d
-          cp -r ${{ env.APP_DIR }}/nginx/conf.d/*.conf ${{ env.NGINX_CONF_DIR }}/conf.d/
-          # 创建SSL证书目录（如果不存在）
+          sudo cp -f ${{ env.APP_DIR }}/nginx/conf.d/*.conf ${{ env.NGINX_CONF_DIR }}/conf.d/ || echo "Nginx配置文件复制完成"
+          
+          # 创建SSL证书目录并写入证书
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/ssl
-          # 写入证书文件
           echo "${{ secrets.SSL_CERT }}" | sudo tee ${{ env.NGINX_CONF_DIR }}/ssl/${{ env.APP_NAME }}.crt > /dev/null
           echo "${{ secrets.SSL_KEY }}" | sudo tee ${{ env.NGINX_CONF_DIR }}/ssl/${{ env.APP_NAME }}.key > /dev/null
-          echo "Nginx配置文件已更新"
+          sudo chmod 600 ${{ env.NGINX_CONF_DIR }}/ssl/${{ env.APP_NAME }}.*
+          echo "SSL证书已配置"
           
           # 执行部署脚本
           chmod +x ${{ env.APP_DIR }}/scripts/deploy.sh
@@ -163,10 +164,3 @@ jobs:
           echo "=== 最终健康检查 ==="
           chmod +x ${{ env.APP_DIR }}/scripts/health-check.sh
           ${{ env.APP_DIR }}/scripts/health-check.sh
-          
-          echo "=== 服务状态 ==="
-          docker-compose ps
-          
-          echo "=== 最近日志 ==="
-          docker logs lawyer-frontend --tail 20 2>/dev/null || echo "前端容器日志不可用"
-          docker logs lawyer-backend --tail 20 2>/dev/null || echo "后端容器日志不可用"
