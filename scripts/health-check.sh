@@ -99,10 +99,10 @@ log "检查服务健康状态..."
 
 # 获取当前运行的端口
 CURRENT_FRONTEND_PORT=$(grep -A5 "upstream frontend_servers" /etc/nginx/conf.d/lawyer-app-upstream.conf 2>/dev/null | \
-    grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{print $1}' || echo "")
+    grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{gsub(/;.*/, "", $1); print $1}' || echo ""
 
 CURRENT_BACKEND_PORT=$(grep -A5 "upstream backend_servers" /etc/nginx/conf.d/lawyer-app-upstream.conf 2>/dev/null | \
-    grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{print $1}' || echo "")
+    grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{gsub(/;.*/, "", $1); print $1}' || echo ""
 
 if [ -n "$CURRENT_FRONTEND_PORT" ] && [ -n "$CURRENT_BACKEND_PORT" ]; then
     log "当前生产环境端口 - 前端: $CURRENT_FRONTEND_PORT, 后端: $CURRENT_BACKEND_PORT"
