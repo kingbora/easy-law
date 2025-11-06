@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  BellOutlined,
+  CalendarOutlined,
   BookOutlined,
   FolderOpenOutlined,
   HomeOutlined,
@@ -13,7 +13,6 @@ import {
 } from '@ant-design/icons';
 import {
   Avatar,
-  Badge,
   Breadcrumb,
   Button,
   ConfigProvider,
@@ -32,6 +31,7 @@ import zhCN from 'antd/locale/zh_CN';
 import { authClient } from '@/lib/auth-client';
 import ProfileModal from '@/components/profile/ProfileModal';
 import ResetPasswordModal from '@/components/profile/ResetPasswordModal';
+import ScheduleDrawer from '@/components/schedule/ScheduleDrawer';
 import { ApiError } from '@/lib/api-client';
 import { updateUser, type UserRole } from '@/lib/users-api';
 import { useSessionStore } from '@/lib/stores/session-store';
@@ -112,6 +112,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [siderCollapsed, setSiderCollapsed] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   
   useEffect(() => {
     if (sessionInitialized || sessionLoading) {
@@ -205,7 +206,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }, [pathname]);
 
   const handleDropdownClick: MenuProps['onClick'] = async ({ key }) => {
-    if (key === 'profile') {
+    if (key === 'profile-info') {
       setProfileModalOpen(true);
       return;
     }
@@ -373,11 +374,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       },
       { type: 'divider' },
       {
-        key: 'profile',
-        label: '个人资料',
-        icon: <UserOutlined />
-      },
-      {
         key: 'password-reset',
         label: '重置密码',
         icon: <LockOutlined />
@@ -392,14 +388,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     ];
   }, [isSigningOut, sessionUser]);
 
-  const avatarInitial = useMemo(() => {
-    return sessionUser?.gender === 'female' ? '/images/female.png' : '/images/male.png';
-  }, [sessionUser?.gender]);
-
   const avatar = sessionUser?.image ? (
     <Avatar src={sessionUser.image} size={36} className={styles.avatarButton} />
-  ) : avatarInitial ? (
-    <Avatar src={avatarInitial} size={36} className={styles.avatarButton} />
   ) : (
     <Avatar size={36} icon={<UserOutlined />} className={styles.avatarButton} />
   );
@@ -454,13 +444,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <Breadcrumb className={styles.breadcrumb} items={breadcrumbItems} separator={<RightOutlined />} />
             <div className={styles.headerRight}>
               {headerAction}
-              <Badge dot>
-                <Button
-                  type='text'
-                  shape='circle'
-                  icon={<BellOutlined />}
-                />
-              </Badge>
+              <Button
+                shape="circle"
+                className={styles.calendarButton}
+                onClick={() => setScheduleOpen(true)}
+              >
+                <CalendarOutlined />
+              </Button>
               <Dropdown
                 menu={{ items: userMenu, onClick: handleDropdownClick }}
                 trigger={['click']}
@@ -491,6 +481,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           onSubmit={handlePasswordSubmit}
           confirmLoading={passwordSaving}
         />
+        <ScheduleDrawer open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
     </DashboardHeaderActionProvider>
     </ConfigProvider>
   );

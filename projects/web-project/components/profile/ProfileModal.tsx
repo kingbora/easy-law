@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Avatar, Form, Input, Modal, Progress, Radio, Space, Typography, Upload, message } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
@@ -63,13 +63,6 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
   const [compressionProgress, setCompressionProgress] = useState(0);
   const [compressedSize, setCompressedSize] = useState<number | null>(null);
 
-  const fallbackAvatar = useMemo(() => {
-    if (initialValues?.image) {
-      return initialValues.image;
-    }
-    return initialValues?.gender === 'female' ? '/images/female.png' : '/images/male.png';
-  }, [initialValues?.gender, initialValues?.image]);
-
   useEffect(() => {
     if (!open) {
       form.resetFields();
@@ -87,12 +80,12 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
       email: initialValues?.email ?? '',
       gender: initialValues?.gender ?? 'male'
     });
-    setAvatarPreview(initialValues?.image ?? fallbackAvatar);
+    setAvatarPreview(initialValues?.image ?? undefined);
     setFileList([]);
     setAvatarFile(null);
     setCompressionProgress(0);
     setCompressedSize(null);
-  }, [fallbackAvatar, form, initialValues, open]);
+  }, [form, initialValues, open]);
 
   const handleUploadChange = async ({ fileList: newFileList }: { fileList: UploadFile[] }) => {
     const latest = newFileList.slice(-1);

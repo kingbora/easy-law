@@ -1,0 +1,81 @@
+.drawerBody {
+  display: flex;
+  gap: 24px;
+}
+
+.calendarWrapper {
+  flex: 0 0 360px;
+}
+
+.todoWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.todoHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.todoList {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.dateCellList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dateCell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.dateCellItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.todoItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(22, 119, 255, 0.06);
+  margin-bottom: 8px;
+}
+
+.todoItem + .todoItem {
+  margin-top: 0;
+}
+
+.todoContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.todoDescription {
+  display: block;
+}
+
+.todoActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.emptyState {
+  padding: 24px 0;
+  text-align: center;
+}

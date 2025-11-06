@@ -36,6 +36,23 @@
   gap: 12px;
 }
 
+.calendarButton {
+  padding: 0 !important;
+  background-color: #f2f3f5 !important;
+  border-radius: 50% !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center;
+  border: none !important;
+  box-shadow: none !important;
+  transition: background-color 0.2s ease;
+}
+
+.calendarButton:hover,
+.calendarButton:focus-visible {
+  background-color: #e6e8eb !important;
+}
+
 .content {
   margin: 24px;
   min-height: calc(100vh - 112px);

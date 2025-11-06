@@ -5,10 +5,12 @@ import {
   createCaseCollection,
   deleteCase,
   getAssignableStaff,
+  getCaseTablePreferences,
   getCaseById,
   getCaseHearings,
   getCaseChangeLogs,
   listCases,
+  updateCaseTablePreferences,
   updateCase,
   updateCaseTimeNodes
 } from '../services/cases-service';
@@ -58,6 +60,33 @@ router.get(
     const department = typeof query.department === 'string' ? query.department : undefined;
     const result = await getAssignableStaff(session.user, department);
     res.json({ data: result });
+  })
+);
+
+router.get(
+  '/column-preferences',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+    const query = sanitizeQueryParams(req.query);
+    const tableKey = typeof query.tableKey === 'string' ? query.tableKey : undefined;
+
+    const preference = await getCaseTablePreferences(tableKey, session.user);
+
+    res.json({ data: preference });
+  })
+);
+
+router.put(
+  '/column-preferences',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+    const body = req.body ?? {};
+    const tableKey = typeof body.tableKey === 'string' ? body.tableKey : undefined;
+    const visibleColumns = (body as { visibleColumns?: unknown }).visibleColumns;
+
+    const preference = await updateCaseTablePreferences(tableKey, visibleColumns, session.user);
+
+    res.json({ data: preference });
   })
 );
 

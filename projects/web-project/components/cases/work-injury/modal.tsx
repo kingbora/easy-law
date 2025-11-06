@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { ClockCircleOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   App,
   Button,
@@ -37,6 +37,11 @@ import {
   type TrialStage,
   type AssignableStaffResponse
 } from '@/lib/cases-api';
+import {
+  CASE_TIME_NODE_DEFINITIONS,
+  CASE_TIME_NODE_LABEL_MAP,
+  CASE_TIME_NODE_ORDER_MAP
+} from '@/lib/case-time-nodes';
 import styles from './modal.module.scss';
 import { useSessionStore } from '@/lib/stores/session-store';
 import type { UserRole } from '@/lib/users-api';
@@ -68,22 +73,9 @@ const TAB_LABEL_MAP: Record<TabKey, string> = {
   fees: '费用明细'
 };
 
-const TAB_ICON_MAP: Partial<Record<TabKey, ReactNode>> = {
-  timeNodes: <ClockCircleOutlined />
-};
-
 const buildTabLabel = (key: TabKey): ReactNode => {
-  const icon = TAB_ICON_MAP[key];
   const label = TAB_LABEL_MAP[key];
-  if (!icon) {
-    return label;
-  }
-  return (
-    <span className={styles.tabLabel}>
-      {icon}
-      <span>{label}</span>
-    </span>
-  );
+  return label;
 };
 
 const isTabKey = (key: string): key is TabKey => key in TAB_LABEL_MAP;
@@ -123,36 +115,6 @@ const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
   second_instance: '二审',
   retrial: '再审'
 };
-
-const CASE_TIME_NODE_DEFINITIONS: ReadonlyArray<{ type: CaseTimeNodeType; label: string }> = [
-  { type: 'apply_employment_confirmation', label: '申请确认劳动关系' },
-  { type: 'labor_arbitration_decision', label: '确认劳动裁决时间' },
-  { type: 'submit_injury_certification', label: '提交工伤认定申请' },
-  { type: 'receive_injury_certification', label: '收到工伤认定书' },
-  { type: 'submit_disability_assessment', label: '提交劳动能力等级鉴定' },
-  { type: 'receive_disability_assessment', label: '收到鉴定书' },
-  { type: 'apply_insurance_arbitration', label: '申请工伤保险待遇仲裁' },
-  { type: 'insurance_arbitration_decision', label: '工伤保险待遇裁决时间' },
-  { type: 'file_lawsuit', label: '起诉立案' },
-  { type: 'lawsuit_review_approved', label: '立案审核通过' },
-  { type: 'final_judgement', label: '裁决时间' }
-];
-
-const CASE_TIME_NODE_LABEL_MAP = CASE_TIME_NODE_DEFINITIONS.reduce<Record<CaseTimeNodeType, string>>(
-  (acc, definition) => {
-    acc[definition.type] = definition.label;
-    return acc;
-  },
-  {} as Record<CaseTimeNodeType, string>
-);
-
-const CASE_TIME_NODE_ORDER_MAP = CASE_TIME_NODE_DEFINITIONS.reduce<Record<CaseTimeNodeType, number>>(
-  (acc, definition, index) => {
-    acc[definition.type] = index;
-    return acc;
-  },
-  {} as Record<CaseTimeNodeType, number>
-);
 
 const CASE_STATUS_OPTIONS: CaseStatusValue[] = ['open', 'closed', 'void'];
 
@@ -439,7 +401,7 @@ interface WorkInjuryCaseModalProps {
     values: HearingFormValues
   ) => Promise<WorkInjuryCaseFormValues | void>;
   onAddFollowUp?: (
-    values: { occurredOn: Dayjs; note: string | null }
+    values: { occurredOn: Dayjs; note: string }
   ) => Promise<WorkInjuryCaseFormValues | void>;
   onAddCollection?: (
     values: { amount: number; receivedAt: Dayjs }
@@ -1040,6 +1002,14 @@ export default function WorkInjuryCaseModal({
 
   const handleCancel = useCallback(async () => {
     if (isEditable) {
+      if (dirtySections.size === 0) {
+        form.resetFields();
+        syncFormsFromValues(cachedDisplayValues);
+        resetDirty();
+        onCancel();
+        return;
+      }
+
       const canLeave = await confirmDiscardChanges(activeTab);
       if (canLeave) {
         form.resetFields();
@@ -1057,7 +1027,7 @@ export default function WorkInjuryCaseModal({
       syncFormsFromValues(cachedDisplayValues);
       onCancel();
     }
-  }, [activeTab, cachedDisplayValues, confirmDiscardChanges, form, isEditable, onCancel, onRequestView, resetDirty, syncFormsFromValues]);
+  }, [activeTab, cachedDisplayValues, confirmDiscardChanges, dirtySections, form, isEditable, onCancel, onRequestView, resetDirty, syncFormsFromValues]);
 
   const handleBasicInfoReset = useCallback(() => {
     if (!canEditBasicInfo) {
@@ -1101,24 +1071,24 @@ export default function WorkInjuryCaseModal({
     if (!isEditable) {
       return;
     }
-    const latestHearing = hearingRecords.length ? hearingRecords[hearingRecords.length - 1] : null;
-    const defaultStage = availableTrialStages.length ? availableTrialStages[0] : null;
+
+    const currentValues = hearingForm.getFieldsValue() as HearingFormValues;
     const defaultTrialLawyerId =
       displayValues.lawyerInfo?.trialLawyerId ?? displayValues.adminInfo?.assignedLawyer ?? null;
 
     hearingForm.setFieldsValue({
-      trialLawyerId: defaultTrialLawyerId,
+      trialLawyerId: currentValues.trialLawyerId ?? defaultTrialLawyerId ?? null,
       hearingTime: null,
-      hearingLocation: latestHearing?.hearingLocation ?? null,
-      tribunal: latestHearing?.tribunal ?? null,
-      judge: latestHearing?.judge ?? null,
+      hearingLocation: null,
+      tribunal: null,
+      judge: null,
       caseNumber: null,
-      contactPhone: latestHearing?.contactPhone ?? null,
-      trialStage: defaultStage,
+      contactPhone: null,
+      trialStage: currentValues.trialStage ?? null,
       hearingResult: null
     });
     clearDirty('hearing');
-  }, [availableTrialStages, clearDirty, displayValues, hearingForm, hearingRecords, isEditable]);
+  }, [clearDirty, displayValues, hearingForm, isEditable]);
 
   const handleFollowUpReset = useCallback(() => {
     if (!isEditable) {
@@ -1446,7 +1416,7 @@ export default function WorkInjuryCaseModal({
     try {
       const updated = await onAddFollowUp({
         occurredOn: values.occurredOn,
-        note: values.note ?? null
+        note: values.note ?? ''
       });
       if (updated !== undefined) {
         applyUpdatedValues(updated);
@@ -1895,9 +1865,12 @@ export default function WorkInjuryCaseModal({
           </Form>
         </Spin>
       ) : (
-        <Typography.Text type="secondary" className={styles.emptyHint}>
-          暂无权限调整人员分配
-        </Typography.Text>
+        <>
+          <Form form={assignmentForm} component={false} />
+          <Typography.Text type="secondary" className={styles.emptyHint}>
+            暂无权限调整人员分配
+          </Typography.Text>
+        </>
       )}
     </div>
   );
@@ -1996,51 +1969,44 @@ export default function WorkInjuryCaseModal({
           </Form>
           <Divider dashed />
         </>
-      ) : null}
+      ) : (
+        <Form form={hearingForm} component={false} />
+      )}
       {renderHearingDisplay(displayValues)}
     </div>
   );
 
   const timeNodePane = (
     <div className={styles.sectionList}>
-      {isEditable ? (
+      {isEditable && canManageTimeNodes ? (
         <>
-          {canManageTimeNodes ? (
-            <>
-              <Typography.Title level={5}>维护时间节点</Typography.Title>
-              <Form
-                form={timeNodeForm}
-                layout="vertical"
-                component={false}
-                onValuesChange={() => markDirty('timeNodes')}
-              >
-                <Row gutter={16}>
-                  {CASE_TIME_NODE_DEFINITIONS.map(definition => (
-                    <Col span={12} key={definition.type}>
-                      <Form.Item label={definition.label} name={definition.type}>
-                        <DatePicker
-                          style={{ width: '100%' }}
-                          placeholder="请选择日期"
-                          allowClear
-                          format="YYYY-MM-DD"
-                        />
-                      </Form.Item>
-                    </Col>
-                  ))}
-                </Row>
-              </Form>
-              <Divider dashed />
-            </>
-          ) : (
-            <>
-              <Typography.Text type="secondary" className={styles.emptyHint}>
-                当前角色不可编辑时间节点
-              </Typography.Text>
-              <Divider dashed />
-            </>
-          )}
+          <Typography.Title level={5}>维护时间节点</Typography.Title>
+          <Form
+            form={timeNodeForm}
+            layout="vertical"
+            component={false}
+            onValuesChange={() => markDirty('timeNodes')}
+          >
+            <Row gutter={16}>
+              {CASE_TIME_NODE_DEFINITIONS.map(definition => (
+                <Col span={12} key={definition.type}>
+                  <Form.Item label={definition.label} name={definition.type}>
+                    <DatePicker
+                      style={{ width: '100%' }}
+                      placeholder="请选择日期"
+                      allowClear
+                      format="YYYY-MM-DD"
+                    />
+                  </Form.Item>
+                </Col>
+              ))}
+            </Row>
+          </Form>
+          <Divider dashed />
         </>
-      ) : null}
+      ) : (
+        <Form form={timeNodeForm} component={false} />
+      )}
       {renderTimeNodeDisplay(displayValues)}
     </div>
   );
@@ -2049,48 +2015,51 @@ export default function WorkInjuryCaseModal({
     <div className={styles.sectionList}>
       {isEditable ? (
         <>
-        {
-          onAddFollowUp ? (
-        <>
-          <Typography.Title level={5}>新增跟进备注</Typography.Title>
-          <Form
-            form={followUpForm}
-            layout="vertical"
-            component={false}
-            disabled={!canAddFollowUps}
-            onValuesChange={() => markDirty('followUp')}
-          >
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item
-                  label="发生日期"
-                  name="occurredOn"
-                  rules={[{ required: true, message: '请选择发生日期' }]}
-                >
-                  <DatePicker style={{ width: '100%' }} placeholder="请选择发生日期" />
-                </Form.Item>
-              </Col>
-              <Col span={24}>
-                <Form.Item
-                  label="备注"
-                  name="note"
-                  rules={[{ required: true, message: '请填写跟进备注' }]}
-                >
-                  <TextArea rows={4} maxLength={500} showCount placeholder="请填写跟进备注" />
-                </Form.Item>
-              </Col>
-            </Row>
-          </Form>
+          {onAddFollowUp ? (
+            <>
+              <Typography.Title level={5}>新增跟进备注</Typography.Title>
+              <Form
+                form={followUpForm}
+                layout="vertical"
+                component={false}
+                disabled={!canAddFollowUps}
+                onValuesChange={() => markDirty('followUp')}
+              >
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      label="发生日期"
+                      name="occurredOn"
+                      rules={[{ required: true, message: '请选择发生日期' }]}
+                    >
+                      <DatePicker style={{ width: '100%' }} placeholder="请选择发生日期" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={24}>
+                    <Form.Item
+                      label="备注"
+                      name="note"
+                      rules={[{ required: true, message: '请填写跟进备注' }]}
+                    >
+                      <TextArea rows={4} maxLength={500} showCount placeholder="请填写跟进备注" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </Form>
+            </>
+          ) : (
+            <>
+              <Form form={followUpForm} component={false} />
+              <Typography.Text type="secondary" className={styles.emptyHint}>
+                暂无权限新增跟进备注
+              </Typography.Text>
+            </>
+          )}
+          <Divider dashed />
         </>
       ) : (
-        <Typography.Text type="secondary" className={styles.emptyHint}>
-          暂无权限新增跟进备注
-        </Typography.Text>
-      )
-        }
-      <Divider dashed />
-        </>
-      ) : null}
+        <Form form={followUpForm} component={false} />
+      )}
       {renderFollowUpDisplay(displayValues)}
     </div>
   );
@@ -2562,7 +2531,9 @@ export default function WorkInjuryCaseModal({
           </Form>
           <Divider dashed />
         </>
-      ) : null}
+      ) : (
+        <Form form={collectionForm} component={false} />
+      )}
       <Typography.Title level={5}>费用信息</Typography.Title>
       {onUpdateFees ? (
         <Form
@@ -2599,14 +2570,25 @@ export default function WorkInjuryCaseModal({
           </Space>
         </Form>
       ) : (
-        <Typography.Text type="secondary" className={styles.emptyHint}>
-          暂无权限修改费用信息
-        </Typography.Text>
+        <>
+          <Form form={feeForm} component={false} />
+          <Typography.Text type="secondary" className={styles.emptyHint}>
+            暂无权限修改费用信息
+          </Typography.Text>
+        </>
       )}
       {renderFeeDisplay(displayValues)}
     </div>
   );
 
+
+  const canViewHearingTab = sessionUser?.role !== 'sale';
+  const canViewStaffAndFeesTab =
+    sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant';
+
+  const shouldRenderAssignmentHiddenForm = !isEditable || !canViewStaffAndFeesTab;
+  const shouldRenderHearingHiddenForm = !isEditable || !canViewHearingTab;
+  const shouldRenderFeesHiddenForm = !isEditable || !canViewStaffAndFeesTab;
 
   type TabItem = NonNullable<TabsProps['items']>[number];
 
@@ -2624,7 +2606,7 @@ export default function WorkInjuryCaseModal({
       }
     ];
 
-    if (sessionUser?.role !== 'sale') {
+    if (canViewHearingTab) {
       items.push({
         key: 'hearing',
         label: buildTabLabel('hearing'),
@@ -2632,7 +2614,7 @@ export default function WorkInjuryCaseModal({
       });
     }
 
-    if (sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant') {
+    if (canViewStaffAndFeesTab) {
       items.push({
         key: 'staff',
         label: buildTabLabel('staff'),
@@ -2659,7 +2641,7 @@ export default function WorkInjuryCaseModal({
       }
     );
 
-    if (sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant') {
+    if (canViewStaffAndFeesTab) {
       items.push({
         key: 'fees',
         label: buildTabLabel('fees'),
@@ -2779,7 +2761,7 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'timeNodes' && onSaveTimeNodes) {
+      if (activeTab === 'timeNodes' && onSaveTimeNodes && canManageTimeNodes) {
         const timeNodesDirty = hasTabChanges('timeNodes');
         buttons.push(
           <Button
@@ -2895,7 +2877,7 @@ export default function WorkInjuryCaseModal({
       title={mode === 'create' ? modalTitleText : modalTitle}
       width={1000}
       maskClosable={false}
-      destroyOnClose
+      destroyOnHidden
       onCancel={handleCancel}
       footer={
         isEditable ? editableFooter : viewFooter
@@ -2909,18 +2891,28 @@ export default function WorkInjuryCaseModal({
         }
       }}
     >
-      <Form form={form} layout="vertical" className={styles.form} onValuesChange={handleValuesChange}>
-        <div className={styles.viewContainer}>
-          <Tabs
-            activeKey={activeTab}
-            onChange={handleTabChange}
-            tabPosition="left"
-            items={tabItems}
-            className={styles.viewTabs}
-            destroyInactiveTabPane={false}
-          />
-        </div>
-      </Form>
+      <>
+        <Form form={form} layout="vertical" className={styles.form} onValuesChange={handleValuesChange}>
+          <div className={styles.viewContainer}>
+            <Tabs
+              activeKey={activeTab}
+              onChange={handleTabChange}
+              tabPosition="left"
+              items={tabItems}
+              className={styles.viewTabs}
+              destroyInactiveTabPane={false}
+            />
+          </div>
+        </Form>
+        {shouldRenderAssignmentHiddenForm ? <Form form={assignmentForm} component={false} /> : null}
+        {shouldRenderHearingHiddenForm ? <Form form={hearingForm} component={false} /> : null}
+        {shouldRenderFeesHiddenForm ? (
+          <>
+            <Form form={collectionForm} component={false} />
+            <Form form={feeForm} component={false} />
+          </>
+        ) : null}
+      </>
     </Modal>
   );
 }

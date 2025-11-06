@@ -2,27 +2,28 @@ import { and, count, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 
 import { db } from '../db/client';
 import { departmentEnum, users } from '../db/schema/auth-schema';
-import type {
-  caseLevelEnum,
-  caseTypeEnum,
-  participantEntityEnum,
-  participantRoleEnum,
-} from '../db/schema/case-schema';
 import {
   caseChangeLogs,
   caseCollections,
   caseParticipants,
   cases,
   caseHearings,
+  caseTablePreferences,
   caseTimeNodeTypeEnum,
   caseTimeNodes,
   caseTimeline,
   caseStatusEnum,
   trialStageEnum,
-  type CaseChangeDetail
+  type CaseChangeDetail,
+  type caseLevelEnum,
+  type caseTypeEnum,
+  type participantEntityEnum,
+  type participantRoleEnum,
 } from '../db/schema/case-schema';
 import type { SessionUser } from '../utils/auth-session';
 import { BadRequestError } from '../utils/http-errors';
+
+import { syncCaseHearingEvents } from './calendar-events-service';
 
 export class AuthorizationError extends Error {
   status: number;
@@ -50,6 +51,79 @@ const CASE_COLLECTION_ALLOWED_ROLES = new Set<SessionUser['role']>([
   'admin',
   'administration'
 ]);
+
+const WORK_INJURY_CASE_TABLE_KEY = 'work_injury_cases';
+
+const CASE_TABLE_ALLOWED_KEYS = new Set<string>([WORK_INJURY_CASE_TABLE_KEY]);
+
+const CASE_TABLE_ALLOWED_COLUMNS = [
+  'caseNumber',
+  'caseStatus',
+  'caseType',
+  'caseLevel',
+  'provinceCity',
+  'assignedLawyerName',
+  'assignedAssistantName',
+  'assignedSaleName',
+  'entryDate',
+  'createdAt',
+  'updatedAt'
+] as const;
+
+export type CaseTableColumnKey = (typeof CASE_TABLE_ALLOWED_COLUMNS)[number];
+
+const CASE_TABLE_COLUMN_SET = new Set<string>(CASE_TABLE_ALLOWED_COLUMNS);
+
+const DEFAULT_CASE_TABLE_COLUMNS: CaseTableColumnKey[] = [
+  'caseNumber',
+  'caseStatus',
+  'caseType',
+  'caseLevel',
+  'provinceCity',
+  'assignedLawyerName',
+  'assignedAssistantName'
+];
+
+export interface CaseTablePreferenceDTO {
+  tableKey: string;
+  visibleColumns: CaseTableColumnKey[];
+}
+
+function resolveCaseTableKey(tableKey?: string): string {
+  if (tableKey && CASE_TABLE_ALLOWED_KEYS.has(tableKey)) {
+    return tableKey;
+  }
+  return WORK_INJURY_CASE_TABLE_KEY;
+}
+
+function sanitizeVisibleColumns(
+  columns: unknown,
+  fallback: CaseTableColumnKey[] = DEFAULT_CASE_TABLE_COLUMNS
+): CaseTableColumnKey[] {
+  if (!Array.isArray(columns)) {
+    return [...fallback];
+  }
+
+  const result: CaseTableColumnKey[] = [];
+
+  for (const value of columns) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    if (!CASE_TABLE_COLUMN_SET.has(value)) {
+      continue;
+    }
+
+    if (result.includes(value as CaseTableColumnKey)) {
+      continue;
+    }
+
+    result.push(value as CaseTableColumnKey);
+  }
+
+  return result.length > 0 ? result : [...fallback];
+}
 
 const BASIC_INFO_FIELD_KEYS = [
   'caseType',
@@ -1523,6 +1597,65 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
   };
 }
 
+export async function getCaseTablePreferences(
+  tableKey: string | undefined,
+  user: SessionUser
+): Promise<CaseTablePreferenceDTO> {
+  ensureCasePermission(user, 'list');
+
+  if (!user.id) {
+    throw new AuthorizationError('当前账号无效，请重新登录', 401);
+  }
+
+  const resolvedKey = resolveCaseTableKey(tableKey);
+
+  const existing = await db.query.caseTablePreferences.findFirst({
+    where: and(eq(caseTablePreferences.userId, user.id), eq(caseTablePreferences.tableKey, resolvedKey))
+  });
+
+  const visibleColumns = sanitizeVisibleColumns(existing?.visibleColumns ?? DEFAULT_CASE_TABLE_COLUMNS);
+
+  return {
+    tableKey: resolvedKey,
+    visibleColumns
+  } satisfies CaseTablePreferenceDTO;
+}
+
+export async function updateCaseTablePreferences(
+  tableKey: string | undefined,
+  columns: unknown,
+  user: SessionUser
+): Promise<CaseTablePreferenceDTO> {
+  ensureCasePermission(user, 'list');
+
+  if (!user.id) {
+    throw new AuthorizationError('当前账号无效，请重新登录', 401);
+  }
+
+  const resolvedKey = resolveCaseTableKey(tableKey);
+  const visibleColumns = sanitizeVisibleColumns(columns);
+
+  await db
+    .insert(caseTablePreferences)
+    .values({
+      userId: user.id,
+      tableKey: resolvedKey,
+      visibleColumns
+    })
+    .onConflictDoUpdate({
+      target: [caseTablePreferences.userId, caseTablePreferences.tableKey],
+      set: {
+        visibleColumns,
+        updatedAt: sql`now()`
+      }
+    });
+
+  return {
+    tableKey: resolvedKey,
+    visibleColumns
+  } satisfies CaseTablePreferenceDTO;
+}
+
 export async function getCaseById(id: string, user: SessionUser) {
   ensureCasePermission(user, 'list');
 
@@ -1633,6 +1766,8 @@ export async function createCase(input: CaseInput, user: SessionUser) {
     if (hearingValues.length > 0) {
       await tx.insert(caseHearings).values(hearingValues);
     }
+
+    await syncCaseHearingEvents(tx, caseId);
 
     const actor = extractActorContext(user);
     await tx.insert(caseChangeLogs).values({
@@ -1807,6 +1942,8 @@ export async function updateCase(id: string, input: CaseInput, user: SessionUser
         await tx.insert(caseHearings).values(hearingValues);
       }
     }
+
+    await syncCaseHearingEvents(tx, id);
 
     const fullRecord = await tx.query.cases.findFirst({
       where: eq(cases.id, id),

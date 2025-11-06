@@ -151,6 +151,24 @@ export interface CaseRecord {
   hearings: CaseHearingRecord[];
 }
 
+export type CaseTableColumnKey =
+  | 'caseNumber'
+  | 'caseStatus'
+  | 'caseType'
+  | 'caseLevel'
+  | 'provinceCity'
+  | 'assignedLawyerName'
+  | 'assignedAssistantName'
+  | 'assignedSaleName'
+  | 'entryDate'
+  | 'createdAt'
+  | 'updatedAt';
+
+export interface CaseTablePreference {
+  tableKey: string;
+  visibleColumns: CaseTableColumnKey[];
+}
+
 export interface AssignableStaffMember {
   id: string;
   name: string | null;
@@ -369,5 +387,27 @@ export async function fetchAssignableStaff(params?: {
   const response = await apiFetch<{ data: AssignableStaffResponse }>(
     `/api/cases/assignable-staff${queryString ? `?${queryString}` : ''}`
   );
+  return response.data;
+}
+
+export async function fetchCaseTablePreferences(tableKey: string): Promise<CaseTablePreference> {
+  const query = tableKey ? `?tableKey=${encodeURIComponent(tableKey)}` : '';
+  const response = await apiFetch<{ data: CaseTablePreference }>(
+    `/api/cases/column-preferences${query}`
+  );
+  return response.data;
+}
+
+export async function updateCaseTablePreferences(
+  tableKey: string,
+  visibleColumns: CaseTableColumnKey[]
+): Promise<CaseTablePreference> {
+  const response = await apiFetch<{ data: CaseTablePreference }>(`/api/cases/column-preferences`, {
+    method: 'PUT',
+    body: {
+      tableKey,
+      visibleColumns
+    }
+  });
   return response.data;
 }

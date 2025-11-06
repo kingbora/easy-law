@@ -169,6 +169,26 @@ export const caseChangeLogs = pgTable('case_change_log', {
   createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
+export const caseTablePreferences = pgTable(
+  'case_table_preference',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tableKey: text('table_key').notNull(),
+    visibleColumns: jsonb('visible_columns').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull()
+  },
+  (table) => ({
+    userTablePreferenceUnique: uniqueIndex('case_table_preference_user_key_ui').on(
+      table.userId,
+      table.tableKey
+    )
+  })
+);
+
 export const casesRelations = relations(cases, ({ many, one }) => ({
   creator: one(users, {
     fields: [cases.creatorId],
