@@ -365,12 +365,12 @@ export default function TeamMemberModal({
   const footer = mode === 'view'
     ? viewFooter
     : [
-        <Button key="cancel" onClick={onCancel}>
-          取消
-        </Button>,
-        <Button key="submit" type="primary" loading={confirmLoading} onClick={handleSubmit}>
-          {mode === 'create' ? '创建' : '保存'}
-        </Button>
+      <Button key="cancel" onClick={onCancel}>
+        取消
+      </Button>,
+      <Button key="submit" type="primary" loading={confirmLoading} onClick={handleSubmit}>
+        {mode === 'create' ? '创建' : '保存'}
+      </Button>
       ];
 
   return (

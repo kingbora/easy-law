@@ -77,9 +77,9 @@ export default function FollowUpModal() {
           <DatePicker style={{ width: '100%' }} placeholder="请选择发生日期" />
         </Form.Item>
         <Form.Item 
-        label="备注" 
-        name="note"
-        rules={[{ required: true, message: '请填写跟进备注' }]}
+          label="备注" 
+          name="note"
+          rules={[{ required: true, message: '请填写跟进备注' }]}
         >
           <Input.TextArea
             rows={4}

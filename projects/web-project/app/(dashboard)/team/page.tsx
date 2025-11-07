@@ -723,7 +723,7 @@ export default function TeamManagementPage() {
             onChange: handlePaginationChange,
             onShowSizeChange: handlePageSizeChange
           }}
-              expandable={{
+          expandable={{
                 defaultExpandAllRows: true,
                 expandIconColumnIndex: 0,
               }}

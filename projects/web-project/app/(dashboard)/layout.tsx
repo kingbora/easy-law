@@ -356,20 +356,20 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         key: 'profile-info',
         label: (
           <div style={{ maxWidth: 240 }}>
-      <Typography.Text strong style={{ display: 'block' }}>
-        {sessionUser?.name ?? sessionUser?.email ?? '未设置昵称'}
-      </Typography.Text>
-      {
+            <Typography.Text strong style={{ display: 'block' }}>
+              {sessionUser?.name ?? sessionUser?.email ?? '未设置昵称'}
+            </Typography.Text>
+            {
         sessionUser?.role !== 'super_admin' && (
           <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
-        部门：{sessionUser?.department ? DEPARTMENT_LABEL_MAP[sessionUser.department] : '未分配部门'}
-      </Typography.Text>
+            部门：{sessionUser?.department ? DEPARTMENT_LABEL_MAP[sessionUser.department] : '未分配部门'}
+          </Typography.Text>
         )
       }
-      <Typography.Text type="secondary" style={{ display: 'block', marginTop: 2 }}>
-        角色：{sessionUser ? ROLE_LABEL_MAP[sessionUser.role] : '未知角色'}
-      </Typography.Text>
-    </div>
+            <Typography.Text type="secondary" style={{ display: 'block', marginTop: 2 }}>
+              角色：{sessionUser ? ROLE_LABEL_MAP[sessionUser.role] : '未知角色'}
+            </Typography.Text>
+          </div>
         )
       },
       { type: 'divider' },
@@ -396,8 +396,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <ConfigProvider 
-    locale={zhCN}
-    theme={{
+      locale={zhCN}
+      theme={{
       components: {
         Layout: {
           headerBg: '#ffffff',
@@ -413,56 +413,56 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       }
     }}>
       <DashboardHeaderActionProvider setAction={setHeaderAction}>
-      <Layout className={styles.layout} hasSider>
-        <Sider
-          width={220}
-          className={styles.sidebar}
-          breakpoint="lg"
-          collapsedWidth={64}
-          theme="light"
-          onCollapse={(collapsed) => setSiderCollapsed(collapsed)}
-          onBreakpoint={(broken) => setSiderCollapsed(broken)}
+        <Layout className={styles.layout} hasSider>
+          <Sider
+            width={220}
+            className={styles.sidebar}
+            breakpoint="lg"
+            collapsedWidth={64}
+            theme="light"
+            onCollapse={(collapsed) => setSiderCollapsed(collapsed)}
+            onBreakpoint={(broken) => setSiderCollapsed(broken)}
         >
-          <div className={styles.logo}>
-            <Image
-              priority
-              src={siderCollapsed ? '/images/logo-icon.png' : '/images/logo.jpg'}
-              width={siderCollapsed ? 32 : 120}
-              height={siderCollapsed ? 32 : 50}
-              alt="simple law"
+            <div className={styles.logo}>
+              <Image
+                priority
+                src={siderCollapsed ? '/images/logo-icon.png' : '/images/logo.jpg'}
+                width={siderCollapsed ? 32 : 120}
+                height={siderCollapsed ? 32 : 50}
+                alt="simple law"
             />
-          </div>
-          <Menu
-            mode="inline"
-            items={menuItems}
-            selectedKeys={selectedKeys}
-            defaultOpenKeys={['cases', 'clients']}
-          />
-        </Sider>
-        <Layout>
-          <Header className={styles.header}>
-            <Breadcrumb className={styles.breadcrumb} items={breadcrumbItems} separator={<RightOutlined />} />
-            <div className={styles.headerRight}>
-              {headerAction}
-              <Button
-                shape="circle"
-                className={styles.calendarButton}
-                onClick={() => setScheduleOpen(true)}
-              >
-                <CalendarOutlined />
-              </Button>
-              <Dropdown
-                menu={{ items: userMenu, onClick: handleDropdownClick }}
-                trigger={['click']}
-                placement="bottomRight"
-              >
-                {avatar}
-              </Dropdown>
             </div>
-          </Header>
-          <Content className={styles.content}>{children}</Content>
+            <Menu
+              mode="inline"
+              items={menuItems}
+              selectedKeys={selectedKeys}
+              defaultOpenKeys={['cases', 'clients']}
+          />
+          </Sider>
+          <Layout>
+            <Header className={styles.header}>
+              <Breadcrumb className={styles.breadcrumb} items={breadcrumbItems} separator={<RightOutlined />} />
+              <div className={styles.headerRight}>
+                {headerAction}
+                <Button
+                  shape="circle"
+                  className={styles.calendarButton}
+                  onClick={() => setScheduleOpen(true)}
+              >
+                  <CalendarOutlined />
+                </Button>
+                <Dropdown
+                  menu={{ items: userMenu, onClick: handleDropdownClick }}
+                  trigger={['click']}
+                  placement="bottomRight"
+              >
+                  {avatar}
+                </Dropdown>
+              </div>
+            </Header>
+            <Content className={styles.content}>{children}</Content>
+          </Layout>
         </Layout>
-      </Layout>
         <ProfileModal
           open={profileModalOpen}
           initialValues={{
@@ -482,7 +482,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           confirmLoading={passwordSaving}
         />
         <ScheduleDrawer open={scheduleOpen} onClose={() => setScheduleOpen(false)} />
-    </DashboardHeaderActionProvider>
+      </DashboardHeaderActionProvider>
     </ConfigProvider>
   );
 }

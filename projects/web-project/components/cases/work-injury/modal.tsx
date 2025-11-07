@@ -1495,9 +1495,9 @@ export default function WorkInjuryCaseModal({
     </Button>,
     ...(canShowEditButton
       ? [
-          <Button key="edit" type="primary" onClick={onRequestEdit}>
-            编辑案件
-          </Button>
+        <Button key="edit" type="primary" onClick={onRequestEdit}>
+          编辑案件
+        </Button>
         ]
       : [])
   ];
@@ -1596,19 +1596,19 @@ export default function WorkInjuryCaseModal({
               </Col>
               <Col span={8}>
                 <Form.Item 
-                {...restField}
-                 name={[name, 'phone']} 
-                 label="电话"
-                 rules={[{required: field === 'claimants', message: '请输入联系电话'}]}
+                  {...restField}
+                  name={[name, 'phone']} 
+                  label="电话"
+                  rules={[{required: field === 'claimants', message: '请输入联系电话'}]}
                  >
                   <Input placeholder="请输入联系电话" />
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item 
-                {...restField} 
-                name={[name, 'address']} 
-                label="地址"
+                  {...restField} 
+                  name={[name, 'address']} 
+                  label="地址"
                 >
                   <Input placeholder="请输入地址" />
                 </Form.Item>
@@ -2309,16 +2309,16 @@ export default function WorkInjuryCaseModal({
         </Descriptions>
         {
           canShowCollectionSection ? 
-          <>
-          <Divider dashed>回款记录</Divider>
-        {collectionItems.length ? (
-          <Timeline items={collectionItems} />
+            <>
+              <Divider dashed>回款记录</Divider>
+              {collectionItems.length ? (
+                <Timeline items={collectionItems} />
         ) : (
           <Typography.Text type="secondary" className={styles.emptyHint}>
             暂无回款记录
           </Typography.Text>
         )}
-          </> : null
+            </> : null
         }
       </div>
     );

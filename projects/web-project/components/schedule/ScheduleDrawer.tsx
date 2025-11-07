@@ -181,7 +181,7 @@ const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
     const cellEvents = eventsByDate.get(dateKey) ?? [];
     if (cellEvents.length !== 0) {
       return (
-      <ul className={styles.dateCellList}>
+        <ul className={styles.dateCellList}>
           {cellEvents.slice(0, 3).map((event) => (
             <li key={event.id} className={styles.dateCellItem}>
               <Badge color={event.tagColor || CUSTOM_EVENT_COLOR} />

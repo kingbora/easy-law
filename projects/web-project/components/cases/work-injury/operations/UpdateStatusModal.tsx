@@ -76,59 +76,59 @@ export default function UpdateStatusModal() {
 	};
 
 	return (
-		<Modal
-			centered
-			destroyOnHidden
-			open={open}
-			title="更新案件状态"
-			okText="保存"
-			cancelText="取消"
-			onCancel={() => {
+  <Modal
+    centered
+    destroyOnHidden
+    open={open}
+    title="更新案件状态"
+    okText="保存"
+    cancelText="取消"
+    onCancel={() => {
 				form.resetFields();
 				close();
 			}}
-			onOk={handleOk}
-			confirmLoading={submitting}
+    onOk={handleOk}
+    confirmLoading={submitting}
 		>
-			<Form form={form} layout="vertical" onValuesChange={handleValuesChange}>
-				<Form.Item
-					label="案件状态"
-					name="caseStatus"
-					rules={[{ required: true, message: '请选择案件状态' }]}
+    <Form form={form} layout="vertical" onValuesChange={handleValuesChange}>
+      <Form.Item
+        label="案件状态"
+        name="caseStatus"
+        rules={[{ required: true, message: '请选择案件状态' }]}
 				>
-					<Select
-						options={CASE_STATUS_OPTIONS.map((value) => ({
+        <Select
+          options={CASE_STATUS_OPTIONS.map((value) => ({
 							label: CASE_STATUS_LABEL_MAP[value] ?? value,
 							value
 						}))}
-						placeholder="请选择案件状态"
+          placeholder="请选择案件状态"
 					/>
-				</Form.Item>
-				{selectedStatus === 'closed' ? (
-					<Form.Item
-						label="结案方式"
-						name="closedReason"
-						rules={[{ required: true, message: '请选择结案方式' }]}
+      </Form.Item>
+      {selectedStatus === 'closed' ? (
+        <Form.Item
+          label="结案方式"
+          name="closedReason"
+          rules={[{ required: true, message: '请选择结案方式' }]}
 					>
-						<Select
-							options={CLOSED_REASON_OPTIONS.map((value) => ({ label: value, value }))}
-							placeholder="请选择结案方式"
+          <Select
+            options={CLOSED_REASON_OPTIONS.map((value) => ({ label: value, value }))}
+            placeholder="请选择结案方式"
 						/>
-					</Form.Item>
+        </Form.Item>
 				) : null}
-				{selectedStatus === 'void' ? (
-					<Form.Item
-						label="废单原因"
-						name="voidReason"
-						rules={[{ required: true, message: '请选择废单原因' }]}
+      {selectedStatus === 'void' ? (
+        <Form.Item
+          label="废单原因"
+          name="voidReason"
+          rules={[{ required: true, message: '请选择废单原因' }]}
 					>
-						<Select
-							options={VOID_REASON_OPTIONS.map((value) => ({ label: value, value }))}
-							placeholder="请选择废单原因"
+          <Select
+            options={VOID_REASON_OPTIONS.map((value) => ({ label: value, value }))}
+            placeholder="请选择废单原因"
 						/>
-					</Form.Item>
+        </Form.Item>
 				) : null}
-			</Form>
-		</Modal>
+    </Form>
+  </Modal>
 	);
 }

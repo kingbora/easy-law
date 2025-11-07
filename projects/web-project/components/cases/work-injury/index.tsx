@@ -1751,46 +1751,46 @@ export default function WorkInjuryCasesPage() {
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
       <Card>
         <Form
-            form={filterForm}
-            layout="inline"
-            onFinish={handleFilterSubmit}
-            style={{ rowGap: 16 }}
+          form={filterForm}
+          layout="inline"
+          onFinish={handleFilterSubmit}
+          style={{ rowGap: 16 }}
           >
-            <Form.Item label="案件类型" name="caseType">
-              <Select
-                allowClear
-                placeholder="全部类型"
-                options={caseTypeOptions}
-                style={{ minWidth: 160 }}
+          <Form.Item label="案件类型" name="caseType">
+            <Select
+              allowClear
+              placeholder="全部类型"
+              options={caseTypeOptions}
+              style={{ minWidth: 160 }}
               />
-            </Form.Item>
-            <Form.Item label="案件级别" name="caseLevel">
-              <Select
-                allowClear
-                placeholder="全部级别"
-                options={caseLevelOptions}
-                style={{ minWidth: 160 }}
+          </Form.Item>
+          <Form.Item label="案件级别" name="caseLevel">
+            <Select
+              allowClear
+              placeholder="全部级别"
+              options={caseLevelOptions}
+              style={{ minWidth: 160 }}
               />
-            </Form.Item>
-            <Form.Item label="案件状态" name="caseStatus">
-              <Select
-                allowClear
-                placeholder="全部状态"
-                options={caseStatusSelectOptions}
-                style={{ minWidth: 160 }}
+          </Form.Item>
+          <Form.Item label="案件状态" name="caseStatus">
+            <Select
+              allowClear
+              placeholder="全部状态"
+              options={caseStatusSelectOptions}
+              style={{ minWidth: 160 }}
               />
-            </Form.Item>
-            <Form.Item>
-              <Button type="primary" htmlType="submit">
-                搜索
-              </Button>
-            </Form.Item>
-            <Form.Item>
-              <Button onClick={handleFilterReset} disabled={!hasActiveFilters}>
-                重置
-              </Button>
-            </Form.Item>
-          </Form>
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit">
+              搜索
+            </Button>
+          </Form.Item>
+          <Form.Item>
+            <Button onClick={handleFilterReset} disabled={!hasActiveFilters}>
+              重置
+            </Button>
+          </Form.Item>
+        </Form>
       </Card>
       <Card
         title={<Typography.Text strong>案件列表</Typography.Text>}
@@ -1900,8 +1900,8 @@ export default function WorkInjuryCasesPage() {
         onRequestEdit={handleCaseModalEdit}
         onRequestView={handleCaseModalView}
         onCancel={closeCaseModal}
-  onSaveBasicInfo={caseModalMode === 'update' ? handleCaseModalBasicInfoSave : undefined}
-  onSaveParties={caseModalMode === 'update' ? handleCaseModalPartiesSave : undefined}
+        onSaveBasicInfo={caseModalMode === 'update' ? handleCaseModalBasicInfoSave : undefined}
+        onSaveParties={caseModalMode === 'update' ? handleCaseModalPartiesSave : undefined}
         onSaveAssignment={handleCaseModalAssignmentSave}
         onSaveCaseStatus={handleCaseModalStatusSave}
         onAddHearing={handleCaseModalHearingAdd}
