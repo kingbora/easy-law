@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { Button, Card, Form, Input, Popconfirm, Result, Select, Space, Table, Tag, message } from 'antd';
+import { App, Button, Card, Form, Input, Popconfirm, Result, Select, Space, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined } from '@ant-design/icons';
 
@@ -89,6 +89,7 @@ const ESTIMATED_ROW_HEIGHT = 56;
 const RESERVED_VERTICAL_SPACE = 360;
 
 export default function TeamManagementPage() {
+  const { message } = App.useApp();
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [submitting, setSubmitting] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
@@ -125,7 +126,7 @@ export default function TeamManagementPage() {
       const errorMessage = error instanceof ApiError ? error.message : '获取成员列表失败，请稍后重试';
       message.error(errorMessage);
     });
-  }, [loadTeamMembers, teamInitialized]);
+  }, [loadTeamMembers, message, teamInitialized]);
 
   useEffect(() => {
     filterForm.setFieldsValue({
@@ -348,7 +349,7 @@ export default function TeamManagementPage() {
       return;
     }
     setModalState({ open: true, mode: 'create' });
-  }, [creatableRoleOptions.length, hasTeamAccess]);
+  }, [creatableRoleOptions.length, hasTeamAccess, message]);
 
   const headerAction = useMemo(() => {
     if (!hasTeamAccess) {
@@ -520,7 +521,6 @@ export default function TeamManagementPage() {
           upsertTeamMember(nextMember);
           message.success('成员信息已更新');
         } else {
-          
           const created = await createUser({
             ...payload,
             creatorId: currentUser.id
@@ -537,7 +537,7 @@ export default function TeamManagementPage() {
         setSubmitting(false);
       }
     },
-  [canManageMember, closeModal, currentUser, hasTeamAccess, modalState, upsertTeamMember]
+    [canManageMember, closeModal, currentUser, hasTeamAccess, message, modalState, upsertTeamMember]
   );
 
   const handleDeleteMember = useCallback(
@@ -553,8 +553,8 @@ export default function TeamManagementPage() {
 
       setDeletingIds((prev) => ({ ...prev, [id]: true }));
       try {
-  await deleteUser(id);
-  removeTeamMember(id);
+        await deleteUser(id);
+        removeTeamMember(id);
         if (modalState.open && modalState.mode !== 'create' && modalState.record?.id === id) {
           closeModal();
         }
@@ -570,7 +570,7 @@ export default function TeamManagementPage() {
         });
       }
     },
-  [canManageMember, closeModal, members, modalState, removeTeamMember]
+    [canManageMember, closeModal, members, message, modalState, removeTeamMember]
   );
 
   const columns = useMemo<ColumnsType<TeamMember>>(() => {

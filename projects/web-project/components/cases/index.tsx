@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import dayjs, { type Dayjs } from 'dayjs';
-import { Button, Card, Checkbox, Dropdown, Form, List, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { App, Button, Card, Checkbox, Dropdown, Form, List, Modal, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import { ArrowDownOutlined, ArrowUpOutlined, EllipsisOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
@@ -14,6 +14,11 @@ import WorkInjuryCaseModal, {
   type WorkInjuryCaseFormValues,
   type WorkInjuryCaseTabKey
 } from './modal';
+import {
+  CASE_DEPARTMENT_CONFIG,
+  DEFAULT_CASE_DEPARTMENT,
+  type CaseTableActionKey
+} from './department-config';
 import TimeNodeModal from './operations/TimeNodeModal';
 import UpdateStatusModal from './operations/UpdateStatusModal';
 import { useDashboardHeaderAction } from '@/app/(dashboard)/header-context';
@@ -32,6 +37,7 @@ import {
   type CaseHearingRecord,
   type CaseParticipantInput,
   type CaseParticipantsInput,
+  type CaseParticipantsGroup,
   type CaseParticipant,
   type CasePayload,
   type CaseRecord,
@@ -42,6 +48,11 @@ import {
   type TrialStage,
   type CaseType,
   type CaseCollectionInput,
+  type CaseCategory,
+  type ContractFormType,
+  type ContractQuoteType,
+  type LitigationFeeType,
+  type TravelFeeType,
   type CaseChangeLog,
   type CaseTableColumnKey,
   updateCase as updateCaseApi,
@@ -53,7 +64,6 @@ import FollowUpModal from './operations/FollowUpModal';
 import styles from './styles.module.scss';
 
 const DEFAULT_PAGE_SIZE = 10;
-
 const CASE_TYPE_LABEL_MAP: Record<CaseType, string> = {
   work_injury: '工伤',
   personal_injury: '人损',
@@ -99,53 +109,41 @@ const CASE_TIME_NODE_EDIT_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRol
   'assistant'
 ]);
 
-const PAGE_DEPARTMENT: UserDepartment = 'work_injury';
+const sortParticipantsByOrder = (participants: CaseParticipant[] = []): CaseParticipant[] =>
+  [...participants].sort((a, b) => {
+    const orderA = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+    const orderB = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+
+    const nameA = (a.name ?? '').trim();
+    const nameB = (b.name ?? '').trim();
+    return nameA.localeCompare(nameB, 'zh-CN');
+  });
+
+const collectNonOpponentPartyNames = (participants?: CaseParticipantsGroup): string[] => {
+  if (!participants || !participants.claimants || participants.claimants.length === 0) {
+    return [];
+  }
+
+  return sortParticipantsByOrder(participants.claimants)
+    .map((item) => item.name.trim())
+    .filter((name) => name.length > 0);
+};
 
 const TRIAL_STAGE_SEQUENCE: TrialStage[] = ['first_instance', 'second_instance', 'retrial'];
 
 const CASE_NUMBER_STAGE_PRIORITY: TrialStage[] = ['retrial', 'second_instance', 'first_instance'];
 
-const WORK_INJURY_CASE_TABLE_KEY = 'work_injury_cases';
-
-const CASE_TABLE_COLUMN_OPTIONS: Array<{ key: CaseTableColumnKey; label: string }> = [
-  { key: 'caseNumber', label: '案号' },
-  { key: 'caseStatus', label: '案件状态' },
-  { key: 'caseType', label: '案件类型' },
-  { key: 'caseLevel', label: '案件级别' },
-  { key: 'provinceCity', label: '省份/城市' },
-  { key: 'assignedLawyerName', label: '负责律师' },
-  { key: 'assignedAssistantName', label: '负责助理' },
-  { key: 'assignedSaleName', label: '跟进销售' },
-  { key: 'entryDate', label: '入职时间' },
-  { key: 'createdAt', label: '创建时间' },
-  { key: 'updatedAt', label: '更新时间' }
-];
-
-const CASE_TABLE_COLUMN_KEY_SET = new Set<CaseTableColumnKey>(
-  CASE_TABLE_COLUMN_OPTIONS.map((option) => option.key)
-);
-
-const CASE_TABLE_COLUMN_LABEL_MAP: Record<CaseTableColumnKey, string> = CASE_TABLE_COLUMN_OPTIONS.reduce(
-  (acc, option) => {
-    acc[option.key] = option.label;
-    return acc;
-  },
-  {} as Record<CaseTableColumnKey, string>
-);
-
-const CASE_TABLE_DEFAULT_COLUMNS: CaseTableColumnKey[] = [
-  'caseNumber',
-  'caseStatus',
-  'caseType',
-  'caseLevel',
-  'provinceCity',
-  'assignedLawyerName',
-  'assignedAssistantName'
-];
-
-const sanitizeColumnSelection = (columns: unknown): CaseTableColumnKey[] => {
+const sanitizeColumnSelection = (
+  columns: unknown,
+  defaultColumns: CaseTableColumnKey[],
+  columnKeySet: ReadonlySet<CaseTableColumnKey>
+): CaseTableColumnKey[] => {
   if (!Array.isArray(columns)) {
-    return [...CASE_TABLE_DEFAULT_COLUMNS];
+    return [...defaultColumns];
   }
 
   const unique: CaseTableColumnKey[] = [];
@@ -155,7 +153,7 @@ const sanitizeColumnSelection = (columns: unknown): CaseTableColumnKey[] => {
       continue;
     }
 
-    if (!CASE_TABLE_COLUMN_KEY_SET.has(item as CaseTableColumnKey)) {
+    if (!columnKeySet.has(item as CaseTableColumnKey)) {
       continue;
     }
 
@@ -166,8 +164,18 @@ const sanitizeColumnSelection = (columns: unknown): CaseTableColumnKey[] => {
     unique.push(item as CaseTableColumnKey);
   }
 
-  return unique.length > 0 ? unique : [...CASE_TABLE_DEFAULT_COLUMNS];
+  return unique.length > 0 ? unique : [...defaultColumns];
 };
+
+const createInitialPagination = (): TablePaginationConfig => ({
+  current: 1,
+  pageSize: DEFAULT_PAGE_SIZE,
+  total: 0,
+  className: styles.pagination,
+  showQuickJumper: true,
+  showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '30', '50']
+});
 
 const resolveStageOrder = (stage?: TrialStage | null): number => {
   if (!stage) {
@@ -315,6 +323,15 @@ const formatCaseTypeForTitle = (caseType: CaseType): string => {
   return CASE_TYPE_LABEL_MAP[caseType] ?? '案件';
 };
 
+const sanitizeStringList = (list?: string[] | null): string[] => {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  return list
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter((item): item is string => item.length > 0);
+};
+
 const buildCaseTitle = (record: CaseRecord): string => {
   const dateSource = normalizeName(record.entryDate) ?? normalizeName(record.updatedAt) ?? normalizeName(record.createdAt);
   const dateText = (() => {
@@ -412,12 +429,15 @@ function mapCaseRecordToFormValues(record: CaseRecord): WorkInjuryCaseFormValues
     basicInfo: {
       caseType: record.caseType,
       caseLevel: record.caseLevel,
+      caseCategory: record.caseCategory ?? undefined,
       provinceCity: record.provinceCity ?? undefined,
-  targetAmount: record.targetAmount ?? undefined,
+      targetAmount: record.targetAmount ?? undefined,
       feeStandard: record.feeStandard ?? undefined,
       agencyFeeEstimate: record.agencyFeeEstimate ?? undefined,
       dataSource: record.dataSource ?? undefined,
       hasContract: record.hasContract ?? undefined,
+      contractDate: toDayjsValue(record.contractDate ?? null),
+      clueDate: toDayjsValue(record.clueDate ?? null),
       hasSocialSecurity: record.hasSocialSecurity ?? undefined,
       entryDate: toDayjsValue(record.entryDate ?? null),
       injuryLocation: record.injuryLocation ?? undefined,
@@ -430,23 +450,35 @@ function mapCaseRecordToFormValues(record: CaseRecord): WorkInjuryCaseFormValues
       existingEvidence: record.existingEvidence ?? undefined,
       customerCooperative: record.customerCooperative ?? undefined,
       witnessCooperative: record.witnessCooperative ?? undefined,
-      remark: record.remark ?? undefined
+      remark: record.remark ?? undefined,
+      contractQuoteType: record.contractQuoteType ?? undefined,
+      contractQuoteAmount: parseNumberValue(record.contractQuoteAmount ?? null),
+      contractQuoteUpfront: parseNumberValue(record.contractQuoteUpfront ?? null),
+      contractQuoteRatio: parseNumberValue(record.contractQuoteRatio ?? null),
+      contractQuoteOther: record.contractQuoteOther ?? undefined,
+      estimatedCollection: parseNumberValue(record.estimatedCollection ?? null),
+      litigationFeeType: record.litigationFeeType ?? undefined,
+      travelFeeType: record.travelFeeType ?? undefined,
+      contractForm: record.contractForm ?? undefined,
+      insuranceRiskLevel: record.insuranceRiskLevel ?? undefined,
+      insuranceTypes: sanitizeStringList(record.insuranceTypes),
+      insuranceMisrepresentations: sanitizeStringList(record.insuranceMisrepresentations)
     },
     parties: {
       claimants,
       respondents
     },
     lawyerInfo: {
-  trialLawyerId: latestHearing?.trialLawyerId ?? undefined,
-  trialLawyerName: latestHearing?.trialLawyerName ?? undefined,
-  hearingTime: toDayjsValue(latestHearing?.hearingTime ?? null),
-  hearingLocation: latestHearing?.hearingLocation ?? undefined,
-  tribunal: latestHearing?.tribunal ?? undefined,
-  judge: latestHearing?.judge ?? undefined,
-  caseNumber: latestHearing?.caseNumber ?? undefined,
-  contactPhone: latestHearing?.contactPhone ?? undefined,
-  trialStage: latestHearing?.trialStage ?? undefined,
-  hearingResult: latestHearing?.hearingResult ?? undefined,
+      trialLawyerId: latestHearing?.trialLawyerId ?? undefined,
+      trialLawyerName: latestHearing?.trialLawyerName ?? undefined,
+      hearingTime: toDayjsValue(latestHearing?.hearingTime ?? null),
+      hearingLocation: latestHearing?.hearingLocation ?? undefined,
+      tribunal: latestHearing?.tribunal ?? undefined,
+      judge: latestHearing?.judge ?? undefined,
+      caseNumber: latestHearing?.caseNumber ?? undefined,
+      contactPhone: latestHearing?.contactPhone ?? undefined,
+      trialStage: latestHearing?.trialStage ?? undefined,
+      hearingResult: latestHearing?.hearingResult ?? undefined,
       hearingRecords: normalizedHearings
     },
     adminInfo: {
@@ -558,16 +590,23 @@ function mapCollections(collections?: Array<{ amount?: number; date?: Dayjs | nu
 function mapFormToCasePayload(values: WorkInjuryCaseFormValues, department: CasePayload['department']): CasePayload {
   const basic = values.basicInfo ?? {};
   const admin = values.adminInfo ?? {};
+  const resolvedDepartment = department ?? null;
+  const resolvedCategory: CaseCategory = (basic.caseCategory ?? (resolvedDepartment === 'insurance' ? 'insurance' : 'work_injury')) as CaseCategory;
+  const insuranceTypes = sanitizeStringList(basic.insuranceTypes ?? null);
+  const insuranceMisrepresentations = sanitizeStringList(basic.insuranceMisrepresentations ?? null);
 
   const payload: CasePayload = {
     caseType: (basic.caseType ?? 'work_injury') as CasePayload['caseType'],
     caseLevel: (basic.caseLevel ?? 'A') as CasePayload['caseLevel'],
+    caseCategory: resolvedCategory,
     provinceCity: toNullableText(basic.provinceCity ?? null),
     targetAmount: basic.targetAmount ?? null,
     feeStandard: toNullableText(basic.feeStandard ?? null),
     agencyFeeEstimate: basic.agencyFeeEstimate ?? null,
     dataSource: toNullableText(basic.dataSource ?? null),
     hasContract: basic.hasContract ?? null,
+    contractDate: formatDayValue(basic.contractDate ?? null),
+    clueDate: formatDayValue(basic.clueDate ?? null),
     hasSocialSecurity: basic.hasSocialSecurity ?? null,
     entryDate: formatDayValue(basic.entryDate ?? null),
     injuryLocation: toNullableText(basic.injuryLocation ?? null),
@@ -581,7 +620,19 @@ function mapFormToCasePayload(values: WorkInjuryCaseFormValues, department: Case
     customerCooperative: basic.customerCooperative ?? null,
     witnessCooperative: basic.witnessCooperative ?? null,
     remark: toNullableText(basic.remark ?? null),
-    department: department ?? null,
+    contractQuoteType: (basic.contractQuoteType ?? null) as ContractQuoteType | null,
+    contractQuoteAmount: toNumericString(basic.contractQuoteAmount ?? null),
+    contractQuoteUpfront: toNumericString(basic.contractQuoteUpfront ?? null),
+    contractQuoteRatio: toNumericString(basic.contractQuoteRatio ?? null),
+    contractQuoteOther: toNullableText(basic.contractQuoteOther ?? null),
+    estimatedCollection: toNumericString(basic.estimatedCollection ?? null),
+    litigationFeeType: (basic.litigationFeeType ?? null) as LitigationFeeType | null,
+    travelFeeType: (basic.travelFeeType ?? null) as TravelFeeType | null,
+    contractForm: (basic.contractForm ?? null) as ContractFormType | null,
+    insuranceRiskLevel: (basic.insuranceRiskLevel ?? null) as CaseLevel | null,
+    insuranceTypes,
+    insuranceMisrepresentations,
+    department: resolvedDepartment,
     assignedLawyerId: toNullableText(admin.assignedLawyer ?? null),
     assignedAssistantId: toNullableText(admin.assignedAssistant ?? null),
     caseStatus: admin.caseStatus ?? null,
@@ -600,7 +651,70 @@ type CaseFilters = {
   caseStatus?: CaseStatus;
 };
 
-export default function WorkInjuryCasesPage() {
+interface CasesPageProps {
+  department: UserDepartment;
+}
+
+export default function CasesPage({ department }: CasesPageProps) {
+  const { message } = App.useApp();
+
+  const activeDepartment = department ?? DEFAULT_CASE_DEPARTMENT;
+  const departmentConfig =
+    CASE_DEPARTMENT_CONFIG[activeDepartment] ?? CASE_DEPARTMENT_CONFIG[DEFAULT_CASE_DEPARTMENT];
+  const pageDepartment = departmentConfig.department;
+
+  const columnOptions = useMemo(
+    () => departmentConfig.columnOptions.map((option) => ({ ...option })),
+    [departmentConfig]
+  );
+  const defaultColumns = useMemo(
+    () => [...departmentConfig.defaultColumns],
+    [departmentConfig]
+  );
+  const tableStorageKey = departmentConfig.tableKey;
+  const visibleModalTabs = useMemo(
+    () => [...departmentConfig.visibleTabs],
+    [departmentConfig]
+  );
+  const visibleModalTabSet = useMemo(
+    () => new Set<WorkInjuryCaseTabKey>(visibleModalTabs),
+    [visibleModalTabs]
+  );
+  const editableModalTabsSet = useMemo(
+    () => new Set<WorkInjuryCaseTabKey>(departmentConfig.editableTabs),
+    [departmentConfig]
+  );
+  const editableModalTabsArray = useMemo(
+    () => Array.from(editableModalTabsSet),
+    [editableModalTabsSet]
+  );
+  const modalOperationFlags = useMemo(
+    () => ({ ...departmentConfig.modalOperations }),
+    [departmentConfig]
+  );
+  const enabledTableActions = useMemo(
+    () => new Set<CaseTableActionKey>(departmentConfig.tableActions),
+    [departmentConfig]
+  );
+  const allowCaseCreation = departmentConfig.allowCreate;
+
+  const columnKeySet = useMemo(
+    () => new Set<CaseTableColumnKey>(columnOptions.map((option) => option.key)),
+    [columnOptions]
+  );
+
+  const columnLabelMap = useMemo(
+    () =>
+      columnOptions.reduce(
+        (acc, option) => {
+          acc[option.key] = option.label;
+          return acc;
+        },
+        {} as Record<CaseTableColumnKey, string>
+      ),
+    [columnOptions]
+  );
+
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -613,35 +727,43 @@ export default function WorkInjuryCasesPage() {
   const [timeNodeModalOpen, setTimeNodeModalOpen] = useState(false);
   const [timeNodeTarget, setTimeNodeTarget] = useState<CaseRecord | null>(null);
   const [timeNodeSaving, setTimeNodeSaving] = useState(false);
-  const [visibleColumnKeys, setVisibleColumnKeys] = useState<CaseTableColumnKey[]>(CASE_TABLE_DEFAULT_COLUMNS);
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState<CaseTableColumnKey[]>(defaultColumns);
   const [columnPreferencesLoading, setColumnPreferencesLoading] = useState(false);
   const [columnModalOpen, setColumnModalOpen] = useState(false);
-  const [columnModalSelection, setColumnModalSelection] = useState<CaseTableColumnKey[]>(CASE_TABLE_DEFAULT_COLUMNS);
+  const [columnModalSelection, setColumnModalSelection] = useState<CaseTableColumnKey[]>(defaultColumns);
   const [columnModalSaving, setColumnModalSaving] = useState(false);
-  const [pagination, setPagination] = useState<TablePaginationConfig>({
-    current: 1,
-    pageSize: DEFAULT_PAGE_SIZE,
-    total: 0,
-    className: styles.pagination,
-    showQuickJumper: true,
-    showSizeChanger: true,
-    pageSizeOptions: ['10', '20', '30', '50']
-  });
+  const [pagination, setPagination] = useState<TablePaginationConfig>(createInitialPagination);
   const [filterForm] = Form.useForm<CaseFilters>();
   const filtersRef = useRef<CaseFilters>({});
   const [filters, setFilters] = useState<CaseFilters>({});
+
+  useEffect(() => {
+    setVisibleColumnKeys([...defaultColumns]);
+    setColumnModalSelection([...defaultColumns]);
+  }, [defaultColumns]);
+
   const changeLogCacheRef = useRef<Map<string, CaseChangeLog[]>>(new Map());
   const currentUser = useSessionStore((state) => state.user);
   const registerCaseUpdater = useWorkInjuryCaseOperationsStore((state) => state.registerCaseUpdater);
   const registerCaseDetailLauncher = useWorkInjuryCaseOperationsStore((state) => state.registerCaseDetailLauncher);
   const openStatusModal = useWorkInjuryCaseOperationsStore((state) => state.openStatusModal);
   const openFollowUpModal = useWorkInjuryCaseOperationsStore((state) => state.openFollowUpModal);
+  const setMessageApi = useWorkInjuryCaseOperationsStore((state) => state.setMessageApi);
+
+  useEffect(() => {
+    filtersRef.current = {};
+    setFilters({});
+    filterForm.resetFields();
+    setPagination(createInitialPagination());
+    setCases([]);
+  }, [filterForm, pageDepartment]);
 
   const currentPage = pagination.current ?? 1;
   const currentPageSize = pagination.pageSize ?? DEFAULT_PAGE_SIZE;
   const canCreateCase = useMemo(
-    () => (currentUser ? CASE_CREATE_ALLOWED_ROLES.has(currentUser.role) : false),
-    [currentUser]
+    () =>
+      allowCaseCreation && (currentUser ? CASE_CREATE_ALLOWED_ROLES.has(currentUser.role) : false),
+    [allowCaseCreation, currentUser]
   );
   const caseTypeOptions = useMemo(
     () =>
@@ -677,7 +799,7 @@ export default function WorkInjuryCasesPage() {
     try {
       const appliedFilters = overrideFilters ?? filtersRef.current;
       const response = await fetchCases({
-        department: PAGE_DEPARTMENT,
+        department: pageDepartment,
         orderBy: 'updatedAt',
         orderDirection: 'desc',
         page,
@@ -710,7 +832,7 @@ export default function WorkInjuryCasesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [message, pageDepartment]);
 
   useEffect(() => {
     void loadCases(currentPage, currentPageSize);
@@ -763,10 +885,10 @@ export default function WorkInjuryCasesPage() {
 
       const departmentForCreation = (() => {
         if (!currentUser) {
-          return PAGE_DEPARTMENT;
+          return pageDepartment;
         }
         if (currentUser.role === 'super_admin') {
-          return PAGE_DEPARTMENT;
+          return pageDepartment;
         }
         return currentUser.department ?? null;
       })();
@@ -790,7 +912,7 @@ export default function WorkInjuryCasesPage() {
         setCreating(false);
       }
     },
-    [canCreateCase, currentUser, loadCases, currentPageSize]
+  [canCreateCase, currentUser, loadCases, message, pageDepartment, currentPageSize]
   );
 
   const headerAction = useMemo(() => {
@@ -816,8 +938,8 @@ export default function WorkInjuryCasesPage() {
     let cancelled = false;
 
     if (!currentUser?.id) {
-      setVisibleColumnKeys(CASE_TABLE_DEFAULT_COLUMNS);
-      setColumnModalSelection(CASE_TABLE_DEFAULT_COLUMNS);
+      setVisibleColumnKeys([...defaultColumns]);
+      setColumnModalSelection([...defaultColumns]);
       return () => {
         cancelled = true;
       };
@@ -827,18 +949,18 @@ export default function WorkInjuryCasesPage() {
 
     void (async () => {
       try {
-        const preference = await fetchCaseTablePreferences(WORK_INJURY_CASE_TABLE_KEY);
+        const preference = await fetchCaseTablePreferences(tableStorageKey);
         if (cancelled) {
           return;
         }
-        const next = sanitizeColumnSelection(preference.visibleColumns);
+        const next = sanitizeColumnSelection(preference.visibleColumns, defaultColumns, columnKeySet);
         setVisibleColumnKeys(next);
         setColumnModalSelection(next);
       } catch (error) {
         if (!cancelled) {
           message.error('获取列表字段配置失败，已使用默认配置');
-          setVisibleColumnKeys(CASE_TABLE_DEFAULT_COLUMNS);
-          setColumnModalSelection(CASE_TABLE_DEFAULT_COLUMNS);
+          setVisibleColumnKeys([...defaultColumns]);
+          setColumnModalSelection([...defaultColumns]);
         }
       } finally {
         if (!cancelled) {
@@ -850,7 +972,7 @@ export default function WorkInjuryCasesPage() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser?.id]);
+  }, [columnKeySet, currentUser?.id, defaultColumns, message, tableStorageKey]);
 
   const handleColumnModalOpen = useCallback(() => {
     if (columnPreferencesLoading) {
@@ -881,7 +1003,7 @@ export default function WorkInjuryCasesPage() {
 
       return prev.filter((key) => key !== columnKey);
     });
-  }, []);
+  }, [message]);
 
   const handleColumnMove = useCallback((columnKey: CaseTableColumnKey, direction: 'up' | 'down') => {
     setColumnModalSelection((prev) => {
@@ -904,17 +1026,17 @@ export default function WorkInjuryCasesPage() {
   const columnModalOptionList = useMemo(() => {
     const selectionSet = new Set(columnModalSelection);
     const selected = columnModalSelection
-      .map((key) => CASE_TABLE_COLUMN_OPTIONS.find((option) => option.key === key))
+      .map((key) => columnOptions.find((option) => option.key === key))
       .filter((option): option is { key: CaseTableColumnKey; label: string } => Boolean(option))
       .map((option) => ({ ...option, selected: true }));
-    const unselected = CASE_TABLE_COLUMN_OPTIONS
+    const unselected = columnOptions
       .filter((option) => !selectionSet.has(option.key))
       .map((option) => ({ ...option, selected: false }));
     return [...selected, ...unselected];
-  }, [columnModalSelection]);
+  }, [columnModalSelection, columnOptions]);
 
   const handleColumnModalSave = useCallback(async () => {
-    const sanitized = sanitizeColumnSelection(columnModalSelection);
+    const sanitized = sanitizeColumnSelection(columnModalSelection, defaultColumns, columnKeySet);
     if (!sanitized.length) {
       message.warning('请至少选择一个要展示的字段');
       return;
@@ -922,7 +1044,7 @@ export default function WorkInjuryCasesPage() {
 
     setColumnModalSaving(true);
     try {
-      await updateCaseTablePreferences(WORK_INJURY_CASE_TABLE_KEY, sanitized);
+      await updateCaseTablePreferences(tableStorageKey, sanitized);
       setVisibleColumnKeys(sanitized);
       setColumnModalSelection(sanitized);
       setColumnModalOpen(false);
@@ -933,7 +1055,7 @@ export default function WorkInjuryCasesPage() {
     } finally {
       setColumnModalSaving(false);
     }
-  }, [columnModalSelection]);
+  }, [columnKeySet, columnModalSelection, defaultColumns, message, tableStorageKey]);
 
   const canUpdateCaseRecord = useCallback(
     (record: CaseRecord) => {
@@ -1086,8 +1208,15 @@ export default function WorkInjuryCasesPage() {
       updateCaseInState(updatedRecord);
       return mapCaseRecordToFormValues(updatedRecord);
     },
-    [updateCaseInState]
+  [message, updateCaseInState]
   );
+
+  useEffect(() => {
+    setMessageApi(message);
+    return () => {
+      setMessageApi(null);
+    };
+  }, [message, setMessageApi]);
 
   useEffect(() => {
     registerCaseUpdater(updateCaseInState);
@@ -1102,10 +1231,11 @@ export default function WorkInjuryCasesPage() {
       options?: { mode?: 'view' | 'update'; tab?: WorkInjuryCaseTabKey }
     ) => {
       const { mode = 'view', tab } = options ?? {};
+  const initialTab = tab && visibleModalTabSet.has(tab) ? tab : undefined;
       const hide = message.loading('正在加载案件详情...', 0);
       try {
         setCaseModalCanEdit(false);
-        setCaseModalInitialTab(tab);
+        setCaseModalInitialTab(initialTab);
         const detail = await fetchCaseById(caseId);
         setCaseModalCase(detail);
         const editable = canUpdateCaseRecord(detail);
@@ -1124,7 +1254,7 @@ export default function WorkInjuryCasesPage() {
         }
       }
     },
-    [canUpdateCaseRecord]
+    [canUpdateCaseRecord, message, visibleModalTabSet]
   );
 
   useEffect(() => {
@@ -1163,7 +1293,7 @@ export default function WorkInjuryCasesPage() {
         return undefined;
       }
     },
-    [caseModalCase, mutateCaseRecord]
+  [caseModalCase, message, mutateCaseRecord]
   );
 
   const handleCaseModalStatusSave = useCallback(
@@ -1191,7 +1321,7 @@ export default function WorkInjuryCasesPage() {
         return undefined;
       }
     },
-    [caseModalCase, mutateCaseRecord]
+  [caseModalCase, message, mutateCaseRecord]
   );
 
   const handleCaseModalHearingAdd = useCallback(
@@ -1235,7 +1365,7 @@ export default function WorkInjuryCasesPage() {
         return undefined;
       }
     },
-    [caseModalCase, mutateCaseRecord]
+  [caseModalCase, message, mutateCaseRecord]
   );
 
   const handleCaseModalFollowUpAdd = useCallback(
@@ -1272,7 +1402,7 @@ export default function WorkInjuryCasesPage() {
         return undefined;
       }
     },
-    [caseModalCase, currentUser, mutateCaseRecord]
+  [caseModalCase, currentUser, message, mutateCaseRecord]
   );
 
   const handleCaseModalTimeNodesSave = useCallback(
@@ -1302,7 +1432,7 @@ export default function WorkInjuryCasesPage() {
         return undefined;
       }
     },
-    [caseModalCase, updateCaseInState]
+  [caseModalCase, message, updateCaseInState]
   );
 
   const handleCaseModalCollectionAdd = useCallback(
@@ -1334,7 +1464,7 @@ export default function WorkInjuryCasesPage() {
         return undefined;
       }
     },
-    [caseModalCase, mutateCaseRecord]
+  [caseModalCase, message, mutateCaseRecord]
   );
 
   const handleCaseModalFeeUpdate = useCallback(
@@ -1361,7 +1491,7 @@ export default function WorkInjuryCasesPage() {
         return undefined;
       }
     },
-    [caseModalCase, mutateCaseRecord]
+  [caseModalCase, message, mutateCaseRecord]
   );
 
   const handleCaseModalBasicInfoSave = useCallback(
@@ -1407,7 +1537,7 @@ export default function WorkInjuryCasesPage() {
         return undefined;
       }
     },
-    [caseModalCase, mutateCaseRecord]
+  [caseModalCase, message, mutateCaseRecord]
   );
 
   const handleCaseModalPartiesSave = useCallback(
@@ -1438,7 +1568,7 @@ export default function WorkInjuryCasesPage() {
         return undefined;
       }
     },
-    [caseModalCase, mutateCaseRecord]
+  [caseModalCase, message, mutateCaseRecord]
   );
 
   const handleLoadAssignableStaff = useCallback(() => {
@@ -1511,7 +1641,7 @@ export default function WorkInjuryCasesPage() {
         setTimeNodeSaving(false);
       }
     },
-    [timeNodeTarget, updateCaseInState]
+  [message, timeNodeTarget, updateCaseInState]
   );
 
   const closeCaseModal = useCallback(() => {
@@ -1540,14 +1670,20 @@ export default function WorkInjuryCasesPage() {
 
   const caseModalPermissions = useMemo(
     () => ({
-      canEditAssignments: caseModalCase ? canAssignStaffToCase(caseModalCase) : false,
-      canUpdateStatus: caseModalCase ? canUpdateCaseRecord(caseModalCase) : false,
-      canAddHearings: caseModalCase ? canUpdateHearingRecord(caseModalCase) : false,
-      canAddFollowUps: Boolean(caseModalCase),
-      canAddCollections: caseModalCase ? canCreateCollectionRecord(caseModalCase) : false,
-      canUpdateFees: caseModalCase ? canManageCaseFee(caseModalCase) : false,
-      canViewChangeLogs: Boolean(caseModalCase),
-      canManageTimeNodes: caseModalCase ? canManageTimeNodesForCase(caseModalCase) : false
+      canEditAssignments:
+        modalOperationFlags.assignment && (caseModalCase ? canAssignStaffToCase(caseModalCase) : false),
+      canUpdateStatus:
+        modalOperationFlags.status && (caseModalCase ? canUpdateCaseRecord(caseModalCase) : false),
+      canAddHearings:
+        modalOperationFlags.hearing && (caseModalCase ? canUpdateHearingRecord(caseModalCase) : false),
+      canAddFollowUps: modalOperationFlags.followUp && Boolean(caseModalCase),
+      canAddCollections:
+        modalOperationFlags.collection && (caseModalCase ? canCreateCollectionRecord(caseModalCase) : false),
+      canUpdateFees:
+        modalOperationFlags.fees && (caseModalCase ? canManageCaseFee(caseModalCase) : false),
+      canViewChangeLogs: modalOperationFlags.changeLog && Boolean(caseModalCase),
+      canManageTimeNodes:
+        modalOperationFlags.timeNodes && (caseModalCase ? canManageTimeNodesForCase(caseModalCase) : false)
     }),
     [
       caseModalCase,
@@ -1556,7 +1692,8 @@ export default function WorkInjuryCasesPage() {
       canManageCaseFee,
       canManageTimeNodesForCase,
       canUpdateCaseRecord,
-      canUpdateHearingRecord
+      canUpdateHearingRecord,
+      modalOperationFlags
     ]
   );
 
@@ -1574,7 +1711,7 @@ export default function WorkInjuryCasesPage() {
   const columnDefinitions = useMemo<Record<CaseTableColumnKey, ColumnsType<CaseRecord>[number]>>(
     () => ({
       caseNumber: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.caseNumber,
+        title: columnLabelMap.caseNumber,
         dataIndex: 'caseNumber',
         key: 'caseNumber',
         render: (_, record) => {
@@ -1595,7 +1732,7 @@ export default function WorkInjuryCasesPage() {
         }
       },
       caseStatus: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.caseStatus,
+        title: columnLabelMap.caseStatus,
         dataIndex: 'caseStatus',
         key: 'caseStatus',
         render: (value: CaseStatus | null) =>
@@ -1608,61 +1745,70 @@ export default function WorkInjuryCasesPage() {
           )
       },
       caseType: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.caseType,
+        title: columnLabelMap.caseType,
         dataIndex: 'caseType',
         key: 'caseType',
         render: (value: CaseType) => CASE_TYPE_LABEL_MAP[value] ?? value
       },
       caseLevel: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.caseLevel,
+        title: columnLabelMap.caseLevel,
         dataIndex: 'caseLevel',
         key: 'caseLevel',
         render: (value: CaseLevel) => CASE_LEVEL_LABEL_MAP[value] ?? value
       },
+      claimantNames: {
+        title: columnLabelMap.claimantNames,
+        dataIndex: 'participants',
+        key: 'claimantNames',
+        render: (_value: CaseParticipantsGroup | undefined, record) => {
+          const names = collectNonOpponentPartyNames(record.participants);
+          return names.length ? names.join('、') : '—';
+        }
+      },
       provinceCity: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.provinceCity,
+        title: columnLabelMap.provinceCity,
         dataIndex: 'provinceCity',
         key: 'provinceCity',
         render: (value: string | null) => value ?? '—'
       },
       assignedLawyerName: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.assignedLawyerName,
+        title: columnLabelMap.assignedLawyerName,
         dataIndex: 'assignedLawyerName',
         key: 'assignedLawyerName',
         render: (value: string | null, record) => value ?? record.assignedLawyerName ?? '—'
       },
       assignedAssistantName: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.assignedAssistantName,
+        title: columnLabelMap.assignedAssistantName,
         dataIndex: 'assignedAssistantName',
         key: 'assignedAssistantName',
         render: (value: string | null, record) => value ?? record.assignedAssistantName ?? '—'
       },
       assignedSaleName: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.assignedSaleName,
+        title: columnLabelMap.assignedSaleName,
         dataIndex: 'assignedSaleName',
         key: 'assignedSaleName',
         render: (value: string | null, record) => value ?? record.assignedSaleName ?? '—'
       },
       entryDate: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.entryDate,
+        title: columnLabelMap.entryDate,
         dataIndex: 'entryDate',
         key: 'entryDate',
         render: (value: string | null) => formatTableDate(value)
       },
       createdAt: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.createdAt,
+        title: columnLabelMap.createdAt,
         dataIndex: 'createdAt',
         key: 'createdAt',
-        render: (value: string | null) => formatTableDate(value, 'YYYY-MM-DD HH:mm')
+        render: (value: string | null) => formatTableDate(value, 'YYYY-MM-DD')
       },
       updatedAt: {
-        title: CASE_TABLE_COLUMN_LABEL_MAP.updatedAt,
+        title: columnLabelMap.updatedAt,
         dataIndex: 'updatedAt',
         key: 'updatedAt',
-        render: (value: string | null) => formatTableDate(value, 'YYYY-MM-DD HH:mm')
+        render: (value: string | null) => formatTableDate(value, 'YYYY-MM-DD')
       }
     }),
-    [formatTableDate, handleCaseTitleClick]
+    [columnLabelMap, formatTableDate, handleCaseTitleClick]
   );
 
   const actionColumn = useMemo<ColumnsType<CaseRecord>[number]>(
@@ -1675,19 +1821,21 @@ export default function WorkInjuryCasesPage() {
         const canEditStatus = canUpdateCaseRecord(record);
         const items: MenuProps['items'] = [];
 
-        if (canEditStatus) {
+        if (enabledTableActions.has('update-status') && canEditStatus) {
           items.push({
             key: 'update-status',
             label: '更新案件状态'
           });
         }
 
-        items.push({
-          key: 'add-follow-up',
-          label: '新增跟进备注'
-        });
+        if (enabledTableActions.has('add-follow-up')) {
+          items.push({
+            key: 'add-follow-up',
+            label: '新增跟进备注'
+          });
+        }
 
-        if (canManageTimeNodes) {
+        if (enabledTableActions.has('add-time-node') && canManageTimeNodes) {
           items.push({
             key: 'add-time-node',
             label: '新增时间节点'
@@ -1702,20 +1850,20 @@ export default function WorkInjuryCasesPage() {
           items,
           onClick: ({ key }) => {
             if (key === 'add-time-node') {
-              if (canManageTimeNodes) {
+              if (enabledTableActions.has('add-time-node') && canManageTimeNodes) {
                 handleOpenTimeNode(record);
               }
               return;
             }
             if (key === 'update-status') {
-              if (canEditStatus) {
+              if (enabledTableActions.has('update-status') && canEditStatus) {
                 openStatusModal(record);
               } else {
                 message.error('您没有权限更新案件状态');
               }
               return;
             }
-            if (key === 'add-follow-up') {
+            if (key === 'add-follow-up' && enabledTableActions.has('add-follow-up')) {
               openFollowUpModal(record);
             }
           }
@@ -1736,7 +1884,7 @@ export default function WorkInjuryCasesPage() {
         );
       }
     }),
-    [canManageTimeNodesForCase, canUpdateCaseRecord, handleOpenTimeNode, openFollowUpModal, openStatusModal]
+  [canManageTimeNodesForCase, canUpdateCaseRecord, enabledTableActions, handleOpenTimeNode, message, openFollowUpModal, openStatusModal]
   );
 
   const tableColumns = useMemo<ColumnsType<CaseRecord>>(() => {
@@ -1885,32 +2033,42 @@ export default function WorkInjuryCasesPage() {
       {canCreateCase ? (
         <WorkInjuryCaseModal
           open={newCaseModalOpen}
+          department={pageDepartment}
           onCancel={() => setNewCaseModalOpen(false)}
           onSubmit={handleCreateCase}
           confirmLoading={creating}
+          visibleTabs={visibleModalTabs}
+          editableTabs={editableModalTabsArray}
         />
       ) : null}
 
       <WorkInjuryCaseModal
         open={caseModalOpen}
+        department={pageDepartment}
         mode={caseModalMode}
         initialValues={caseModalInitialValues}
         initialActiveTab={caseModalInitialTab}
         allowEdit={caseModalCanEdit}
+        visibleTabs={visibleModalTabs}
+        editableTabs={editableModalTabsArray}
         onRequestEdit={handleCaseModalEdit}
         onRequestView={handleCaseModalView}
         onCancel={closeCaseModal}
         onSaveBasicInfo={caseModalMode === 'update' ? handleCaseModalBasicInfoSave : undefined}
         onSaveParties={caseModalMode === 'update' ? handleCaseModalPartiesSave : undefined}
-        onSaveAssignment={handleCaseModalAssignmentSave}
-        onSaveCaseStatus={handleCaseModalStatusSave}
-        onAddHearing={handleCaseModalHearingAdd}
-        onAddFollowUp={handleCaseModalFollowUpAdd}
-        onAddCollection={handleCaseModalCollectionAdd}
-        onUpdateFees={handleCaseModalFeeUpdate}
-        onSaveTimeNodes={handleCaseModalTimeNodesSave}
+        onSaveAssignment={
+          modalOperationFlags.assignment ? handleCaseModalAssignmentSave : undefined
+        }
+        onSaveCaseStatus={modalOperationFlags.status ? handleCaseModalStatusSave : undefined}
+        onAddHearing={modalOperationFlags.hearing ? handleCaseModalHearingAdd : undefined}
+        onAddFollowUp={modalOperationFlags.followUp ? handleCaseModalFollowUpAdd : undefined}
+        onAddCollection={modalOperationFlags.collection ? handleCaseModalCollectionAdd : undefined}
+        onUpdateFees={modalOperationFlags.fees ? handleCaseModalFeeUpdate : undefined}
+        onSaveTimeNodes={modalOperationFlags.timeNodes ? handleCaseModalTimeNodesSave : undefined}
         onLoadAssignableStaff={caseModalCase ? handleLoadAssignableStaff : undefined}
-        onLoadChangeLogs={caseModalCase ? handleLoadChangeLogs : undefined}
+        onLoadChangeLogs={
+          caseModalCase && modalOperationFlags.changeLog ? handleLoadChangeLogs : undefined
+        }
         canEditAssignments={caseModalPermissions.canEditAssignments}
         canUpdateStatus={caseModalPermissions.canUpdateStatus}
         canAddHearings={caseModalPermissions.canAddHearings}

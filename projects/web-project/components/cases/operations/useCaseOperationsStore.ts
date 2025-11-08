@@ -1,5 +1,5 @@
 import dayjs, { type Dayjs } from 'dayjs';
-import { message } from 'antd';
+import type { MessageInstance } from 'antd/es/message/interface';
 
 import { createAppStore } from '@/lib/stores/createStore';
 import { ApiError } from '@/lib/api-client';
@@ -36,6 +36,8 @@ interface CaseOperationsState {
   followUpDefaults: FollowUpPayload | null;
   statusSubmitting: boolean;
   followUpSubmitting: boolean;
+  messageApi: MessageInstance | null;
+  setMessageApi: (api: MessageInstance | null) => void;
   applyCaseUpdate?: (record: CaseRecord) => void;
   registerCaseUpdater: (updater: (record: CaseRecord) => void) => void;
   caseDetailLauncher: ((caseId: string, options?: CaseDetailLaunchOptions) => Promise<void> | void) | null;
@@ -78,6 +80,12 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
     followUpDefaults: null,
     statusSubmitting: false,
     followUpSubmitting: false,
+    messageApi: null,
+    setMessageApi(api) {
+      set((draft) => {
+        draft.messageApi = api;
+      });
+    },
     applyCaseUpdate: undefined,
     caseDetailLauncher: null,
     registerCaseUpdater(updater) {
@@ -93,7 +101,8 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
     async openCaseDetailExternally(caseId, options) {
       const launcher = get().caseDetailLauncher;
       if (!launcher) {
-        message.warning('当前无法打开案件详情，请先进入案件列表页面');
+        const api = get().messageApi;
+        api?.warning('当前无法打开案件详情，请先进入案件列表页面');
         return;
       }
       await Promise.resolve(launcher(caseId, options));
@@ -145,7 +154,7 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
       const state = get();
       const target = state.targetCase;
       if (!target) {
-        message.error('未找到案件信息');
+        state.messageApi?.error('未找到案件信息');
         return;
       }
       set((draft) => {
@@ -171,10 +180,10 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
           draft.activeOperation = null;
           draft.statusSubmitting = false;
         });
-        message.success('案件状态已更新');
+        state.messageApi?.success('案件状态已更新');
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '更新案件状态失败，请稍后重试';
-        message.error(errorMessage);
+        state.messageApi?.error(errorMessage);
         set((draft) => {
           draft.statusSubmitting = false;
         });
@@ -184,12 +193,12 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
       const state = get();
       const target = state.targetCase;
       if (!target) {
-        message.error('未找到案件信息');
+        state.messageApi?.error('未找到案件信息');
         return;
       }
       const occurredOnText = formatDayValue(payload.occurredOn ?? null);
       if (!occurredOnText) {
-        message.error('请选择发生日期');
+        state.messageApi?.error('请选择发生日期');
         return;
       }
       set((draft) => {
@@ -217,10 +226,10 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
           draft.activeOperation = null;
           draft.followUpSubmitting = false;
         });
-        message.success('跟进备注已添加');
+        state.messageApi?.success('跟进备注已添加');
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '保存跟进备注失败，请稍后重试';
-        message.error(errorMessage);
+        state.messageApi?.error(errorMessage);
         set((draft) => {
           draft.followUpSubmitting = false;
         });

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import { DatePicker, Form, Input, Modal, message } from 'antd';
+import { App, DatePicker, Form, Input, Modal } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 
 import { useWorkInjuryCaseOperationsStore } from './useCaseOperationsStore';
@@ -11,6 +11,7 @@ export interface FollowUpFormValues {
 }
 
 export default function FollowUpModal() {
+  const { message } = App.useApp();
   const [form] = Form.useForm<FollowUpFormValues>();
   const open = useWorkInjuryCaseOperationsStore((state) => state.activeOperation === 'followUp');
   const defaults = useWorkInjuryCaseOperationsStore((state) => state.followUpDefaults);

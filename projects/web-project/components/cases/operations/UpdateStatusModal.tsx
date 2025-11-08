@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import { Form, Modal, Select, message } from 'antd';
+import { App, Form, Modal, Select } from 'antd';
 
 import {
 	useWorkInjuryCaseOperationsStore,
@@ -15,6 +15,7 @@ const CLOSED_REASON_OPTIONS = ['调解', '判决', '撤诉', '和解'] as const;
 const VOID_REASON_OPTIONS = ['退单', '跑单'] as const;
 
 export default function UpdateStatusModal() {
+	const { message } = App.useApp();
 	const [form] = Form.useForm<UpdateStatusFormValues>();
 	const open = useWorkInjuryCaseOperationsStore((state) => state.activeOperation === 'status');
 	const defaults = useWorkInjuryCaseOperationsStore((state) => state.statusDefaults);

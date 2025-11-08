@@ -20,7 +20,7 @@ import {
   Layout,
   Menu,
   Typography,
-  message,
+  App,
   type MenuProps
 } from 'antd';
 import Link from 'next/link';
@@ -97,6 +97,7 @@ function isTeamPermissionRole(role: UserRole): role is TeamPermissionRole {
 }
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
+  const { message } = App.useApp();
   const router = useRouter();
   const pathname = usePathname();
   const sessionUser = useSessionStore((state) => state.user);
@@ -257,7 +258,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         setPasswordSaving(false);
       }
     },
-    []
+    [message]
   );
 
   const uploadAvatar = useCallback(async (file: File): Promise<string> => {
@@ -347,7 +348,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         setProfileSaving(false);
       }
     },
-    [sessionUser?.id, sessionUser?.image, updateSessionUser, uploadAvatar]
+    [message, sessionUser?.id, sessionUser?.image, updateSessionUser, uploadAvatar]
   );
 
   const userMenu: MenuProps['items'] = useMemo(() => {

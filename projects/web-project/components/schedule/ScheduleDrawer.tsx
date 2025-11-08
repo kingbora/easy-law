@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
+  App,
   Badge,
   Button,
   Calendar,
@@ -15,8 +16,7 @@ import {
   Spin,
   Tag,
   TimePicker,
-  Typography,
-  message
+  Typography
 } from 'antd';
 import type { CalendarProps } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -31,7 +31,7 @@ import {
 } from '@/lib/calendar-events-api';
 import { ApiError } from '@/lib/api-client';
 import { useSessionStore } from '@/lib/stores/session-store';
-import { useWorkInjuryCaseOperationsStore } from '@/components/cases/work-injury/operations/useCaseOperationsStore';
+import { useWorkInjuryCaseOperationsStore } from '@/components/cases/operations/useCaseOperationsStore';
 
 const { Title, Text } = Typography;
 
@@ -60,6 +60,7 @@ const formatTrialStage = (stage: string | null | undefined) => {
 };
 
 const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
+  const { message } = App.useApp();
   const sessionUser = useSessionStore((state) => state.user);
   const [calendarValue, setCalendarValue] = useState<Dayjs>(dayjs());
   const [events, setEvents] = useState<CalendarEventRecord[]>([]);
@@ -80,7 +81,7 @@ const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
     } finally {
       setLoadingEvents(false);
     }
-  }, []);
+  }, [message]);
 
   useEffect(() => {
     if (!open) {
@@ -162,7 +163,7 @@ const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
         message.error(errorMessage);
       }
     },
-    []
+    [message]
   );
 
   const handleHearingClick = useCallback(
@@ -173,7 +174,7 @@ const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
       }
       void openWorkInjuryCaseDetail(caseId);
     },
-    [openWorkInjuryCaseDetail]
+    [message, openWorkInjuryCaseDetail]
   );
 
   const dateCellRender: CalendarProps<Dayjs>['cellRender'] = (current) => {
@@ -190,7 +191,7 @@ const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
           ))}
           {cellEvents.length > 3 ? <li className={styles.dateCellItem}>…</li> : null}
         </ul>
-    );
+      );
     }
     return null;
   };

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { Button, Descriptions, Input, Modal, Select, Space, Typography, message } from 'antd';
+import { App, Button, Descriptions, Input, Modal, Select, Space, Typography } from 'antd';
 import { EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
@@ -116,6 +116,7 @@ export default function TeamMemberModal({
   onModeChange,
   confirmLoading
 }: TeamMemberModalProps) {
+  const { message } = App.useApp();
   const effectiveDepartmentOptions = (departmentOptions && departmentOptions.length > 0
     ? departmentOptions
     : DEPARTMENT_OPTIONS);

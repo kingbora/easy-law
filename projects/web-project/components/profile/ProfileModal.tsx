@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { Avatar, Form, Input, Modal, Progress, Radio, Space, Typography, Upload, message } from 'antd';
+import { App, Avatar, Form, Input, Modal, Progress, Radio, Space, Typography, Upload } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import { CameraOutlined, UserOutlined } from '@ant-design/icons';
 import imageCompression from 'browser-image-compression';
@@ -55,6 +55,7 @@ const fileToBase64 = (file: File): Promise<string> =>
   });
 
 export default function ProfileModal({ open, initialValues, onCancel, onSubmit, confirmLoading }: ProfileModalProps) {
+  const { message } = App.useApp();
   const [form] = Form.useForm<ProfileFormValues>();
   const [avatarPreview, setAvatarPreview] = useState<string | undefined>();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
@@ -113,9 +114,9 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
 
       const finalFile = compressedFile.size <= target.size ? compressedFile : target;
 
-    const preview = await fileToBase64(finalFile);
-    setAvatarPreview(preview);
-    setAvatarFile(finalFile);
+      const preview = await fileToBase64(finalFile);
+      setAvatarPreview(preview);
+      setAvatarFile(finalFile);
 
       setCompressionProgress(100);
       setCompressedSize(finalFile.size);

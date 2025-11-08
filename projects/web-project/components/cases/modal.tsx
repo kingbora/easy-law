@@ -10,6 +10,7 @@ import {
   Descriptions,
   Divider,
   Form,
+  Checkbox,
   Input,
   InputNumber,
   Modal,
@@ -25,17 +26,23 @@ import {
   Typography,
 } from 'antd';
 import type { TabsProps } from 'antd';
+import type { Rule } from 'antd/es/form';
 import dayjs, { type Dayjs } from 'dayjs';
 import {
   CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS,
+  type CaseCategory,
   type CaseHearingRecord,
   type CaseChangeLog,
   type CaseStatus,
   type CaseTimelineRecord,
   type CaseTimeNodeRecord,
   type CaseTimeNodeType,
+  type ContractFormType,
+  type ContractQuoteType,
+  type LitigationFeeType,
   type TrialStage,
-  type AssignableStaffResponse
+  type AssignableStaffResponse,
+  type TravelFeeType
 } from '@/lib/cases-api';
 import {
   CASE_TIME_NODE_DEFINITIONS,
@@ -44,7 +51,11 @@ import {
 } from '@/lib/case-time-nodes';
 import styles from './modal.module.scss';
 import { useSessionStore } from '@/lib/stores/session-store';
-import type { UserRole } from '@/lib/users-api';
+import type { UserDepartment, UserRole } from '@/lib/users-api';
+import {
+  CASE_DEPARTMENT_CONFIG,
+  type BasicInfoFieldKey
+} from './department-config';
 
 const { TextArea } = Input;
 
@@ -80,6 +91,8 @@ const buildTabLabel = (key: TabKey): ReactNode => {
 
 const isTabKey = (key: string): key is TabKey => key in TAB_LABEL_MAP;
 
+const DEFAULT_VISIBLE_TABS = Object.keys(TAB_LABEL_MAP) as WorkInjuryCaseTabKey[];
+
 const CASE_TYPES = [
   { label: '工伤', value: 'work_injury' },
   { label: '人损', value: 'personal_injury' },
@@ -91,6 +104,78 @@ const CASE_LEVELS = [
   { label: 'B', value: 'B' },
   { label: 'C', value: 'C' }
 ] as const;
+
+const CASE_CATEGORY_LABEL_MAP: Record<CaseCategory, string> = {
+  work_injury: '工伤案件',
+  insurance: '保险案件'
+};
+
+const CASE_CATEGORY_OPTIONS: Array<{ label: string; value: CaseCategory }> = [
+  { label: CASE_CATEGORY_LABEL_MAP.work_injury, value: 'work_injury' },
+  { label: CASE_CATEGORY_LABEL_MAP.insurance, value: 'insurance' }
+];
+
+const INSURANCE_TYPE_OPTIONS = [
+  '医疗险',
+  '重疾险',
+  '意外险',
+  '雇主责任险',
+  '学平险',
+  '团体险',
+  '骑手险',
+  '财产险',
+  '其他'
+].map(label => ({ label, value: label }));
+
+const INSURANCE_MISREPRESENTATION_OPTIONS = [
+  '既往症',
+  '未达到合同约定',
+  '先天性疾病',
+  '等待期出险',
+  '其他'
+].map(label => ({ label, value: label }));
+
+const CONTRACT_QUOTE_TYPE_LABEL_MAP: Record<ContractQuoteType, string> = {
+  fixed: '固定报价',
+  risk: '风险代理',
+  other: '其他'
+};
+const CONTRACT_QUOTE_TYPE_OPTIONS: Array<{ label: string; value: ContractQuoteType }> = [
+  { label: CONTRACT_QUOTE_TYPE_LABEL_MAP.fixed, value: 'fixed' },
+  { label: CONTRACT_QUOTE_TYPE_LABEL_MAP.risk, value: 'risk' },
+  { label: CONTRACT_QUOTE_TYPE_LABEL_MAP.other, value: 'other' }
+];
+
+const LITIGATION_FEE_TYPE_LABEL_MAP: Record<LitigationFeeType, string> = {
+  advance: '律师垫付',
+  no_advance: '无需垫付',
+  reimbursed: '客户报销'
+};
+const LITIGATION_FEE_TYPE_OPTIONS: Array<{ label: string; value: LitigationFeeType }> = [
+  { label: LITIGATION_FEE_TYPE_LABEL_MAP.advance, value: 'advance' },
+  { label: LITIGATION_FEE_TYPE_LABEL_MAP.no_advance, value: 'no_advance' },
+  { label: LITIGATION_FEE_TYPE_LABEL_MAP.reimbursed, value: 'reimbursed' }
+];
+
+const TRAVEL_FEE_TYPE_LABEL_MAP: Record<TravelFeeType, string> = {
+  lawyer: '律师承担',
+  reimbursed: '客户报销',
+  no_advance: '无需垫付'
+};
+const TRAVEL_FEE_TYPE_OPTIONS: Array<{ label: string; value: TravelFeeType }> = [
+  { label: TRAVEL_FEE_TYPE_LABEL_MAP.lawyer, value: 'lawyer' },
+  { label: TRAVEL_FEE_TYPE_LABEL_MAP.reimbursed, value: 'reimbursed' },
+  { label: TRAVEL_FEE_TYPE_LABEL_MAP.no_advance, value: 'no_advance' }
+];
+
+const CONTRACT_FORM_LABEL_MAP: Record<ContractFormType, string> = {
+  electronic: '电子合同',
+  paper: '纸质合同'
+};
+const CONTRACT_FORM_OPTIONS: Array<{ label: string; value: ContractFormType }> = [
+  { label: CONTRACT_FORM_LABEL_MAP.electronic, value: 'electronic' },
+  { label: CONTRACT_FORM_LABEL_MAP.paper, value: 'paper' }
+];
 
 const ENTITY_TYPES = [
   { label: '个人', value: 'personal' },
@@ -297,6 +382,30 @@ const formatNumber = (value?: number | null): string => {
   });
 };
 
+const formatNumberWithSuffix = (value?: number | null, suffix = ''): string => {
+  if (value === undefined || value === null) {
+    return '—';
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return '—';
+  }
+  return `${numeric.toLocaleString('zh-CN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  })}${suffix}`;
+};
+
+const formatStringList = (items?: string[] | null): string => {
+  if (!items || items.length === 0) {
+    return '—';
+  }
+  const filtered = items
+    .map(item => (typeof item === 'string' ? item.trim() : ''))
+    .filter(item => item.length > 0);
+  return filtered.length ? filtered.join('、') : '—';
+};
+
 const formatDate = (value?: Dayjs | string | null, formatPattern = 'YYYY-MM-DD'): string => {
   if (!value) {
     return '—';
@@ -315,6 +424,7 @@ const formatCurrency = (value?: number | null): string => {
 
 export interface WorkInjuryCaseFormValues {
   basicInfo?: {
+    caseCategory?: CaseCategory;
     caseType?: CaseTypeValue;
     caseLevel?: CaseLevelValue;
     provinceCity?: string;
@@ -324,6 +434,8 @@ export interface WorkInjuryCaseFormValues {
     dataSource?: string;
     hasContract?: boolean;
     hasSocialSecurity?: boolean;
+    contractDate?: Dayjs;
+    clueDate?: Dayjs;
     entryDate?: Dayjs;
     injuryLocation?: string;
     injurySeverity?: string;
@@ -336,6 +448,18 @@ export interface WorkInjuryCaseFormValues {
     customerCooperative?: boolean;
     witnessCooperative?: boolean;
     remark?: string;
+    contractQuoteType?: ContractQuoteType;
+    contractQuoteAmount?: number;
+    contractQuoteUpfront?: number;
+    contractQuoteRatio?: number;
+    contractQuoteOther?: string;
+    estimatedCollection?: number;
+    litigationFeeType?: LitigationFeeType;
+    travelFeeType?: TravelFeeType;
+    contractForm?: ContractFormType;
+    insuranceRiskLevel?: CaseLevelValue;
+    insuranceTypes?: string[];
+    insuranceMisrepresentations?: string[];
   };
   parties?: {
     claimants?: CaseParty[];
@@ -372,7 +496,402 @@ export interface WorkInjuryCaseFormValues {
   timeNodes?: CaseTimeNodeRecord[];
 }
 
+type BasicInfoValues = WorkInjuryCaseFormValues['basicInfo'];
+
+type BasicInfoFieldMeta =
+  | {
+      kind: 'field';
+      label: string;
+      colSpan?: number;
+      requiredMessage?: string;
+      extraRules?: Rule[];
+      labelOverrides?: Partial<Record<UserDepartment, string>>;
+      renderInput: (context: { department: UserDepartment; defaultCaseCategory: CaseCategory }) => ReactNode;
+      renderDisplay: (info: BasicInfoValues | undefined, defaultCaseCategory: CaseCategory) => ReactNode;
+    }
+  | {
+      kind: 'divider';
+      dashed?: boolean;
+      label?: string;
+    };
+
+const INSURANCE_ONLY_FIELDS: ReadonlySet<BasicInfoFieldKey> = new Set<BasicInfoFieldKey>([
+  'clueDate',
+  'contractDate',
+  'contractForm',
+  'contractQuoteType',
+  'contractQuoteAmount',
+  'contractQuoteUpfront',
+  'contractQuoteRatio',
+  'contractQuoteOther',
+  'estimatedCollection',
+  'litigationFeeType',
+  'travelFeeType',
+  'insuranceTypes',
+  'insuranceMisrepresentations'
+]);
+
+const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
+  caseType: {
+    kind: 'field',
+    label: '案件类型',
+    requiredMessage: '请选择案件类型',
+    renderInput: () => <Select options={[...CASE_TYPES]} placeholder="请选择案件类型" />,
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CASE_TYPE_LABEL_MAP, info?.caseType ?? null)
+  },
+  caseLevel: {
+    kind: 'field',
+    label: '案件级别',
+    requiredMessage: '请选择案件级别',
+    labelOverrides: {
+      insurance: '风险等级'
+    },
+    renderInput: () => <Select options={[...CASE_LEVELS]} placeholder="请选择案件级别" />,
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CASE_LEVEL_LABEL_MAP, info?.caseLevel ?? null)
+  },
+  provinceCity: {
+    kind: 'field',
+    label: '省份/城市',
+    requiredMessage: '请输入案件省份/城市',
+    renderInput: () => <Input placeholder="请输入省份/城市" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.provinceCity)
+  },
+  targetAmount: {
+    kind: 'field',
+    label: '标的额',
+    requiredMessage: '请输入标的额',
+    labelOverrides: {
+      insurance: '案件标的'
+    },
+    renderInput: () => <Input style={{ width: '100%' }} placeholder="请输入标的额" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.targetAmount)
+  },
+  feeStandard: {
+    kind: 'field',
+    label: '收费标准',
+    renderInput: () => <Input placeholder="请输入收费标准" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.feeStandard)
+  },
+  agencyFeeEstimate: {
+    kind: 'field',
+    label: '代理费估值',
+    renderInput: () => <Input style={{ width: '100%' }} placeholder="请输入代理费估值" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.agencyFeeEstimate)
+  },
+  dataSource: {
+    kind: 'field',
+    label: '数据来源',
+    requiredMessage: '请输入数据来源',
+    renderInput: () => <Input placeholder="请输入数据来源" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.dataSource)
+  },
+  entryDate: {
+    kind: 'field',
+    label: '入职时间',
+    renderInput: () => <DatePicker style={{ width: '100%' }} placeholder="请选择入职时间" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatDate(info?.entryDate ?? null)
+  },
+  clueDate: {
+    kind: 'field',
+    label: '线索日期',
+    requiredMessage: '请选择线索日期',
+    renderInput: () => <DatePicker style={{ width: '100%' }} placeholder="请选择线索日期" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatDate(info?.clueDate ?? null)
+  },
+  contractDate: {
+    kind: 'field',
+    label: '合同日期',
+    requiredMessage: '请选择合同日期',
+    renderInput: () => <DatePicker style={{ width: '100%' }} placeholder="请选择合同日期" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatDate(info?.contractDate ?? null)
+  },
+  injuryLocation: {
+    kind: 'field',
+    label: '受伤地点',
+    renderInput: () => <Input placeholder="请输入受伤地点" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.injuryLocation)
+  },
+  injurySeverity: {
+    kind: 'field',
+    label: '受伤程度',
+    renderInput: () => <Input placeholder="请输入受伤程度" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.injurySeverity)
+  },
+  injuryCause: {
+    kind: 'field',
+    label: '受伤原因',
+    renderInput: () => <Input placeholder="请输入受伤原因" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.injuryCause)
+  },
+  workInjuryCertified: {
+    kind: 'field',
+    label: '工伤认定',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.workInjuryCertified ?? null, '有', '无')
+  },
+  appraisalLevel: {
+    kind: 'field',
+    label: '劳动能力等级鉴定/人损等级',
+    renderInput: () => <Input placeholder="请输入鉴定等级或填写无" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.appraisalLevel)
+  },
+  appraisalEstimate: {
+    kind: 'field',
+    label: '劳动能力/人损等级预估',
+    renderInput: () => <Input placeholder="请输入预估等级" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.appraisalEstimate)
+  },
+  monthlySalary: {
+    kind: 'field',
+    label: '当时月薪',
+    renderInput: () => <Input style={{ width: '100%' }} placeholder="请输入当时月薪" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.monthlySalary)
+  },
+  customerCooperative: {
+    kind: 'field',
+    label: '是否配合提交材料',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_COOPERATION]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.customerCooperative ?? null, '是', '否')
+  },
+  hasContract: {
+    kind: 'field',
+    label: '有无合同',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.hasContract ?? null, '有', '无')
+  },
+  hasSocialSecurity: {
+    kind: 'field',
+    label: '有无社保',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.hasSocialSecurity ?? null, '有', '无')
+  },
+  witnessCooperative: {
+    kind: 'field',
+    label: '证人是否配合出庭',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_COOPERATION]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.witnessCooperative ?? null, '是', '否')
+  },
+  caseCategory: {
+    kind: 'field',
+    label: '案件类别',
+    renderInput: () => (
+      <Select options={CASE_CATEGORY_OPTIONS} placeholder="请选择案件类别" disabled />
+    ),
+    renderDisplay: (info, defaultCaseCategory) => {
+      const category = (info?.caseCategory ?? defaultCaseCategory) as CaseCategory;
+      return CASE_CATEGORY_LABEL_MAP[category] ?? '—';
+    }
+  },
+  insuranceRiskLevel: {
+    kind: 'field',
+    label: '风险等级',
+    renderInput: () => (
+      <Select options={[...CASE_LEVELS]} placeholder="请选择风险等级" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CASE_LEVEL_LABEL_MAP, info?.insuranceRiskLevel ?? null)
+  },
+  contractForm: {
+    kind: 'field',
+    label: '合同形式',
+    requiredMessage: '请选择合同形式',
+    renderInput: () => (
+      <Select options={CONTRACT_FORM_OPTIONS} placeholder="请选择合同形式" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CONTRACT_FORM_LABEL_MAP, info?.contractForm ?? null)
+  },
+  contractQuoteType: {
+    kind: 'field',
+    label: '收费方式',
+    requiredMessage: '请选择收费方式',
+    renderInput: () => (
+      <Select options={CONTRACT_QUOTE_TYPE_OPTIONS} placeholder="请选择收费方式" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CONTRACT_QUOTE_TYPE_LABEL_MAP, info?.contractQuoteType ?? null)
+  },
+  contractQuoteAmount: {
+    kind: 'field',
+    label: '收费金额（元）',
+    requiredMessage: '请输入收费金额',
+    colSpan: 24,
+    renderInput: () => (
+      <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入收费金额" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.contractQuoteAmount ?? null)
+  },
+  contractQuoteUpfront: {
+    kind: 'field',
+    label: '前期收费（元）',
+    requiredMessage: '请输入前期收费金额',
+    colSpan: 12,
+    renderInput: () => (
+      <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入前期收费金额" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.contractQuoteUpfront ?? null)
+  },
+  contractQuoteRatio: {
+    kind: 'field',
+    label: '回款比例 (%)',
+    requiredMessage: '请输入回款比例',
+    colSpan: 12,
+    renderInput: () => (
+      <InputNumber
+        style={{ width: '100%' }}
+        min={0}
+        max={100}
+        precision={2}
+        placeholder="请输入回款比例"
+      />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatNumberWithSuffix(info?.contractQuoteRatio ?? null, '%')
+  },
+  estimatedCollection: {
+    kind: 'field',
+    label: '预计回款',
+    requiredMessage: '请输入预计回款',
+    renderInput: () => (
+      <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入预计回款" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.estimatedCollection ?? null)
+  },
+  litigationFeeType: {
+    kind: 'field',
+    label: '诉讼费承担',
+    labelOverrides: {
+      insurance: '诉讼费'
+    },
+    requiredMessage: '请选择诉讼费',
+    renderInput: () => (
+      <Select options={LITIGATION_FEE_TYPE_OPTIONS} placeholder="请选择诉讼费" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(LITIGATION_FEE_TYPE_LABEL_MAP, info?.litigationFeeType ?? null)
+  },
+  travelFeeType: {
+    kind: 'field',
+    label: '差旅费承担',
+    colSpan: 24,
+    labelOverrides: {
+      insurance: '差旅费'
+    },
+    requiredMessage: '请选择差旅费',
+    renderInput: () => (
+      <Select options={TRAVEL_FEE_TYPE_OPTIONS} placeholder="请选择差旅费" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(TRAVEL_FEE_TYPE_LABEL_MAP, info?.travelFeeType ?? null)
+  },
+  contractQuoteOther: {
+    kind: 'field',
+    label: '收费说明',
+    colSpan: 24,
+    requiredMessage: '请输入收费说明',
+    renderInput: () => <Input placeholder="请输入收费说明" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.contractQuoteOther)
+  },
+  insuranceTypes: {
+    kind: 'field',
+    label: '保险类型',
+    colSpan: 24,
+    requiredMessage: '请选择保险类型',
+    renderInput: () => <Checkbox.Group options={INSURANCE_TYPE_OPTIONS} />,
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatStringList(info?.insuranceTypes ?? null)
+  },
+  insuranceMisrepresentations: {
+    kind: 'field',
+    label: '未如实告知',
+    colSpan: 24,
+    requiredMessage: '请选择未如实告知类型',
+    renderInput: () => <Checkbox.Group options={INSURANCE_MISREPRESENTATION_OPTIONS} />,
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatStringList(info?.insuranceMisrepresentations ?? null)
+  },
+  existingEvidence: {
+    kind: 'field',
+    label: '已知证据',
+    colSpan: 24,
+    renderInput: () => <TextArea rows={3} placeholder="请描述已掌握的证据" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.existingEvidence)
+  },
+  remark: {
+    kind: 'field',
+    label: '备注',
+    colSpan: 24,
+    requiredMessage: '请输入备注',
+    renderInput: () => <TextArea rows={3} placeholder="可补充其他情况" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.remark)
+  },
+  insuranceDivider: {
+    kind: 'divider',
+    dashed: true
+  }
+};
+
+interface BasicInfoVisibilityContext {
+  isInsuranceCase: boolean;
+  contractQuoteType?: ContractQuoteType | null;
+}
+
+const shouldRenderBasicInfoField = (
+  fieldKey: BasicInfoFieldKey,
+  context: BasicInfoVisibilityContext
+): boolean => {
+  const { isInsuranceCase, contractQuoteType } = context;
+
+  if (!isInsuranceCase && INSURANCE_ONLY_FIELDS.has(fieldKey)) {
+    return false;
+  }
+
+  if (!isInsuranceCase) {
+    return true;
+  }
+
+  switch (fieldKey) {
+    case 'contractQuoteAmount':
+      return contractQuoteType === 'fixed';
+    case 'contractQuoteUpfront':
+    case 'contractQuoteRatio':
+      return contractQuoteType === 'risk';
+    case 'contractQuoteOther':
+      return contractQuoteType === 'other';
+    default:
+      return true;
+  }
+};
+
+const resolveDescriptionSpan = (colSpan?: number): number => {
+  if (!colSpan || colSpan <= 8) {
+    return 1;
+  }
+  if (colSpan >= 24) {
+    return 3;
+  }
+  return 2;
+};
+
 interface WorkInjuryCaseModalProps {
+  department: UserDepartment;
   open: boolean;
   mode?: 'create' | 'view' | 'update';
   initialValues?: WorkInjuryCaseFormValues;
@@ -391,6 +910,8 @@ interface WorkInjuryCaseModalProps {
     values: WorkInjuryCaseFormValues['parties']
   ) => Promise<WorkInjuryCaseFormValues | void> | WorkInjuryCaseFormValues | void;
   confirmLoading?: boolean;
+  visibleTabs?: WorkInjuryCaseTabKey[];
+  editableTabs?: WorkInjuryCaseTabKey[];
   onSaveAssignment?: (
     values: AssignStaffFormValues
   ) => Promise<WorkInjuryCaseFormValues | void>;
@@ -423,18 +944,28 @@ interface WorkInjuryCaseModalProps {
   canViewChangeLogs?: boolean;
   canManageTimeNodes?: boolean;
 }
-const buildInitialValues = (): WorkInjuryCaseFormValues => {
+const buildInitialValues = (department: UserDepartment = 'work_injury'): WorkInjuryCaseFormValues => {
+  const defaultCategory: CaseCategory = department === 'insurance' ? 'insurance' : 'work_injury';
 
-  return {
-    basicInfo: {
+  const basicInfo: NonNullable<WorkInjuryCaseFormValues['basicInfo']> = {
+      caseCategory: defaultCategory,
       caseType: 'work_injury',
       caseLevel: 'A',
+      insuranceTypes: [],
+      insuranceMisrepresentations: []
       // hasContract: true,
       // hasSocialSecurity: false,
       // workInjuryCertified: false,
       // customerCooperative: true,
       // witnessCooperative: true
-    },
+  };
+
+  if (department === 'insurance') {
+    basicInfo.contractDate = dayjs();
+  }
+
+  return {
+    basicInfo,
     parties: {
       claimants: [{}],
       respondents: []
@@ -454,6 +985,7 @@ const buildInitialValues = (): WorkInjuryCaseFormValues => {
 };
 
 export default function WorkInjuryCaseModal({
+  department,
   open,
   mode = 'create',
   initialValues,
@@ -482,8 +1014,30 @@ export default function WorkInjuryCaseModal({
   canAddCollections = false,
   canUpdateFees = false,
   canViewChangeLogs = false,
-  canManageTimeNodes = false
+  canManageTimeNodes = false,
+  visibleTabs,
+  editableTabs
 }: WorkInjuryCaseModalProps) {
+  const initialTabKey = (visibleTabs && visibleTabs.length ? visibleTabs[0] : DEFAULT_VISIBLE_TABS[0]) ?? DEFAULT_ACTIVE_TAB;
+  const resolvedVisibleTabs = useMemo<WorkInjuryCaseTabKey[]>(
+    () => (visibleTabs && visibleTabs.length ? visibleTabs : DEFAULT_VISIBLE_TABS),
+    [visibleTabs]
+  );
+  const visibleTabsSet = useMemo(() => new Set(resolvedVisibleTabs), [resolvedVisibleTabs]);
+  const resolvedEditableTabs = useMemo<WorkInjuryCaseTabKey[]>(
+    () =>
+      editableTabs && editableTabs.length
+        ? editableTabs.filter(tab => visibleTabsSet.has(tab))
+        : resolvedVisibleTabs,
+    [editableTabs, resolvedVisibleTabs, visibleTabsSet]
+  );
+  const editableTabsSet = useMemo(() => new Set(resolvedEditableTabs), [resolvedEditableTabs]);
+
+  const defaultCaseCategory: CaseCategory = department === 'insurance' ? 'insurance' : 'work_injury';
+  const departmentConfig = useMemo(() => CASE_DEPARTMENT_CONFIG[department], [department]);
+  const basicInfoLayout = departmentConfig.basicInfoLayout;
+  const requiredBasicInfoFields = departmentConfig.requiredBasicInfoFields;
+
   const sessionUser = useSessionStore(state => state.user);
   const { message } = App.useApp();
   const [form] = Form.useForm<WorkInjuryCaseFormValues>();
@@ -493,7 +1047,7 @@ export default function WorkInjuryCaseModal({
   const [collectionForm] = Form.useForm<CollectionFormValues>();
   const [feeForm] = Form.useForm<FeeFormValues>();
   const [timeNodeForm] = Form.useForm<TimeNodeFormValues>();
-  const [activeTab, setActiveTab] = useState<TabKey>(DEFAULT_ACTIVE_TAB);
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTabKey);
   const [dirtySections, setDirtySections] = useState<Set<string>>(new Set());
   const [assignableStaff, setAssignableStaff] = useState<AssignableStaffResponse | null>(null);
   const [assignableStaffLoading, setAssignableStaffLoading] = useState(false);
@@ -568,15 +1122,16 @@ export default function WorkInjuryCaseModal({
   const isUpdateMode = mode === 'update';
   const isEditable = !isViewMode;
   const isRestrictedEditor = sessionUser ? ['lawyer', 'assistant'].includes(sessionUser.role) : false;
-  const canEditBasicInfo = isEditable && (!isRestrictedEditor || mode === 'create');
+  const canEditBasicInfo =
+    isEditable && editableTabsSet.has('basic') && (!isRestrictedEditor || mode === 'create');
   const mainFormSaving = Boolean(confirmLoading);
 
   const baseInitialValues = useMemo(() => {
     if (mode === 'create') {
-      return buildInitialValues();
+      return buildInitialValues(department);
     }
-    return initialValues ?? buildInitialValues();
-  }, [mode, initialValues]);
+    return initialValues ?? buildInitialValues(department);
+  }, [department, mode, initialValues]);
 
   const [cachedDisplayValues, setCachedDisplayValues] = useState<WorkInjuryCaseFormValues>(baseInitialValues);
 
@@ -1308,13 +1863,20 @@ export default function WorkInjuryCaseModal({
 
   useEffect(() => {
     if (!open) {
-      setActiveTab(DEFAULT_ACTIVE_TAB);
+      setActiveTab(initialTabKey);
       return;
     }
-    const targetTab =
-      initialActiveTab && isTabKey(initialActiveTab) ? initialActiveTab : DEFAULT_ACTIVE_TAB;
+    const targetTab = (() => {
+      if (initialActiveTab && isTabKey(initialActiveTab) && visibleTabsSet.has(initialActiveTab)) {
+        return initialActiveTab;
+      }
+      if (visibleTabsSet.has(DEFAULT_ACTIVE_TAB)) {
+        return DEFAULT_ACTIVE_TAB;
+      }
+      return resolvedVisibleTabs[0] ?? initialTabKey;
+    })();
     setActiveTab(targetTab);
-  }, [open, initialActiveTab]);
+  }, [open, initialActiveTab, initialTabKey, resolvedVisibleTabs, visibleTabsSet]);
 
   useEffect(() => {
     if (!open) {
@@ -1646,156 +2208,148 @@ export default function WorkInjuryCaseModal({
     </Form.List>
   );
 
-  const basicInfoPane = (
-    <>
-      <Row gutter={16}>
-        <Col span={8}>
-          <Form.Item
-            label="案件类型"
-            name={['basicInfo', 'caseType']}
-            rules={[{ required: true, message: '请选择案件类型' }]}
-          >
-            <Select options={[...CASE_TYPES]} placeholder="请选择案件类型" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="案件级别"
-            name={['basicInfo', 'caseLevel']}
-            rules={[{ required: true, message: '请选择案件级别' }]}
-          >
-            <Select options={[...CASE_LEVELS]} placeholder="请选择案件级别" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="案件省份/城市"
-            name={['basicInfo', 'provinceCity']}
-            rules={[{ required: true, message: '请输入案件省份/城市' }]}
-          >
-            <Input placeholder="请输入省份/城市" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="标的额"
-            name={['basicInfo', 'targetAmount']}
-          >
-            <Input style={{ width: '100%' }} placeholder="请输入标的额" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="收费标准" name={['basicInfo', 'feeStandard']}>
-            <Input placeholder="请输入收费标准" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="代理费估值" name={['basicInfo', 'agencyFeeEstimate']}>
-            <Input style={{ width: '100%' }} placeholder="请输入代理费估值" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="数据来源"
-            name={['basicInfo', 'dataSource']}
-            rules={[{ required: true, message: '请输入数据来源' }]}
-          >
-            <Input placeholder="请输入数据来源" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="入职时间" name={['basicInfo', 'entryDate']}>
-            <DatePicker style={{ width: '100%' }} placeholder="请选择入职时间" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="受伤地点" name={['basicInfo', 'injuryLocation']}>
-            <Input placeholder="请输入受伤地点" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="受伤程度" name={['basicInfo', 'injurySeverity']}>
-            <Input placeholder="请输入受伤程度" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="受伤原因" name={['basicInfo', 'injuryCause']}>
-            <Input placeholder="请输入受伤原因" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="工伤认定"
-            name={['basicInfo', 'workInjuryCertified']}
-            rules={[{ required: false, message: '请选择工伤认定情况' }]}
-          >
-            <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="劳动能力等级鉴定/人损等级" name={['basicInfo', 'appraisalLevel']}>
-            <Input placeholder="请输入鉴定等级或填写无" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="劳动能力/人损等级预估" name={['basicInfo', 'appraisalEstimate']}>
-            <Input placeholder="请输入预估等级" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="当时月薪" name={['basicInfo', 'monthlySalary']}>
-            <Input style={{ width: '100%' }} placeholder="请输入当时月薪" />
-          </Form.Item>
-        </Col>
-        <Col span={6}>
-          <Form.Item
-            label="是否配合提交材料"
-            name={['basicInfo', 'customerCooperative']}
-            rules={[{ required: false, message: '请选择是否能配合提交材料' }]}
-          >
-            <Radio.Group options={[...YES_NO_COOPERATION]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={5}>
-          <Form.Item
-            label="有无合同"
-            name={['basicInfo', 'hasContract']}
-            rules={[{ required: false, message: '请选择是否有合同' }]}
-          >
-            <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={5}>
-          <Form.Item
-            label="有无社保"
-            name={['basicInfo', 'hasSocialSecurity']}
-            rules={[{ required: false, message: '请选择是否有社保' }]}
-          >
-            <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="证人是否配合出庭"
-            name={['basicInfo', 'witnessCooperative']}
-            rules={[{ required: false, message: '请选择证人是否能配合出庭' }]}
-          >
-            <Radio.Group options={[...YES_NO_COOPERATION]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={24}>
-          <Form.Item label="已知证据" name={['basicInfo', 'existingEvidence']}>
-            <TextArea rows={3} placeholder="请描述已掌握的证据" />
-          </Form.Item>
-        </Col>
-        <Col span={24}>
-          <Form.Item label="备注" name={['basicInfo', 'remark']}>
-            <TextArea rows={3} placeholder="可补充其他情况" />
-          </Form.Item>
-        </Col>
-      </Row>
-    </>
+  const watchedCaseCategory = Form.useWatch<CaseCategory | undefined>(['basicInfo', 'caseCategory'], form);
+  const watchedContractQuoteType = Form.useWatch<ContractQuoteType | undefined>(
+    ['basicInfo', 'contractQuoteType'],
+    form
   );
+  const isInsuranceCase =
+    (watchedCaseCategory ?? displayValues.basicInfo?.caseCategory ?? defaultCaseCategory) === 'insurance';
+
+  useEffect(() => {
+    const basicValues = (form.getFieldValue('basicInfo') ?? {}) as BasicInfoValues;
+    const updates: Partial<BasicInfoValues> = {};
+
+    if (!isInsuranceCase) {
+      INSURANCE_ONLY_FIELDS.forEach(fieldKey => {
+        const currentValue = (basicValues as Record<string, unknown>)[fieldKey];
+        if (currentValue == null) {
+          return;
+        }
+        if (fieldKey === 'insuranceTypes' || fieldKey === 'insuranceMisrepresentations') {
+          if ((currentValue as unknown[]).length > 0) {
+            (updates as Record<string, unknown>)[fieldKey] = [];
+          }
+        } else {
+          (updates as Record<string, unknown>)[fieldKey] = null;
+        }
+      });
+    } else {
+      const quoteType = watchedContractQuoteType ?? null;
+
+      if (quoteType !== 'fixed' && basicValues?.contractQuoteAmount != null) {
+        updates.contractQuoteAmount = undefined;
+      }
+      if (quoteType !== 'risk') {
+        if (basicValues?.contractQuoteUpfront != null) {
+          updates.contractQuoteUpfront = undefined;
+        }
+        if (basicValues?.contractQuoteRatio != null) {
+          updates.contractQuoteRatio = undefined;
+        }
+      }
+      if (quoteType !== 'other' && basicValues?.contractQuoteOther) {
+        updates.contractQuoteOther = undefined;
+      }
+    }
+
+    if (Object.keys(updates).length) {
+      form.setFieldsValue({
+        basicInfo: {
+          ...basicValues,
+          ...updates
+        }
+      });
+    }
+  }, [form, isInsuranceCase, watchedContractQuoteType]);
+
+  const basicInfoElements: ReactNode[] = [];
+
+  basicInfoLayout.forEach((row, rowIndex) => {
+    const fieldColumns: ReactNode[] = [];
+
+    row.forEach((fieldKey, columnIndex) => {
+      if (!fieldKey) {
+        return;
+      }
+      if (
+        !shouldRenderBasicInfoField(fieldKey, {
+          isInsuranceCase,
+          contractQuoteType: watchedContractQuoteType ?? null
+        })
+      ) {
+        return;
+      }
+      const meta = BASIC_INFO_FIELD_META[fieldKey];
+      const elementKey = `${fieldKey}-${rowIndex}-${columnIndex}`;
+
+      if (meta.kind === 'divider') {
+        basicInfoElements.push(
+          <Divider key={`basic-divider-${elementKey}`} dashed={meta.dashed} style={{ margin: '16px 0' }}>
+            {meta.label}
+          </Divider>
+        );
+        return;
+      }
+
+      const label = meta.labelOverrides?.[department] ?? meta.label;
+      const rules: Rule[] = [];
+      if (requiredBasicInfoFields.has(fieldKey)) {
+        rules.push({ required: true, message: meta.requiredMessage ?? `${label ?? '该字段'}为必填项` });
+      }
+      if (meta.extraRules) {
+        rules.push(...meta.extraRules);
+      }
+      if (isInsuranceCase) {
+        switch (fieldKey) {
+          case 'contractQuoteAmount':
+            if (watchedContractQuoteType === 'fixed') {
+              rules.push({ required: true, message: meta.requiredMessage ?? '请输入收费金额' });
+            }
+            break;
+          case 'contractQuoteUpfront':
+            if (watchedContractQuoteType === 'risk') {
+              rules.push({ required: true, message: meta.requiredMessage ?? '请输入前期收费金额' });
+            }
+            break;
+          case 'contractQuoteRatio':
+            if (watchedContractQuoteType === 'risk') {
+              rules.push({ required: true, message: meta.requiredMessage ?? '请输入回款比例' });
+            }
+            break;
+          case 'contractQuoteOther':
+            if (watchedContractQuoteType === 'other') {
+              rules.push({ required: true, message: meta.requiredMessage ?? '请输入收费说明' });
+            }
+            break;
+          default:
+            break;
+        }
+      }
+
+      fieldColumns.push(
+        <Col span={meta.colSpan ?? 8} key={`basic-col-${elementKey}`}>
+          <Form.Item
+            label={label}
+            name={['basicInfo', fieldKey]}
+            rules={rules}
+          >
+            {meta.renderInput({ department, defaultCaseCategory })}
+          </Form.Item>
+        </Col>
+      );
+    });
+
+    if (fieldColumns.length) {
+      basicInfoElements.push(
+        <Row gutter={16} key={`basic-row-${rowIndex}`}>
+          {fieldColumns}
+        </Row>
+      );
+    }
+  });
+
+  const basicInfoPane = <>{basicInfoElements}</>;
 
   const personnelPane = (
     <>
@@ -2067,31 +2621,80 @@ export default function WorkInjuryCaseModal({
 
   const renderBasicInfoDisplay = (values: WorkInjuryCaseFormValues) => {
     const info = values.basicInfo ?? {};
-    return (
-      <Descriptions bordered size="small" column={2} className={styles.descriptions}>
-        <Descriptions.Item label="案件类型">{formatOptionLabel(CASE_TYPE_LABEL_MAP, info.caseType ?? null)}</Descriptions.Item>
-        <Descriptions.Item label="案件级别">{formatOptionLabel(CASE_LEVEL_LABEL_MAP, info.caseLevel ?? null)}</Descriptions.Item>
-        <Descriptions.Item label="省份/城市">{formatText(info.provinceCity)}</Descriptions.Item>
-        <Descriptions.Item label="标的额">{formatText(info.targetAmount)}</Descriptions.Item>
-        <Descriptions.Item label="收费标准">{formatText(info.feeStandard)}</Descriptions.Item>
-        <Descriptions.Item label="代理费估值">{formatText(info.agencyFeeEstimate)}</Descriptions.Item>
-        <Descriptions.Item label="数据来源">{formatText(info.dataSource)}</Descriptions.Item>
-        <Descriptions.Item label="入职时间">{formatDate(info.entryDate ?? null)}</Descriptions.Item>
-        <Descriptions.Item label="受伤地点">{formatText(info.injuryLocation)}</Descriptions.Item>
-        <Descriptions.Item label="受伤程度">{formatText(info.injurySeverity)}</Descriptions.Item>
-        <Descriptions.Item label="受伤原因" span={3}>{formatText(info.injuryCause)}</Descriptions.Item>
-        <Descriptions.Item label="工伤认定">{formatBoolean(info.workInjuryCertified ?? null, '有', '无')}</Descriptions.Item>
-        <Descriptions.Item label="劳动能力等级鉴定/人损等级">{formatText(info.appraisalLevel)}</Descriptions.Item>
-        <Descriptions.Item label="劳动能力/人损等级预估">{formatText(info.appraisalEstimate)}</Descriptions.Item>
-        <Descriptions.Item label="当时月薪">{formatText(info.monthlySalary)}</Descriptions.Item>
-        <Descriptions.Item label="是否配合提交材料">{formatBoolean(info.customerCooperative ?? null, '是', '否')}</Descriptions.Item>
-        <Descriptions.Item label="有无合同">{formatBoolean(info.hasContract ?? null, '有', '无')}</Descriptions.Item>
-        <Descriptions.Item label="有无社保">{formatBoolean(info.hasSocialSecurity ?? null, '有', '无')}</Descriptions.Item>
-        <Descriptions.Item label="证人是否配合出庭">{formatBoolean(info.witnessCooperative ?? null, '是', '否')}</Descriptions.Item>
-        <Descriptions.Item label="已知证据" span={3}>{formatText(info.existingEvidence)}</Descriptions.Item>
-        <Descriptions.Item label="备注" span={3}>{formatText(info.remark)}</Descriptions.Item>
-      </Descriptions>
-    );
+    const caseCategory = (info.caseCategory ?? defaultCaseCategory) as CaseCategory;
+    const isInsuranceCase = caseCategory === 'insurance';
+  const contractQuoteType = (info.contractQuoteType ?? null) as ContractQuoteType | null;
+    const sections: ReactNode[] = [];
+    let currentItems: ReactNode[] = [];
+    const commitItems = () => {
+      if (!currentItems.length) {
+        return;
+      }
+      sections.push(
+        <Descriptions
+          key={`basic-desc-${sections.length}`}
+          bordered
+          size="small"
+          column={3}
+          className={styles.descriptions}
+        >
+          {currentItems}
+        </Descriptions>
+      );
+      currentItems = [];
+    };
+
+    basicInfoLayout.forEach((row, rowIndex) => {
+      row.forEach((fieldKey, columnIndex) => {
+        if (!fieldKey) {
+          return;
+        }
+        if (
+          !shouldRenderBasicInfoField(fieldKey, {
+            isInsuranceCase,
+            contractQuoteType
+          })
+        ) {
+          return;
+        }
+        const meta = BASIC_INFO_FIELD_META[fieldKey];
+        const elementKey = `${fieldKey}-${rowIndex}-${columnIndex}`;
+
+        if (meta.kind === 'divider') {
+          commitItems();
+          sections.push(
+            <Divider key={`basic-display-divider-${elementKey}`} dashed={meta.dashed} style={{ margin: '16px 0' }}>
+              {meta.label}
+            </Divider>
+          );
+          return;
+        }
+
+        const itemLabel = meta.labelOverrides?.[department] ?? meta.label;
+
+        currentItems.push(
+          <Descriptions.Item
+            key={`basic-display-${elementKey}`}
+            label={itemLabel}
+            span={resolveDescriptionSpan(meta.colSpan)}
+          >
+            {meta.renderDisplay(info, defaultCaseCategory)}
+          </Descriptions.Item>
+        );
+      });
+    });
+
+    commitItems();
+
+    if (!sections.length) {
+      return (
+        <Typography.Text type="secondary" className={styles.emptyHint}>
+          暂无基本信息
+        </Typography.Text>
+      );
+    }
+
+    return <div className={styles.sectionList}>{sections}</div>;
   };
 
   const renderPartyDisplay = (values: WorkInjuryCaseFormValues) => {
@@ -2582,29 +3185,36 @@ export default function WorkInjuryCaseModal({
   );
 
 
-  const canViewHearingTab = sessionUser?.role !== 'sale';
-  const canViewStaffAndFeesTab =
-    sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant';
+  const canViewHearingTab = visibleTabsSet.has('hearing') && sessionUser?.role !== 'sale';
+  const canViewStaffTab =
+    visibleTabsSet.has('staff') && sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant';
+  const canViewFeesTab =
+    visibleTabsSet.has('fees') && sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant';
 
-  const shouldRenderAssignmentHiddenForm = !isEditable || !canViewStaffAndFeesTab;
+  const shouldRenderAssignmentHiddenForm = !isEditable || !canViewStaffTab;
   const shouldRenderHearingHiddenForm = !isEditable || !canViewHearingTab;
-  const shouldRenderFeesHiddenForm = !isEditable || !canViewStaffAndFeesTab;
+  const shouldRenderFeesHiddenForm = !isEditable || !canViewFeesTab;
 
   type TabItem = NonNullable<TabsProps['items']>[number];
 
   const tabItems: TabItem[] = (() => {
-    const items: TabItem[] = [
-      {
+    const items: TabItem[] = [];
+
+    if (visibleTabsSet.has('basic')) {
+      items.push({
         key: 'basic',
         label: buildTabLabel('basic'),
         children: canEditBasicInfo ? basicInfoPane : renderBasicInfoDisplay(displayValues)
-      },
-      {
+      });
+    }
+
+    if (visibleTabsSet.has('parties')) {
+      items.push({
         key: 'parties',
         label: buildTabLabel('parties'),
         children: isEditable ? personnelPane : renderPartyDisplay(displayValues)
-      }
-    ];
+      });
+    }
 
     if (canViewHearingTab) {
       items.push({
@@ -2614,7 +3224,7 @@ export default function WorkInjuryCaseModal({
       });
     }
 
-    if (canViewStaffAndFeesTab) {
+    if (canViewStaffTab) {
       items.push({
         key: 'staff',
         label: buildTabLabel('staff'),
@@ -2622,26 +3232,31 @@ export default function WorkInjuryCaseModal({
       });
     }
 
-    items.push({
-      key: 'timeNodes',
-      label: buildTabLabel('timeNodes'),
-      children: timeNodePane
-    });
+    if (visibleTabsSet.has('timeNodes')) {
+      items.push({
+        key: 'timeNodes',
+        label: buildTabLabel('timeNodes'),
+        children: timeNodePane
+      });
+    }
 
-    items.push(
-      {
+    if (visibleTabsSet.has('followUp')) {
+      items.push({
         key: 'followUp',
         label: buildTabLabel('followUp'),
         children: followUpEditPane
-      },
-      {
+      });
+    }
+
+    if (visibleTabsSet.has('changeLog')) {
+      items.push({
         key: 'changeLog',
         label: buildTabLabel('changeLog'),
         children: isEditable ? changeLogEditPane : renderChangeLogDisplay(changeLogs, changeLogsLoading)
-      }
-    );
+      });
+    }
 
-    if (canViewStaffAndFeesTab) {
+    if (canViewFeesTab) {
       items.push({
         key: 'fees',
         label: buildTabLabel('fees'),
@@ -2653,7 +3268,7 @@ export default function WorkInjuryCaseModal({
   })();
 
   const handleTabChange = (key: string) => {
-    if (!isTabKey(key)) {
+    if (!isTabKey(key) || !visibleTabsSet.has(key)) {
       return;
     }
     setActiveTab(key);
@@ -2696,7 +3311,7 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'parties' && (onSubmit || onSaveParties)) {
+      if (activeTab === 'parties' && editableTabsSet.has('parties') && (onSubmit || onSaveParties)) {
         const partiesDirty = hasTabChanges('parties');
         const partiesSavingState = mode === 'create' ? mainFormSaving : partiesSaving;
         buttons.push(
@@ -2719,7 +3334,7 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'staff' && onSaveAssignment) {
+      if (activeTab === 'staff' && editableTabsSet.has('staff') && onSaveAssignment) {
         buttons.push(
           <Button
             key="assignment-reset"
@@ -2740,7 +3355,7 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'hearing' && onAddHearing && canAddHearings) {
+      if (activeTab === 'hearing' && editableTabsSet.has('hearing') && onAddHearing && canAddHearings) {
         buttons.push(
           <Button
             key="hearing-reset"
@@ -2761,7 +3376,7 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'timeNodes' && onSaveTimeNodes && canManageTimeNodes) {
+      if (activeTab === 'timeNodes' && editableTabsSet.has('timeNodes') && onSaveTimeNodes && canManageTimeNodes) {
         const timeNodesDirty = hasTabChanges('timeNodes');
         buttons.push(
           <Button
@@ -2783,7 +3398,7 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'followUp' && onAddFollowUp) {
+      if (activeTab === 'followUp' && editableTabsSet.has('followUp') && onAddFollowUp) {
         buttons.push(
           <Button key="followUp-reset" onClick={handleFollowUpReset} disabled={followUpSaving}>
             重置
@@ -2806,7 +3421,7 @@ export default function WorkInjuryCaseModal({
       activeTab,
       assignmentSaving,
       basicInfoSaving,
-  canEditBasicInfo,
+      canEditBasicInfo,
       canAddFollowUps,
       canAddHearings,
       canAddMoreHearings,
@@ -2840,7 +3455,8 @@ export default function WorkInjuryCaseModal({
       onSubmit,
       partiesSaving,
       timeNodeSaving,
-      canManageTimeNodes
+      canManageTimeNodes,
+      editableTabsSet
     ]
   );
 
@@ -2900,7 +3516,7 @@ export default function WorkInjuryCaseModal({
               tabPosition="left"
               items={tabItems}
               className={styles.viewTabs}
-              destroyInactiveTabPane={false}
+              destroyOnHidden={false}
             />
           </div>
         </Form>

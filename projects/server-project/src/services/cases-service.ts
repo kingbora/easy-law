@@ -13,6 +13,11 @@ import {
   caseTimeNodes,
   caseTimeline,
   caseStatusEnum,
+  caseCategoryEnum,
+  contractQuoteTypeEnum,
+  litigationFeeTypeEnum,
+  travelFeeTypeEnum,
+  contractFormEnum,
   trialStageEnum,
   type CaseChangeDetail,
   type caseLevelEnum,
@@ -53,14 +58,19 @@ const CASE_COLLECTION_ALLOWED_ROLES = new Set<SessionUser['role']>([
 ]);
 
 const WORK_INJURY_CASE_TABLE_KEY = 'work_injury_cases';
+const INSURANCE_CASE_TABLE_KEY = 'insurance_cases';
 
-const CASE_TABLE_ALLOWED_KEYS = new Set<string>([WORK_INJURY_CASE_TABLE_KEY]);
+const CASE_TABLE_ALLOWED_KEYS = new Set<string>([
+  WORK_INJURY_CASE_TABLE_KEY,
+  INSURANCE_CASE_TABLE_KEY
+]);
 
 const CASE_TABLE_ALLOWED_COLUMNS = [
   'caseNumber',
   'caseStatus',
   'caseType',
   'caseLevel',
+  'claimantNames',
   'provinceCity',
   'assignedLawyerName',
   'assignedAssistantName',
@@ -79,6 +89,7 @@ const DEFAULT_CASE_TABLE_COLUMNS: CaseTableColumnKey[] = [
   'caseStatus',
   'caseType',
   'caseLevel',
+  'claimantNames',
   'provinceCity',
   'assignedLawyerName',
   'assignedAssistantName'
@@ -134,6 +145,8 @@ const BASIC_INFO_FIELD_KEYS = [
   'agencyFeeEstimate',
   'dataSource',
   'hasContract',
+  'contractDate',
+  'clueDate',
   'hasSocialSecurity',
   'entryDate',
   'injuryLocation',
@@ -146,7 +159,20 @@ const BASIC_INFO_FIELD_KEYS = [
   'existingEvidence',
   'customerCooperative',
   'witnessCooperative',
-  'remark'
+  'remark',
+  'contractQuoteType',
+  'contractQuoteAmount',
+  'contractQuoteUpfront',
+  'contractQuoteRatio',
+  'contractQuoteOther',
+  'estimatedCollection',
+  'litigationFeeType',
+  'travelFeeType',
+  'contractForm',
+  'insuranceRiskLevel',
+  'insuranceTypes',
+  'insuranceMisrepresentations',
+  'caseCategory'
 ] as const;
 
 export type CaseType = (typeof caseTypeEnum.enumValues)[number];
@@ -156,6 +182,11 @@ export type ParticipantRole = (typeof participantRoleEnum.enumValues)[number];
 export type ParticipantEntity = (typeof participantEntityEnum.enumValues)[number];
 export type TrialStage = (typeof trialStageEnum.enumValues)[number];
 export type CaseTimeNodeType = (typeof caseTimeNodeTypeEnum.enumValues)[number];
+export type CaseCategory = (typeof caseCategoryEnum.enumValues)[number];
+export type ContractQuoteType = (typeof contractQuoteTypeEnum.enumValues)[number];
+export type LitigationFeeType = (typeof litigationFeeTypeEnum.enumValues)[number];
+export type TravelFeeType = (typeof travelFeeTypeEnum.enumValues)[number];
+export type ContractFormType = (typeof contractFormEnum.enumValues)[number];
 
 export interface CaseParticipantInput {
   entityType?: ParticipantEntity | null;
@@ -211,12 +242,15 @@ export interface CaseHearingUpsertInput extends Omit<CaseHearingInput, 'trialSta
 export interface CaseInput {
   caseType: CaseType;
   caseLevel: CaseLevel;
+  caseCategory?: CaseCategory;
   provinceCity?: string | null;
   targetAmount?: string | number | null;
   feeStandard?: string | null;
   agencyFeeEstimate?: string | number | null;
   dataSource?: string | null;
   hasContract?: boolean | null;
+  contractDate?: string | Date | null;
+  clueDate?: string | Date | null;
   hasSocialSecurity?: boolean | null;
   entryDate?: string | Date | null;
   injuryLocation?: string | null;
@@ -230,6 +264,18 @@ export interface CaseInput {
   customerCooperative?: boolean | null;
   witnessCooperative?: boolean | null;
   remark?: string | null;
+  contractQuoteType?: ContractQuoteType | null;
+  contractQuoteAmount?: string | number | null;
+  contractQuoteUpfront?: string | number | null;
+  contractQuoteRatio?: string | number | null;
+  contractQuoteOther?: string | null;
+  estimatedCollection?: string | number | null;
+  litigationFeeType?: LitigationFeeType | null;
+  travelFeeType?: TravelFeeType | null;
+  contractForm?: ContractFormType | null;
+  insuranceRiskLevel?: CaseLevel | null;
+  insuranceTypes?: string[] | null;
+  insuranceMisrepresentations?: string[] | null;
   department?: (typeof cases.$inferInsert)['department'];
   assignedSaleId?: string | null;
   assignedLawyerId?: string | null;
@@ -326,12 +372,15 @@ export interface CaseDTO {
   id: string;
   caseType: CaseType;
   caseLevel: CaseLevel;
+  caseCategory: CaseCategory;
   provinceCity: string | null;
   targetAmount: string | null;
   feeStandard: string | null;
   agencyFeeEstimate: string | null;
   dataSource: string | null;
   hasContract: boolean | null;
+  contractDate: string | null;
+  clueDate: string | null;
   hasSocialSecurity: boolean | null;
   entryDate: string | null;
   injuryLocation: string | null;
@@ -345,6 +394,18 @@ export interface CaseDTO {
   customerCooperative: boolean | null;
   witnessCooperative: boolean | null;
   remark: string | null;
+  contractQuoteType: ContractQuoteType | null;
+  contractQuoteAmount: string | null;
+  contractQuoteUpfront: string | null;
+  contractQuoteRatio: string | null;
+  contractQuoteOther: string | null;
+  estimatedCollection: string | null;
+  litigationFeeType: LitigationFeeType | null;
+  travelFeeType: TravelFeeType | null;
+  contractForm: ContractFormType | null;
+  insuranceRiskLevel: CaseLevel | null;
+  insuranceTypes: string[];
+  insuranceMisrepresentations: string[];
   department: (typeof cases.$inferSelect)['department'];
   assignedSaleId: string | null;
   assignedSaleName: string | null;
@@ -857,6 +918,98 @@ function normalizeCaseStatusInput(value: CaseStatus | string | null | undefined)
     : null;
 }
 
+function normalizeCaseCategoryInput(
+  value: CaseCategory | string | null | undefined
+): CaseCategory | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (caseCategoryEnum.enumValues as readonly CaseCategory[]).includes(direct as CaseCategory)
+    ? (direct as CaseCategory)
+    : null;
+}
+
+function normalizeContractQuoteTypeInput(
+  value: ContractQuoteType | string | null | undefined
+): ContractQuoteType | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (contractQuoteTypeEnum.enumValues as readonly ContractQuoteType[]).includes(
+    direct as ContractQuoteType
+  )
+    ? (direct as ContractQuoteType)
+    : null;
+}
+
+function normalizeLitigationFeeTypeInput(
+  value: LitigationFeeType | string | null | undefined
+): LitigationFeeType | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (litigationFeeTypeEnum.enumValues as readonly LitigationFeeType[]).includes(
+    direct as LitigationFeeType
+  )
+    ? (direct as LitigationFeeType)
+    : null;
+}
+
+function normalizeTravelFeeTypeInput(
+  value: TravelFeeType | string | null | undefined
+): TravelFeeType | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (travelFeeTypeEnum.enumValues as readonly TravelFeeType[]).includes(direct as TravelFeeType)
+    ? (direct as TravelFeeType)
+    : null;
+}
+
+function normalizeContractFormInput(
+  value: ContractFormType | string | null | undefined
+): ContractFormType | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (contractFormEnum.enumValues as readonly ContractFormType[]).includes(direct as ContractFormType)
+    ? (direct as ContractFormType)
+    : null;
+}
+
+function normalizeStringArrayInput(value: unknown): string[] | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const cleaned = value
+    .map((item) => (typeof item === 'string' ? item.trim() : String(item ?? '')))
+    .filter((item) => item.length > 0);
+  return cleaned;
+}
+
 function formatValueForLog(value: unknown): string | null {
   if (value === null || value === undefined) {
     return null;
@@ -866,6 +1019,15 @@ function formatValueForLog(value: unknown): string | null {
   }
   if (typeof value === 'boolean') {
     return value ? '是' : '否';
+  }
+  if (Array.isArray(value)) {
+    const formatted = value
+      .map((item) => (typeof item === 'string' ? item.trim() : String(item ?? '')))
+      .filter((item) => item.length > 0);
+    if (formatted.length === 0) {
+      return null;
+    }
+    return formatted.join('、');
   }
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value.toString() : null;
@@ -900,6 +1062,8 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   | 'agencyFeeEstimate'
   | 'dataSource'
   | 'hasContract'
+  | 'contractDate'
+  | 'clueDate'
   | 'hasSocialSecurity'
   | 'entryDate'
   | 'injuryLocation'
@@ -913,6 +1077,19 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   | 'customerCooperative'
   | 'witnessCooperative'
   | 'remark'
+  | 'contractQuoteType'
+  | 'contractQuoteAmount'
+  | 'contractQuoteUpfront'
+  | 'contractQuoteRatio'
+  | 'contractQuoteOther'
+  | 'estimatedCollection'
+  | 'litigationFeeType'
+  | 'travelFeeType'
+  | 'contractForm'
+  | 'insuranceRiskLevel'
+  | 'insuranceTypes'
+  | 'insuranceMisrepresentations'
+  | 'caseCategory'
   | 'department'
   | 'assignedSaleId'
   | 'assignedLawyerId'
@@ -932,6 +1109,8 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   agencyFeeEstimate: '预估服务费',
   dataSource: '数据来源',
   hasContract: '合同签订',
+  contractDate: '合同日期',
+  clueDate: '线索日期',
   hasSocialSecurity: '社保情况',
   entryDate: '进件日期',
   injuryLocation: '受伤地点',
@@ -945,6 +1124,19 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   customerCooperative: '客户配合度',
   witnessCooperative: '证人配合度',
   remark: '备注',
+  contractQuoteType: '合同报价方式',
+  contractQuoteAmount: '合同固定报价',
+  contractQuoteUpfront: '风险前期收费',
+  contractQuoteRatio: '风险回款比例',
+  contractQuoteOther: '其他报价说明',
+  estimatedCollection: '预计回款',
+  litigationFeeType: '诉讼费承担',
+  travelFeeType: '差旅费承担',
+  contractForm: '合同形式',
+  insuranceRiskLevel: '风险等级',
+  insuranceTypes: '保险类型',
+  insuranceMisrepresentations: '未如实告知',
+  caseCategory: '案件类别',
   department: '所属部门',
   assignedSaleId: '跟进人',
   assignedLawyerId: '签约律师',
@@ -1022,6 +1214,10 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
     caseLevel: input.caseLevel
   };
 
+  if (input.caseCategory !== undefined) {
+    const normalizedCategory = normalizeCaseCategoryInput(input.caseCategory) ?? 'work_injury';
+    values.caseCategory = normalizedCategory;
+  }
   if (input.provinceCity !== undefined) {
     values.provinceCity = input.provinceCity ?? null;
   }
@@ -1039,6 +1235,12 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
   }
   if (input.hasContract !== undefined) {
     values.hasContract = input.hasContract ?? null;
+  }
+  if (input.contractDate !== undefined) {
+    values.contractDate = normalizeDateInput(input.contractDate);
+  }
+  if (input.clueDate !== undefined) {
+    values.clueDate = normalizeDateInput(input.clueDate);
   }
   if (input.hasSocialSecurity !== undefined) {
     values.hasSocialSecurity = input.hasSocialSecurity ?? null;
@@ -1078,6 +1280,44 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
   }
   if (input.remark !== undefined) {
     values.remark = input.remark ?? null;
+  }
+  if (input.contractQuoteType !== undefined) {
+    values.contractQuoteType = normalizeContractQuoteTypeInput(input.contractQuoteType);
+  }
+  if (input.contractQuoteAmount !== undefined) {
+    values.contractQuoteAmount = normalizeNumericInput(input.contractQuoteAmount);
+  }
+  if (input.contractQuoteUpfront !== undefined) {
+    values.contractQuoteUpfront = normalizeNumericInput(input.contractQuoteUpfront);
+  }
+  if (input.contractQuoteRatio !== undefined) {
+    values.contractQuoteRatio = normalizeNumericInput(input.contractQuoteRatio);
+  }
+  if (input.contractQuoteOther !== undefined) {
+    values.contractQuoteOther = normalizeTextInput(input.contractQuoteOther);
+  }
+  if (input.estimatedCollection !== undefined) {
+    values.estimatedCollection = normalizeNumericInput(input.estimatedCollection);
+  }
+  if (input.litigationFeeType !== undefined) {
+    values.litigationFeeType = normalizeLitigationFeeTypeInput(input.litigationFeeType);
+  }
+  if (input.travelFeeType !== undefined) {
+    values.travelFeeType = normalizeTravelFeeTypeInput(input.travelFeeType);
+  }
+  if (input.contractForm !== undefined) {
+    values.contractForm = normalizeContractFormInput(input.contractForm);
+  }
+  if (input.insuranceRiskLevel !== undefined) {
+    values.insuranceRiskLevel = input.insuranceRiskLevel ?? null;
+  }
+  if (input.insuranceTypes !== undefined) {
+    values.insuranceTypes = normalizeStringArrayInput(input.insuranceTypes) ?? [];
+  }
+  if (input.insuranceMisrepresentations !== undefined) {
+    values.insuranceMisrepresentations = normalizeStringArrayInput(
+      input.insuranceMisrepresentations
+    ) ?? [];
   }
   if (input.department !== undefined) {
     values.department = input.department ?? null;
@@ -1309,12 +1549,15 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     id: record.id,
     caseType: record.caseType,
     caseLevel: record.caseLevel,
+    caseCategory: record.caseCategory as CaseCategory,
     provinceCity: record.provinceCity ?? null,
     targetAmount: formatNumeric(record.targetAmount),
     feeStandard: record.feeStandard ?? null,
     agencyFeeEstimate: formatNumeric(record.agencyFeeEstimate),
     dataSource: record.dataSource ?? null,
     hasContract: record.hasContract ?? null,
+    contractDate: formatDateOnly(record.contractDate),
+    clueDate: formatDateOnly(record.clueDate),
     hasSocialSecurity: record.hasSocialSecurity ?? null,
     entryDate: formatDateOnly(record.entryDate),
     injuryLocation: record.injuryLocation ?? null,
@@ -1328,6 +1571,20 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     customerCooperative: record.customerCooperative ?? null,
     witnessCooperative: record.witnessCooperative ?? null,
     remark: record.remark ?? null,
+    contractQuoteType: (record.contractQuoteType ?? null) as ContractQuoteType | null,
+    contractQuoteAmount: formatNumeric(record.contractQuoteAmount),
+    contractQuoteUpfront: formatNumeric(record.contractQuoteUpfront),
+    contractQuoteRatio: formatNumeric(record.contractQuoteRatio),
+    contractQuoteOther: record.contractQuoteOther ?? null,
+    estimatedCollection: formatNumeric(record.estimatedCollection),
+    litigationFeeType: (record.litigationFeeType ?? null) as LitigationFeeType | null,
+    travelFeeType: (record.travelFeeType ?? null) as TravelFeeType | null,
+    contractForm: (record.contractForm ?? null) as ContractFormType | null,
+    insuranceRiskLevel: (record.insuranceRiskLevel ?? null) as CaseLevel | null,
+    insuranceTypes: Array.isArray(record.insuranceTypes) ? record.insuranceTypes : [],
+    insuranceMisrepresentations: Array.isArray(record.insuranceMisrepresentations)
+      ? record.insuranceMisrepresentations
+      : [],
     department: record.department ?? null,
     assignedSaleId: record.assignedSaleId ?? null,
     assignedSaleName: record.assignedSale?.name ?? null,
@@ -1733,6 +1990,15 @@ export async function createCase(input: CaseInput, user: SessionUser) {
         throw new BadRequestError('当前账号未分配部门，无法创建案件');
       }
       caseValues.department = user.department as (typeof cases.$inferInsert)['department'];
+    }
+
+    const resolvedDepartment = caseValues.department ?? user.department ?? null;
+    if (!caseValues.caseCategory) {
+      caseValues.caseCategory = resolvedDepartment === 'insurance' ? 'insurance' : 'work_injury';
+    }
+
+    if (resolvedDepartment === 'insurance' && caseValues.caseCategory !== 'insurance') {
+      caseValues.caseCategory = 'insurance';
     }
 
     if (!caseValues.assignedSaleId) {

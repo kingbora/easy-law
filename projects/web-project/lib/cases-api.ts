@@ -4,6 +4,11 @@ import type { UserDepartment, UserRole } from './users-api';
 export type CaseType = 'work_injury' | 'personal_injury' | 'other';
 export type CaseLevel = 'A' | 'B' | 'C';
 export type CaseStatus = 'open' | 'closed' | 'void';
+export type CaseCategory = 'work_injury' | 'insurance';
+export type ContractQuoteType = 'fixed' | 'risk' | 'other';
+export type LitigationFeeType = 'advance' | 'no_advance' | 'reimbursed';
+export type TravelFeeType = 'lawyer' | 'reimbursed' | 'no_advance';
+export type ContractFormType = 'electronic' | 'paper';
 export type CaseTimeNodeType =
   | 'apply_employment_confirmation'
   | 'labor_arbitration_decision'
@@ -111,12 +116,15 @@ export interface CaseRecord {
   id: string;
   caseType: CaseType;
   caseLevel: CaseLevel;
+  caseCategory: CaseCategory;
   provinceCity: string | null;
   targetAmount: string | null;
   feeStandard: string | null;
   agencyFeeEstimate: string | null;
   dataSource: string | null;
   hasContract: boolean | null;
+  contractDate: string | null;
+  clueDate: string | null;
   hasSocialSecurity: boolean | null;
   entryDate: string | null;
   injuryLocation: string | null;
@@ -130,6 +138,18 @@ export interface CaseRecord {
   customerCooperative: boolean | null;
   witnessCooperative: boolean | null;
   remark: string | null;
+  contractQuoteType: ContractQuoteType | null;
+  contractQuoteAmount: string | null;
+  contractQuoteUpfront: string | null;
+  contractQuoteRatio: string | null;
+  contractQuoteOther: string | null;
+  estimatedCollection: string | null;
+  litigationFeeType: LitigationFeeType | null;
+  travelFeeType: TravelFeeType | null;
+  contractForm: ContractFormType | null;
+  insuranceRiskLevel: CaseLevel | null;
+  insuranceTypes: string[];
+  insuranceMisrepresentations: string[];
   department: UserDepartment | null;
   assignedSaleId: string | null;
   assignedSaleName: string | null;
@@ -156,6 +176,7 @@ export type CaseTableColumnKey =
   | 'caseStatus'
   | 'caseType'
   | 'caseLevel'
+  | 'claimantNames'
   | 'provinceCity'
   | 'assignedLawyerName'
   | 'assignedAssistantName'
@@ -255,12 +276,15 @@ export interface CaseHearingInput {
 export interface CasePayload {
   caseType: CaseType;
   caseLevel: CaseLevel;
+  caseCategory?: CaseCategory | null;
   provinceCity?: string | null;
   targetAmount?: string | number | null;
   feeStandard?: string | null;
   agencyFeeEstimate?: string | number | null;
   dataSource?: string | null;
   hasContract?: boolean | null;
+  contractDate?: string | Date | null;
+  clueDate?: string | Date | null;
   hasSocialSecurity?: boolean | null;
   entryDate?: string | Date | null;
   injuryLocation?: string | null;
@@ -274,6 +298,18 @@ export interface CasePayload {
   customerCooperative?: boolean | null;
   witnessCooperative?: boolean | null;
   remark?: string | null;
+  contractQuoteType?: ContractQuoteType | null;
+  contractQuoteAmount?: string | number | null;
+  contractQuoteUpfront?: string | number | null;
+  contractQuoteRatio?: string | number | null;
+  contractQuoteOther?: string | null;
+  estimatedCollection?: string | number | null;
+  litigationFeeType?: LitigationFeeType | null;
+  travelFeeType?: TravelFeeType | null;
+  contractForm?: ContractFormType | null;
+  insuranceRiskLevel?: CaseLevel | null;
+  insuranceTypes?: string[] | null;
+  insuranceMisrepresentations?: string[] | null;
   department?: UserDepartment | null;
   assignedSaleId?: string | null;
   assignedLawyerId?: string | null;

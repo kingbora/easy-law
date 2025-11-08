@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import 'antd/dist/reset.css';
 import './globals.scss';
+import { App } from 'antd';
 
 export const metadata: Metadata = {
   title: '简法 - 智能律所管理平台，让法律工作更简单',
@@ -23,7 +24,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="zh-CN">
       <body>
-        <AntdRegistry>{children}</AntdRegistry>
+        <AntdRegistry>
+          <App>{children}</App>
+        </AntdRegistry>
       </body>
     </html>
   );
