@@ -36,7 +36,8 @@ import type {
   PaginationMeta as SharedPaginationMeta,
   TrialStage as SharedTrialStage,
   TravelFeeType as SharedTravelFeeType,
-  UserDepartment as SharedUserDepartment
+  UserDepartment as SharedUserDepartment,
+  UserRole as SharedUserRole
 } from '@easy-law/shared-types';
 import { and, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -297,6 +298,8 @@ type CaseTimelineRow = typeof caseTimeline.$inferSelect;
 type CaseTimeNodeRow = typeof caseTimeNodes.$inferSelect;
 type CaseHearingRow = typeof caseHearings.$inferSelect;
 
+type ParticipantRole = CaseParticipantRow['role'];
+
 type CaseTimelineRowWithFollower = CaseTimelineRow & {
   follower?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
 };
@@ -357,13 +360,6 @@ export interface CaseInput {
   hearings?: CaseHearingInput[] | null;
 }
 
-export interface CaseUpdateMeta {
-  baseVersion?: number | null;
-  baseSnapshot?: Record<string, unknown> | null;
-  dirtyFields?: string[] | null;
-  resolveMode?: 'merge';
-}
-
 export type CaseUpdateInput = CaseInput | {
   payload: CaseInput;
   meta?: CaseUpdateMeta | null;
@@ -379,25 +375,6 @@ interface NormalizedCaseUpdateMeta {
 interface NormalizedCaseUpdateInput {
   payload: CaseInput;
   meta: NormalizedCaseUpdateMeta;
-}
-
-export interface CaseListFilters {
-  department?: (typeof cases.$inferSelect)['department'];
-  assignedSaleId?: string;
-  assignedLawyerId?: string;
-  caseNumber?: string;
-  caseType?: CaseType;
-  caseLevel?: CaseLevel;
-  caseStatus?: CaseStatus;
-  caseId?: string;
-  search?: string;
-}
-
-export interface ListCasesOptions extends CaseListFilters {
-  page?: number;
-  pageSize?: number;
-  orderBy?: 'createdAt' | 'updatedAt';
-  orderDirection?: 'asc' | 'desc';
 }
 
 export async function updateCase(id: string, input: CaseUpdateInput, user: SessionUser) {
@@ -672,10 +649,10 @@ function combineOr(conditions: SQL<unknown>[]): SQL<unknown> | undefined {
 }
 
 type CaseAccessProjection = Pick<
-  CaseRecord,
+  CaseDTO,
   'id' | 'department' | 'assignedSaleId' | 'assignedLawyerId' | 'assignedAssistantId'
 > & {
-  hearings?: Array<Pick<CaseHearingRecord, 'trialLawyerId'>>;
+  hearings?: Array<Pick<CaseHearingDTO, 'trialLawyerId'>>;
 };
 
 interface CaseAccessContext {
@@ -1530,31 +1507,6 @@ async function buildConflictDetailsForCase(
   } satisfies CaseUpdateConflictDetails;
 }
 
-export type CaseUpdateConflictType = 'hard' | 'mergeable';
-
-export interface CaseUpdateConflictField {
-  field: ChangeFieldKey;
-  label: string;
-  baseValue: string | null;
-  remoteValue?: string | null;
-  clientValue?: string | null;
-}
-
-export interface CaseUpdateConflictDetails {
-  type: CaseUpdateConflictType;
-  message: string;
-  caseId: string;
-  baseVersion: number | null;
-  latestVersion: number;
-  remoteChanges: CaseUpdateConflictField[];
-  clientChanges: CaseUpdateConflictField[];
-  conflictingFields: ChangeFieldKey[];
-  updatedAt: string;
-  updatedById: string | null;
-  updatedByName: string | null;
-  updatedByRole: string | null;
-}
-
 export class CaseUpdateConflictError extends Error {
   status = 409;
   details: CaseUpdateConflictDetails;
@@ -2131,7 +2083,7 @@ function mapCaseChangeLog(record: CaseChangeLogRecord): CaseChangeLogDTO {
   } satisfies CaseChangeLogDTO;
 }
 
-function buildWhereClause(options: CaseListFilters): SQL<unknown> | undefined {
+function buildWhereClause(options: ListCasesOptions): SQL<unknown> | undefined {
   const conditions: SQL<unknown>[] = [];
 
   if (options.department) {
@@ -3096,7 +3048,7 @@ export async function updateCaseTimeNodes(
     where: eq(caseTimeNodes.caseId, caseId)
   });
 
-  const existingMap = new Map<CaseTimeNodeType, CaseTimeNodeRecord>();
+  const existingMap = new Map<CaseTimeNodeType, CaseTimeNodeRow>();
   existingNodes.forEach(node => {
     existingMap.set(node.nodeType as CaseTimeNodeType, node);
   });
@@ -3285,19 +3237,25 @@ export async function getCaseChangeLogs(
   return records.map(mapCaseChangeLog);
 }
 
-interface AssignableStaffMemberDTO {
-  id: string;
-  name: string | null;
-  role: string;
-  department: (typeof departmentEnum.enumValues)[number] | null;
-}
-
-export interface AssignableStaffDTO {
-  lawyers: AssignableStaffMemberDTO[];
-  assistants: AssignableStaffMemberDTO[];
-}
-
 const ASSIGNABLE_ROLES = new Set(['super_admin', 'admin', 'administration', 'lawyer']);
+
+const USER_ROLE_VALUES = ['super_admin', 'admin', 'administration', 'lawyer', 'assistant', 'sale'] as const;
+
+function normalizeUserRoleValue(value: unknown): SharedUserRole {
+  return USER_ROLE_VALUES.includes(value as SharedUserRole)
+    ? (value as SharedUserRole)
+    : 'assistant';
+}
+
+function normalizeUserDepartmentValue(value: unknown): SharedUserDepartment | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  return (departmentEnum.enumValues as readonly string[]).includes(value)
+    ? (value as SharedUserDepartment)
+    : null;
+}
 
 function extractActorContext(user: SessionUser) {
   return {
@@ -3323,15 +3281,8 @@ export async function getAssignableStaff(
     throw new AuthorizationError('Insufficient permissions');
   }
 
-  const validDepartments = new Set<string>(departmentEnum.enumValues);
-  const normalizedDepartment =
-    department && validDepartments.has(department)
-      ? (department as (typeof departmentEnum.enumValues)[number])
-      : undefined;
-  const userDepartment =
-    user.department && validDepartments.has(user.department)
-      ? (user.department as (typeof departmentEnum.enumValues)[number])
-      : null;
+  const normalizedDepartment = normalizeUserDepartmentValue(department) ?? undefined;
+  const userDepartment = normalizeUserDepartmentValue(user.department);
 
   const members = await db.query.users.findMany({
     columns: {
@@ -3349,13 +3300,13 @@ export async function getAssignableStaff(
   const toDTO = (member: typeof members[number]): AssignableStaffMemberDTO => ({
     id: member.id,
     name: member.name ?? null,
-    role: member.role ?? '',
-    department: (member.department as (typeof departmentEnum.enumValues)[number] | null) ?? null
+    role: normalizeUserRoleValue(member.role),
+    department: normalizeUserDepartmentValue(member.department)
   });
 
   const filterByDepartment = (
     list: typeof members,
-    targetDepartment?: (typeof departmentEnum.enumValues)[number] | null
+    targetDepartment?: SharedUserDepartment | null
   ) => {
     if (!targetDepartment) {
       return list;
