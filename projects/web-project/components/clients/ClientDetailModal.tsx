@@ -7,30 +7,12 @@ import type { ColumnsType } from "antd/es/table";
 import { useRouter } from "next/navigation";
 
 import type { CaseClientDetail, UpdateCaseClientPayload } from "@/lib/clients-api";
-import { CASE_STATUS_LABEL_MAP, type CaseStatus } from "@/lib/cases-api";
-import type { UserDepartment } from "@/lib/users-api";
-
-const CASE_TYPE_LABEL_MAP = {
-  work_injury: "工伤",
-  personal_injury: "人损",
-  other: "其他"
-} as const;
-
-const CASE_STATUS_COLOR_MAP: Record<CaseStatus, string> = {
-  open: "blue",
-  closed: "green",
-  void: "default"
-};
+import { CASE_STATUS_COLOR_MAP, CASE_STATUS_LABEL_MAP, CASE_TYPE_LABEL_MAP, DEPARTMENT_LABEL_MAP } from "@/utils/constants";
 
 const ENTITY_TYPE_OPTIONS = [
   { value: "personal", label: "自然人" },
   { value: "organization", label: "机构" }
 ];
-
-const DEPARTMENT_LABEL_MAP: Record<UserDepartment, string> = {
-  work_injury: "工伤部门",
-  insurance: "保险部门"
-};
 
 interface RelatedCaseRecord {
   caseId: string;

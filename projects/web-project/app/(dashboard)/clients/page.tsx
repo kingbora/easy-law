@@ -15,12 +15,13 @@ import {
   type ClientListQuery,
   type UpdateCaseClientPayload
 } from '@/lib/clients-api';
-import { CASE_STATUS_LABEL_MAP, type CaseStatus } from '@/lib/cases-api';
-import type { UserDepartment } from '@/lib/users-api';
+import type { UserDepartment} from '@/lib/cases-api';
+import { type CaseStatus } from '@/lib/cases-api';
 import { useSessionStore } from '@/lib/stores/session-store';
-
+import { CASE_STATUS_LABEL_MAP } from '@/utils/constants';
 import { useDashboardHeaderAction } from '../header-context';
 import { ClientDetailModal } from '@/components/clients/ClientDetailModal';
+import { DEPARTMENT_LABEL_MAP } from '@/utils/constants';
 
 type Filters = {
   search?: string;
@@ -50,11 +51,6 @@ const ENTITY_TYPE_COLOR_MAP = {
   personal: 'geekblue',
   organization: 'purple'
 } as const;
-
-const DEPARTMENT_LABEL_MAP: Record<UserDepartment, string> = {
-  work_injury: '工伤部门',
-  insurance: '保险部门'
-};
 
 const DEPARTMENT_OPTIONS = (Object.entries(DEPARTMENT_LABEL_MAP) as Array<[UserDepartment, string]>).map(
   ([value, label]) => ({

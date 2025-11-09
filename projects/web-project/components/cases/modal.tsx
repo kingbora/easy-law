@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-
+import { CASE_STATUS_LABEL_MAP, ROLE_LABEL_MAP } from '@/utils/constants';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   App,
@@ -30,7 +30,6 @@ import type { TabsProps } from 'antd';
 import type { Rule } from 'antd/es/form';
 import dayjs, { type Dayjs } from 'dayjs';
 import {
-  CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS,
   type CaseCategory,
   type CaseHearingRecord,
   type CaseChangeLog,
@@ -324,15 +323,6 @@ const CASE_COLLECTION_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'admin',
   'administration'
 ]);
-
-const ROLE_LABEL_MAP: Record<UserRole, string> = {
-  super_admin: '超级管理员',
-  admin: '管理员',
-  administration: '行政',
-  lawyer: '律师',
-  assistant: '律助',
-  sale: '销售'
-};
 
 const CASE_TYPE_LABEL_MAP = CASE_TYPES.reduce<Record<CaseTypeValue, string>>((acc, item) => {
   acc[item.value] = item.label;
@@ -1252,7 +1242,7 @@ export default function WorkInjuryCaseModal({
     () =>
       CASE_STATUS_OPTIONS.map(status => ({
         value: status,
-        label: CASE_STATUS_LABELS[status]
+        label: CASE_STATUS_LABEL_MAP[status]
       })),
     []
   );
@@ -2934,7 +2924,7 @@ export default function WorkInjuryCaseModal({
           <Descriptions.Item label="承办律师">{formatText(assignedLawyerDisplay)}</Descriptions.Item>
           <Descriptions.Item label="律师助理">{formatText(assignedAssistantDisplay)}</Descriptions.Item>
           <Descriptions.Item label="销售人员">{formatText(salesDisplay)}</Descriptions.Item>
-          <Descriptions.Item label="案件状态">{formatOptionLabel(CASE_STATUS_LABELS, adminInfo.caseStatus ?? null)}</Descriptions.Item>
+          <Descriptions.Item label="案件状态">{formatOptionLabel(CASE_STATUS_LABEL_MAP, adminInfo.caseStatus ?? null)}</Descriptions.Item>
           <Descriptions.Item label="结案原因">{formatText(adminInfo.closedReason)}</Descriptions.Item>
           <Descriptions.Item label="退单原因">{formatText(adminInfo.voidReason)}</Descriptions.Item>
         </Descriptions>
@@ -3489,7 +3479,7 @@ export default function WorkInjuryCaseModal({
   );
 
   const modalTitleText = mode === 'create' ? '新增案件' : mode === 'update' ? '编辑案件' : '案件详情';
-  const statusLabel = CASE_STATUS_LABELS[pendingStatus] ?? pendingStatus;
+  const statusLabel = CASE_STATUS_LABEL_MAP[pendingStatus] ?? pendingStatus;
   const canModifyStatus = mode === 'create' ? isEditable : isEditable && canUpdateStatus;
   const statusControl = canModifyStatus ? (
     <Select<CaseStatusValue>

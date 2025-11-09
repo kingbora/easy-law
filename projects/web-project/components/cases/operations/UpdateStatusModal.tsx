@@ -6,8 +6,8 @@ import {
 	useWorkInjuryCaseOperationsStore,
 	type CaseStatusUpdatePayload
 } from './useCaseOperationsStore';
-import { CASE_STATUS_LABEL_MAP, type CaseStatus } from '@/lib/cases-api';
-
+import { type CaseStatus } from '@/lib/cases-api';
+import { CASE_STATUS_LABEL_MAP } from '@/utils/constants';
 export type UpdateStatusFormValues = CaseStatusUpdatePayload;
 
 const CASE_STATUS_OPTIONS: CaseStatus[] = ['open', 'closed', 'void'];

@@ -16,7 +16,6 @@ import {
   createUser,
   deleteUser,
   updateUser,
-  type UserDepartment,
   type UserRole
 } from '@/lib/users-api';
 import { useSessionStore } from '@/lib/stores/session-store';
@@ -27,7 +26,7 @@ import {
   type TeamFilters,
   type TeamMember
 } from '@/lib/stores/team-store';
-
+import { ROLE_LABEL_MAP, ROLE_COLOR_MAP, DEPARTMENT_LABEL_MAP, DEPARTMENT_COLOR_MAP } from '@/utils/constants';
 import { useDashboardHeaderAction } from '../header-context';
 
 type TeamMemberTreeNode = TeamMember & { children?: TeamMemberTreeNode[] };
@@ -39,33 +38,6 @@ type ModalState =
   | { open: true; mode: 'create'; record?: undefined }
   | { open: true; mode: 'view' | 'edit'; record: TeamMember };
 
-const ROLE_LABEL_MAP: Record<UserRole, string> = {
-  super_admin: '超级管理员',
-  admin: '管理员',
-  sale: '销售',
-  lawyer: '律师',
-  assistant: '律助',
-  administration: '行政'
-};
-
-const ROLE_COLOR_MAP: Record<UserRole, string> = {
-  super_admin: 'volcano',
-  admin: 'geekblue',
-  sale: 'purple',
-  lawyer: 'green',
-  assistant: 'blue',
-  administration: 'orange'
-};
-
-const DEPARTMENT_LABEL_MAP: Record<UserDepartment, string> = {
-  work_injury: '工伤部门',
-  insurance: '保险部门'
-};
-
-const DEPARTMENT_COLOR_MAP: Record<UserDepartment, string> = {
-  work_injury: 'geekblue',
-  insurance: 'gold'
-};
 
 const ROLE_OPTIONS = (Object.entries(ROLE_LABEL_MAP) as Array<[UserRole, string]>).map(([value, label]) => ({
   value,

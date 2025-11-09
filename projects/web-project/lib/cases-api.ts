@@ -8,7 +8,6 @@ import type {
   CaseListResponse,
   CasePayload,
   CaseRecord,
-  CaseStatus,
   CaseTableColumnKey,
   CaseTablePreference,
   CaseTimeNodeInput,
@@ -64,11 +63,6 @@ export type {
   CaseUpdateRequest
 } from '@easy-law/shared-types';
 
-export const CASE_STATUS_LABEL_MAP: Record<CaseStatus, string> = {
-  open: '跟进中',
-  closed: '已结案',
-  void: '废单'
-};
 export class CaseUpdateConflictError extends ApiError {
   override details: CaseUpdateConflictDetails;
 

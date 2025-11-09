@@ -8,6 +8,7 @@ import { EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 import type { UserRole, UserDepartment } from '@/lib/users-api';
+import { DEPARTMENT_LABEL_MAP } from '@/utils/constants';
 
 export const DEFAULT_INITIAL_PASSWORD = 'a@000123';
 
@@ -90,15 +91,10 @@ const GENDER_LABEL_MAP: Record<'male' | 'female', string> = {
   female: '女'
 };
 
-const DEPARTMENT_OPTIONS: DepartmentOption[] = [
-  { label: '工伤部门', value: 'work_injury' },
-  { label: '保险部门', value: 'insurance' }
-];
-
-const DEPARTMENT_LABEL_MAP: Record<UserDepartment, string> = {
-  work_injury: '工伤部门',
-  insurance: '保险部门'
-};
+const DEPARTMENT_OPTIONS: DepartmentOption[] = Object.entries(DEPARTMENT_LABEL_MAP).map(([value, label]) => ({
+  value: value as UserDepartment,
+  label
+}));
 
 export default function TeamMemberModal({
   open,

@@ -9,19 +9,18 @@ import {
   LogoutOutlined,
   RightOutlined,
   TeamOutlined,
-  UserOutlined
+  UserOutlined,
+  DownOutlined
 } from '@ant-design/icons';
 import {
   Avatar,
   Breadcrumb,
-  Button,
   ConfigProvider,
   Dropdown,
   Layout,
   Menu,
-  Typography,
   App,
-  type MenuProps
+  type MenuProps,
 } from 'antd';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -33,12 +32,12 @@ import ProfileModal from '@/components/profile/ProfileModal';
 import ResetPasswordModal from '@/components/profile/ResetPasswordModal';
 import ScheduleDrawer from '@/components/schedule/ScheduleDrawer';
 import { ApiError } from '@/lib/api-client';
-import { updateUser, type CurrentUserResponse, type UserRole } from '@/lib/users-api';
+import { updateUser, type CurrentUserResponse } from '@/lib/users-api';
 import { SessionInitialUserContext, useSessionStore } from '@/lib/stores/session-store';
-
 import { DashboardHeaderActionProvider } from './header-context';
 import styles from './layout.module.scss';
 import Image from 'next/image';
+import type { UserRole } from '@easy-law/shared-types';
 
 const { Header, Sider, Content } = Layout;
 
@@ -46,20 +45,6 @@ const CASE_DEPARTMENTS = [
   { key: 'work_injury', label: '工伤' },
   { key: 'insurance', label: '保险' }
 ] as const;
-
-const DEPARTMENT_LABEL_MAP: Record<'work_injury' | 'insurance', string> = {
-  work_injury: '工伤部门',
-  insurance: '保险部门'
-};
-
-const ROLE_LABEL_MAP: Record<UserRole, string> = {
-  super_admin: '超级管理员',
-  admin: '管理员',
-  administration: '行政',
-  lawyer: '律师',
-  assistant: '律助',
-  sale: '销售'
-};
 
 const pathKeyMap: Record<string, string> = CASE_DEPARTMENTS.reduce(
   (acc, dept) => ({
@@ -356,21 +341,8 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
     return [
       {
         key: 'profile-info',
-        label: (
-          <div style={{ maxWidth: 240 }}>
-            <Typography.Text strong style={{ display: 'block' }}>
-              {sessionUser?.name ?? sessionUser?.email ?? '未设置昵称'}
-            </Typography.Text>
-            {sessionUser?.role !== 'super_admin' ? (
-              <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
-                部门：{sessionUser?.department ? DEPARTMENT_LABEL_MAP[sessionUser.department] : '未分配部门'}
-              </Typography.Text>
-            ) : null}
-            <Typography.Text type="secondary" style={{ display: 'block', marginTop: 2 }}>
-              角色：{sessionUser ? ROLE_LABEL_MAP[sessionUser.role] : '未知角色'}
-            </Typography.Text>
-          </div>
-        )
+        label: '个人资料',
+        icon: <UserOutlined />
       },
       { type: 'divider' },
       {
@@ -386,12 +358,24 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
         disabled: isSigningOut
       }
     ];
-  }, [isSigningOut, sessionUser]);
+  }, [isSigningOut]);
 
-  const avatar = sessionUser?.image ? (
-    <Avatar src={sessionUser.image} size={36} className={styles.avatarButton} />
+  const displayName = (sessionUser?.name?.trim() || sessionUser?.email || '未设置昵称').trim();
+
+  const avatarNode = sessionUser?.image ? (
+    <Avatar src={sessionUser.image} size={32} className={styles.profileAvatar} />
   ) : (
-    <Avatar size={36} icon={<UserOutlined />} className={styles.avatarButton} />
+    <Avatar size={32} icon={<UserOutlined />} className={styles.profileAvatar} />
+  );
+
+  const userTrigger = (
+    <button type="button" className={styles.profileTrigger} aria-haspopup="menu">
+      {avatarNode}
+      <span className={styles.profileName} title={displayName}>
+        {displayName}
+      </span>
+      <DownOutlined className={styles.profileCaret} />
+    </button>
   );
 
   return (
@@ -446,19 +430,22 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
                 <Breadcrumb className={styles.breadcrumb} items={breadcrumbItems} separator={<RightOutlined />} />
                 <div className={styles.headerRight}>
                   {headerAction}
-                  <Button
-                    shape="circle"
-                    className={styles.calendarButton}
-                    onClick={() => setScheduleOpen(true)}
-                  >
-                    <CalendarOutlined />
-                  </Button>
+                  <div className={styles.iconGroup}>
+                    <button
+                      type="button"
+                      className={styles.iconButton}
+                      onClick={() => setScheduleOpen(true)}
+                      aria-label="打开日程"
+                    >
+                      <CalendarOutlined />
+                    </button>
+                  </div>
                   <Dropdown
                     menu={{ items: userMenu, onClick: handleDropdownClick }}
                     trigger={['click']}
                     placement="bottomRight"
                   >
-                    {avatar}
+                    {userTrigger}
                   </Dropdown>
                 </div>
               </Header>
@@ -468,6 +455,7 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
           <ProfileModal
             open={profileModalOpen}
             initialValues={{
+              role: sessionUser?.role,
               name: sessionUser?.name,
               email: sessionUser?.email,
               image: sessionUser?.image ?? null,

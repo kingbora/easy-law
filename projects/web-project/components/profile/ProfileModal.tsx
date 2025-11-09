@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 
-import { App, Avatar, Form, Input, Modal, Progress, Radio, Space, Typography, Upload } from 'antd';
+import { App, Avatar, Form, Input, Modal, Progress, Radio, Space, Tag, Typography, Upload } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import { CameraOutlined, UserOutlined } from '@ant-design/icons';
 import imageCompression from 'browser-image-compression';
 import styles from './ProfileModal.module.scss';
+import type { UserRole } from '@easy-law/shared-types';
+import { ROLE_COLOR_MAP, ROLE_LABEL_MAP } from '@/utils/constants';
 
 const MAX_COMPRESSED_SIZE = 2 * 1024 * 1024; // 2MB
 
@@ -23,6 +25,7 @@ function formatFileSize(size: number): string {
 interface ProfileModalProps {
   open: boolean;
   initialValues?: {
+    role?: UserRole;
     name?: string | null;
     email?: string | null;
     image?: string | null;
@@ -152,7 +155,14 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
   return (
     <Modal
       open={open}
-      title="个人资料"
+      title={<div className={styles.modalTitle}>
+        <span>个人资料</span>
+        {
+          initialValues?.role ?
+            <Tag color={ROLE_COLOR_MAP[initialValues.role]}>{ROLE_LABEL_MAP[initialValues?.role]}</Tag>
+          : null
+        }
+      </div>}
       okText="保存"
       cancelText="取消"
       onCancel={onCancel}

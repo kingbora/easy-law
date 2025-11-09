@@ -27,6 +27,7 @@ import { useDashboardHeaderAction } from '@/app/(dashboard)/header-context';
 import { ApiError } from '@/lib/api-client';
 import { useSessionStore } from '@/lib/stores/session-store';
 import { useWorkInjuryCaseOperationsStore } from './operations/useCaseOperationsStore';
+import { CASE_LEVEL_LABEL_MAP, CASE_STATUS_COLOR_MAP, CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS, CASE_TYPE_LABEL_MAP, CONTRACT_FORM_LABELS } from '@/utils/constants';
 import {
   createCase as createCaseApi,
   createCaseCollection as createCaseCollectionApi,
@@ -35,7 +36,6 @@ import {
   fetchCaseById,
   fetchCases,
   fetchCaseTablePreferences,
-  CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS,
   type CaseHearingRecord,
   type CaseParticipantInput,
   type CaseParticipantsInput,
@@ -70,28 +70,6 @@ import FollowUpModal from './operations/FollowUpModal';
 import styles from './styles.module.scss';
 
 const DEFAULT_PAGE_SIZE = 10;
-const CASE_TYPE_LABEL_MAP: Record<CaseType, string> = {
-  work_injury: '工伤',
-  personal_injury: '人损',
-  other: '其他'
-};
-
-const CASE_STATUS_COLOR_MAP: Record<CaseStatus, string> = {
-  open: 'blue',
-  closed: 'green',
-  void: 'default'
-};
-
-const CASE_LEVEL_LABEL_MAP: Record<CaseLevel, string> = {
-  A: 'A',
-  B: 'B',
-  C: 'C'
-};
-
-const CONTRACT_FORM_LABELS: Record<ContractFormType, string> = {
-  electronic: '电子合同',
-  paper: '纸质合同'
-};
 
 const CASE_STATUS_OPTIONS: CaseStatus[] = ['open', 'closed', 'void'];
 
