@@ -10,6 +10,7 @@
     "clean": "rimraf node_modules .next"
   },
   "dependencies": {
+    "@easy-law/shared-types": "workspace:*",
     "@ant-design/icons": "^6.1.0",
     "@ant-design/nextjs-registry": "^1.2.0",
     "antd": "^5.28.0",

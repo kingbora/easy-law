@@ -82,6 +82,9 @@
     height: 100%;
     overflow-y: auto;
     padding: 24px;
+    scrollbar-width: thin;
+    scrollbar-color: #eaeaea transparent;
+    scrollbar-gutter: stable;
   }
 }
 

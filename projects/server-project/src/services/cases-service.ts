@@ -1,3 +1,43 @@
+import type {
+  AssignableStaffMember as SharedAssignableStaffMember,
+  AssignableStaffResponse as SharedAssignableStaffResponse,
+  CaseCategory as SharedCaseCategory,
+  CaseChangeDetail as SharedCaseChangeDetail,
+  CaseChangeLog as SharedCaseChangeLog,
+  CaseCollectionInput as SharedCaseCollectionInput,
+  CaseCollectionRecord as SharedCaseCollectionRecord,
+  CaseHearingInput as SharedCaseHearingInput,
+  CaseHearingRecord as SharedCaseHearingRecord,
+  CaseParticipant as SharedCaseParticipant,
+  CaseParticipantEntity as SharedCaseParticipantEntity,
+  CaseParticipantInput as SharedCaseParticipantInput,
+  CaseParticipantsInput as SharedCaseParticipantsInput,
+  CasePayload as SharedCasePayload,
+  CaseRecord as SharedCaseRecord,
+  CaseStatus as SharedCaseStatus,
+  CaseTableColumnKey as SharedCaseTableColumnKey,
+  CaseTablePreference as SharedCaseTablePreference,
+  CaseTimeNodeInput as SharedCaseTimeNodeInput,
+  CaseTimeNodeRecord as SharedCaseTimeNodeRecord,
+  CaseTimeNodeType as SharedCaseTimeNodeType,
+  CaseTimelineInput as SharedCaseTimelineInput,
+  CaseTimelineRecord as SharedCaseTimelineRecord,
+  CaseUpdateConflictDetails as SharedCaseUpdateConflictDetails,
+  CaseUpdateConflictField as SharedCaseUpdateConflictField,
+  CaseUpdateConflictType as SharedCaseUpdateConflictType,
+  CaseUpdateMeta as SharedCaseUpdateMeta,
+  CaseUpdateRequest as SharedCaseUpdateRequest,
+  CaseLevel as SharedCaseLevel,
+  CaseType as SharedCaseType,
+  ContractFormType as SharedContractFormType,
+  ContractQuoteType as SharedContractQuoteType,
+  LitigationFeeType as SharedLitigationFeeType,
+  ListCasesOptions as SharedListCasesOptions,
+  PaginationMeta as SharedPaginationMeta,
+  TrialStage as SharedTrialStage,
+  TravelFeeType as SharedTravelFeeType,
+  UserDepartment as SharedUserDepartment
+} from '@easy-law/shared-types';
 import { and, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
@@ -20,11 +60,7 @@ import {
   travelFeeTypeEnum,
   contractFormEnum,
   trialStageEnum,
-  type CaseChangeDetail,
-  type caseLevelEnum,
-  type caseTypeEnum,
   participantEntityEnum,
-  type participantRoleEnum,
 } from '../db/schema/case-schema';
 import type { SessionUser } from '../utils/auth-session';
 import { BadRequestError } from '../utils/http-errors';
@@ -81,11 +117,9 @@ const CASE_TABLE_ALLOWED_COLUMNS = [
   'updatedAt'
 ] as const;
 
-export type CaseTableColumnKey = (typeof CASE_TABLE_ALLOWED_COLUMNS)[number];
-
 const CASE_TABLE_COLUMN_SET = new Set<string>(CASE_TABLE_ALLOWED_COLUMNS);
 
-const DEFAULT_CASE_TABLE_COLUMNS: CaseTableColumnKey[] = [
+const DEFAULT_CASE_TABLE_COLUMNS: SharedCaseTableColumnKey[] = [
   'caseNumber',
   'caseStatus',
   'caseType',
@@ -95,11 +129,6 @@ const DEFAULT_CASE_TABLE_COLUMNS: CaseTableColumnKey[] = [
   'assignedLawyerName',
   'assignedAssistantName'
 ];
-
-export interface CaseTablePreferenceDTO {
-  tableKey: string;
-  visibleColumns: CaseTableColumnKey[];
-}
 
 function resolveCaseTableKey(tableKey?: string): string {
   if (tableKey && CASE_TABLE_ALLOWED_KEYS.has(tableKey)) {
@@ -176,65 +205,45 @@ const BASIC_INFO_FIELD_KEYS = [
   'caseCategory'
 ] as const;
 
-export type CaseType = (typeof caseTypeEnum.enumValues)[number];
-export type CaseLevel = (typeof caseLevelEnum.enumValues)[number];
-export type CaseStatus = (typeof caseStatusEnum.enumValues)[number];
-export type ParticipantRole = (typeof participantRoleEnum.enumValues)[number];
-export type ParticipantEntity = (typeof participantEntityEnum.enumValues)[number];
-export type TrialStage = (typeof trialStageEnum.enumValues)[number];
-export type CaseTimeNodeType = (typeof caseTimeNodeTypeEnum.enumValues)[number];
-export type CaseCategory = (typeof caseCategoryEnum.enumValues)[number];
-export type ContractQuoteType = (typeof contractQuoteTypeEnum.enumValues)[number];
-export type LitigationFeeType = (typeof litigationFeeTypeEnum.enumValues)[number];
-export type TravelFeeType = (typeof travelFeeTypeEnum.enumValues)[number];
-export type ContractFormType = (typeof contractFormEnum.enumValues)[number];
-
-export interface CaseParticipantInput {
-  entityType?: ParticipantEntity | null;
-  name?: string | null;
-  idNumber?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  isDishonest?: boolean | null;
-  sortOrder?: number | null;
-}
-
-export interface CaseParticipantsInput {
-  claimants?: CaseParticipantInput[];
-  respondents?: CaseParticipantInput[];
-}
-
-export interface CaseCollectionInput {
-  id?: string;
-  amount?: string | number | null;
-  receivedAt?: string | Date | null;
-}
+export type CaseType = SharedCaseType;
+export type CaseLevel = SharedCaseLevel;
+export type CaseStatus = SharedCaseStatus;
+export type CaseCategory = SharedCaseCategory;
+export type ContractQuoteType = SharedContractQuoteType;
+export type LitigationFeeType = SharedLitigationFeeType;
+export type TravelFeeType = SharedTravelFeeType;
+export type ContractFormType = SharedContractFormType;
+export type CaseTimeNodeType = SharedCaseTimeNodeType;
+export type TrialStage = SharedTrialStage;
+export type ParticipantEntity = SharedCaseParticipantEntity;
+export type CaseParticipantInput = SharedCaseParticipantInput;
+export type CaseParticipantsInput = SharedCaseParticipantsInput;
+export type CaseCollectionInput = SharedCaseCollectionInput;
+export type CaseTimelineInput = SharedCaseTimelineInput;
+export type CaseTimeNodeInput = SharedCaseTimeNodeInput;
+export type CaseHearingInput = SharedCaseHearingInput;
+export type CasePayload = SharedCasePayload;
+export type CaseUpdateMeta = SharedCaseUpdateMeta;
+export type CaseUpdateRequest = SharedCaseUpdateRequest;
+export type CaseUpdateConflictField = SharedCaseUpdateConflictField;
+export type CaseUpdateConflictDetails = SharedCaseUpdateConflictDetails;
+export type CaseUpdateConflictType = SharedCaseUpdateConflictType;
+export type CaseParticipantDTO = SharedCaseParticipant;
+export type CaseCollectionDTO = SharedCaseCollectionRecord;
+export type CaseTimelineDTO = SharedCaseTimelineRecord;
+export type CaseTimeNodeDTO = SharedCaseTimeNodeRecord;
+export type CaseHearingDTO = SharedCaseHearingRecord;
+export type CaseChangeDetail = SharedCaseChangeDetail;
+export type CaseChangeLogDTO = SharedCaseChangeLog;
+export type CaseDTO = SharedCaseRecord;
+export type PaginationMeta = SharedPaginationMeta;
+export type ListCasesOptions = SharedListCasesOptions;
+export type CaseTableColumnKey = SharedCaseTableColumnKey;
+export type CaseTablePreferenceDTO = SharedCaseTablePreference;
+export type AssignableStaffMemberDTO = SharedAssignableStaffMember;
+export type AssignableStaffDTO = SharedAssignableStaffResponse;
 
 export type CreateCaseCollectionInput = Pick<CaseCollectionInput, 'amount' | 'receivedAt'>;
-
-export interface CaseTimelineInput {
-  id?: string;
-  occurredOn: string | Date;
-  note: string;
-  followerId?: string | null;
-}
-
-export interface CaseTimeNodeInput {
-  nodeType: CaseTimeNodeType;
-  occurredOn: string | Date;
-}
-
-export interface CaseHearingInput {
-  trialLawyerId?: string | null;
-  hearingTime?: string | Date | null;
-  hearingLocation?: string | null;
-  tribunal?: string | null;
-  judge?: string | null;
-  caseNumber?: string | null;
-  contactPhone?: string | null;
-  trialStage?: TrialStage | null;
-  hearingResult?: string | null;
-}
 
 export interface CaseHearingUpsertInput extends Omit<CaseHearingInput, 'trialStage'> {
   trialStage: TrialStage;
@@ -251,7 +260,7 @@ export interface CaseClientDTO {
   caseType: CaseType;
   caseLevel: CaseLevel;
   caseStatus: CaseStatus | null;
-  department: (typeof cases.$inferSelect)['department'];
+  department: SharedUserDepartment | null;
   assignedSaleName: string | null;
   assignedLawyerName: string | null;
   assignedAssistantName: string | null;
@@ -267,7 +276,7 @@ export interface CaseClientDetailDTO extends CaseClientDTO {
 export interface CaseClientListOptions {
   page?: number;
   pageSize?: number;
-  department?: (typeof cases.$inferSelect)['department'];
+  department?: SharedUserDepartment | null;
   search?: string;
 }
 
@@ -281,157 +290,21 @@ export interface UpdateCaseClientInput {
 }
 
 type UserRecord = typeof users.$inferSelect;
-type CaseRecord = typeof cases.$inferSelect;
-type CaseParticipantRecord = typeof caseParticipants.$inferSelect;
-type CaseCollectionRecord = typeof caseCollections.$inferSelect;
-type CaseTimelineRecord = typeof caseTimeline.$inferSelect;
-type CaseTimeNodeRecord = typeof caseTimeNodes.$inferSelect;
-type CaseHearingRecord = typeof caseHearings.$inferSelect;
+type CaseRow = typeof cases.$inferSelect;
+type CaseParticipantRow = typeof caseParticipants.$inferSelect;
+type CaseCollectionRow = typeof caseCollections.$inferSelect;
+type CaseTimelineRow = typeof caseTimeline.$inferSelect;
+type CaseTimeNodeRow = typeof caseTimeNodes.$inferSelect;
+type CaseHearingRow = typeof caseHearings.$inferSelect;
 
-type CaseTimelineRecordWithFollower = CaseTimelineRecord & {
+type CaseTimelineRowWithFollower = CaseTimelineRow & {
   follower?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
 };
 
-type CaseHearingRecordWithRelations = CaseHearingRecord & {
+type CaseHearingRowWithRelations = CaseHearingRow & {
   trialLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
 };
 
-export interface CaseParticipantDTO {
-  id: string;
-  entityType: ParticipantEntity | null;
-  name: string;
-  idNumber: string | null;
-  phone: string | null;
-  address: string | null;
-  isDishonest: boolean;
-  sortOrder: number | null;
-}
-
-export interface CaseCollectionDTO {
-  id: string;
-  amount: string;
-  receivedAt: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseTimelineDTO {
-  id: string;
-  occurredOn: string;
-  note: string | null;
-  followerId: string | null;
-  followerName: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseTimeNodeDTO {
-  id: string;
-  nodeType: CaseTimeNodeType;
-  occurredOn: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseHearingDTO {
-  id: string;
-  trialLawyerId: string | null;
-  trialLawyerName: string | null;
-  hearingTime: string | null;
-  hearingLocation: string | null;
-  tribunal: string | null;
-  judge: string | null;
-  caseNumber: string | null;
-  contactPhone: string | null;
-  trialStage: TrialStage | null;
-  hearingResult: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseChangeLogDTO {
-  id: string;
-  action: string;
-  description: string | null;
-  changes: CaseChangeDetail[] | null;
-  actorId: string | null;
-  actorName: string | null;
-  actorRole: SessionUser['role'] | null;
-  createdAt: string;
-}
-
-export interface CaseDTO {
-  id: string;
-  caseType: CaseType;
-  caseLevel: CaseLevel;
-  caseCategory: CaseCategory;
-  provinceCity: string | null;
-  targetAmount: string | null;
-  feeStandard: string | null;
-  agencyFeeEstimate: string | null;
-  dataSource: string | null;
-  hasContract: boolean | null;
-  contractDate: string | null;
-  clueDate: string | null;
-  hasSocialSecurity: boolean | null;
-  entryDate: string | null;
-  injuryLocation: string | null;
-  injurySeverity: string | null;
-  injuryCause: string | null;
-  workInjuryCertified: boolean | null;
-  monthlySalary: string | null;
-  appraisalLevel: string | null;
-  appraisalEstimate: string | null;
-  existingEvidence: string | null;
-  customerCooperative: boolean | null;
-  witnessCooperative: boolean | null;
-  remark: string | null;
-  contractQuoteType: ContractQuoteType | null;
-  contractQuoteAmount: string | null;
-  contractQuoteUpfront: string | null;
-  contractQuoteRatio: string | null;
-  contractQuoteOther: string | null;
-  estimatedCollection: string | null;
-  litigationFeeType: LitigationFeeType | null;
-  travelFeeType: TravelFeeType | null;
-  contractForm: ContractFormType | null;
-  insuranceRiskLevel: CaseLevel | null;
-  insuranceTypes: string[];
-  insuranceMisrepresentations: string[];
-  department: (typeof cases.$inferSelect)['department'] | null;
-  assignedSaleId: string | null;
-  assignedSaleName: string | null;
-  assignedLawyerId: string | null;
-  assignedLawyerName: string | null;
-  assignedAssistantId: string | null;
-  assignedAssistantName: string | null;
-  caseStatus: CaseStatus | null;
-  closedReason: string | null;
-  voidReason: string | null;
-  salesCommission: string | null;
-  handlingFee: string | null;
-  version: number;
-  updaterId: string | null;
-  updaterName: string | null;
-  updaterRole: SessionUser['role'] | null;
-  createdAt: string;
-  updatedAt: string;
-  participants: {
-    claimants: CaseParticipantDTO[];
-    respondents: CaseParticipantDTO[];
-  };
-  collections: CaseCollectionDTO[];
-  timeNodes: CaseTimeNodeDTO[];
-  timeline: CaseTimelineDTO[];
-  hearings: CaseHearingDTO[];
-}
-
-export interface PaginationMeta {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-}
 export interface CaseInput {
   caseType: CaseType;
   caseLevel: CaseLevel;
@@ -760,12 +633,12 @@ export async function updateCase(id: string, input: CaseUpdateInput, user: Sessi
   });
 }
 
-type CaseWithRelations = CaseRecord & {
-  participants?: CaseParticipantRecord[];
-  collections?: CaseCollectionRecord[];
-  timeNodes?: CaseTimeNodeRecord[];
-  timeline?: CaseTimelineRecordWithFollower[];
-  hearings?: CaseHearingRecordWithRelations[];
+type CaseWithRelations = CaseRow & {
+  participants?: CaseParticipantRow[];
+  collections?: CaseCollectionRow[];
+  timeNodes?: CaseTimeNodeRow[];
+  timeline?: CaseTimelineRowWithFollower[];
+  hearings?: CaseHearingRowWithRelations[];
   assignedSale?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedAssistant?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
@@ -1969,7 +1842,7 @@ function formatNumeric(value: string | number | null | undefined): string | null
   return typeof value === 'string' ? value : value.toString();
 }
 
-function mapParticipant(record: CaseParticipantRecord): CaseParticipantDTO {
+function mapParticipant(record: CaseParticipantRow): CaseParticipantDTO {
   return {
     id: record.id,
     entityType: record.entityType,
@@ -1982,7 +1855,7 @@ function mapParticipant(record: CaseParticipantRecord): CaseParticipantDTO {
   };
 }
 
-function mapCollection(record: CaseCollectionRecord): CaseCollectionDTO {
+function mapCollection(record: CaseCollectionRow): CaseCollectionDTO {
   return {
     id: record.id,
     amount: formatNumeric(record.amount) ?? '0',
@@ -1992,7 +1865,7 @@ function mapCollection(record: CaseCollectionRecord): CaseCollectionDTO {
   };
 }
 
-function mapTimeline(record: CaseTimelineRecordWithFollower): CaseTimelineDTO {
+function mapTimeline(record: CaseTimelineRowWithFollower): CaseTimelineDTO {
   return {
     id: record.id,
     occurredOn: formatDateOnly(record.occurredOn) ?? formatDateOnly(new Date())!,
@@ -2004,7 +1877,7 @@ function mapTimeline(record: CaseTimelineRecordWithFollower): CaseTimelineDTO {
   };
 }
 
-function mapTimeNode(record: CaseTimeNodeRecord): CaseTimeNodeDTO {
+function mapTimeNode(record: CaseTimeNodeRow): CaseTimeNodeDTO {
   return {
     id: record.id,
     nodeType: record.nodeType as CaseTimeNodeType,
@@ -2014,7 +1887,7 @@ function mapTimeNode(record: CaseTimeNodeRecord): CaseTimeNodeDTO {
   } satisfies CaseTimeNodeDTO;
 }
 
-function mapHearing(record?: CaseHearingRecordWithRelations | null): CaseHearingDTO | null {
+function mapHearing(record?: CaseHearingRowWithRelations | null): CaseHearingDTO | null {
   if (!record) {
     return null;
   }

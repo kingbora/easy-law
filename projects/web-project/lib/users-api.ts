@@ -1,8 +1,8 @@
 import { ApiError } from './api-client';
 import { authClient } from './auth-client';
+import type { UserDepartment, UserRole } from '@easy-law/shared-types';
 
-export type UserRole = 'super_admin' | 'admin' | 'administration' | 'lawyer' | 'assistant' | 'sale';
-export type UserDepartment = 'work_injury' | 'insurance';
+export type { UserDepartment, UserRole } from '@easy-law/shared-types';
 
 export interface UserSupervisorInfo {
   id: string;
