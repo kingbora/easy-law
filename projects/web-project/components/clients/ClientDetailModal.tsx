@@ -188,7 +188,7 @@ export function ClientDetailModal({
       onCancel={onCancel}
       onOk={() => form.submit()}
       confirmLoading={saving}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={!saving}
       okText="保存"
       cancelText="取消"

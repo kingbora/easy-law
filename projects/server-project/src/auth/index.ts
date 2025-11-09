@@ -1,3 +1,4 @@
+import { ac, allRoles } from '@easy-law/shared-types';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { admin } from 'better-auth/plugins';
@@ -7,7 +8,6 @@ import { AUTH_BASE_PATH } from '../constants';
 import { db } from '../db/client';
 import { users, accounts, sessions, verifications } from '../db/schema/auth-schema';
 
-import { ac, allRoles } from './permissions';
 const isProduction = process.env.NODE_ENV === 'production';
 const baseURL =
   isProduction 

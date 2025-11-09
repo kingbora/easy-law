@@ -126,7 +126,7 @@ export default function CaseConflictModal({
       title="检测到其他人更新了案件"
       width={720}
       footer={footer}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={false}
       closable={!refreshing && !merging}
     >

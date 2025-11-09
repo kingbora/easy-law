@@ -1,3 +1,5 @@
+export * from './permissions';
+
 export const USER_ROLES = [
   'super_admin',
   'admin',
