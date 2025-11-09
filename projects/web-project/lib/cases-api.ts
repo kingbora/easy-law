@@ -1,4 +1,4 @@
-import { apiFetch } from './api-client';
+import { ApiError, apiFetch } from './api-client';
 import type { UserDepartment, UserRole } from './users-api';
 
 export type CaseType = 'work_injury' | 'personal_injury' | 'other';
@@ -23,7 +23,7 @@ export type CaseTimeNodeType =
   | 'final_judgement';
 
 export const CASE_STATUS_LABEL_MAP: Record<CaseStatus, string> = {
-  open: '未结案',
+  open: '跟进中',
   closed: '已结案',
   void: '废单'
 };
@@ -60,7 +60,7 @@ export interface CaseTimelineRecord {
   occurredOn: string;
   createdAt: string;
   updatedAt: string;
-  note: string;
+  note: string | null;
   followerId: string | null;
   followerName: string | null;
 }
@@ -81,6 +81,84 @@ export interface CaseChangeLog {
   actorName: string | null;
   actorRole: UserRole | string | null;
   createdAt: string;
+}
+
+export interface CaseUpdateConflictField {
+  field: string;
+  label: string;
+  baseValue: string | null;
+  remoteValue?: string | null;
+  clientValue?: string | null;
+}
+
+export type CaseUpdateConflictType = 'hard' | 'mergeable';
+
+export interface CaseUpdateConflictDetails {
+  type: CaseUpdateConflictType;
+  message: string;
+  caseId: string;
+  baseVersion: number | null;
+  latestVersion: number;
+  remoteChanges: CaseUpdateConflictField[];
+  clientChanges: CaseUpdateConflictField[];
+  conflictingFields: string[];
+  updatedAt: string;
+  updatedById: string | null;
+  updatedByName: string | null;
+  updatedByRole: UserRole | string | null;
+}
+
+export interface CaseUpdateMeta {
+  baseVersion?: number | null;
+  baseSnapshot?: Record<string, unknown> | null;
+  dirtyFields?: string[] | null;
+  resolveMode?: 'merge';
+}
+
+export interface CaseUpdateRequest {
+  payload: CasePayload;
+  meta?: CaseUpdateMeta | null;
+}
+
+export class CaseUpdateConflictError extends ApiError {
+  override details: CaseUpdateConflictDetails;
+
+  constructor(message: string, details: CaseUpdateConflictDetails) {
+    super(message, 409, details);
+    this.name = 'CaseUpdateConflictError';
+    this.details = details;
+  }
+}
+
+function isCaseUpdateConflictDetails(value: unknown): value is CaseUpdateConflictDetails {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.type !== 'string') {
+    return false;
+  }
+  if (typeof record.caseId !== 'string') {
+    return false;
+  }
+  if (typeof record.latestVersion !== 'number') {
+    return false;
+  }
+  if (!Array.isArray(record.remoteChanges) || !Array.isArray(record.clientChanges)) {
+    return false;
+  }
+  return true;
+}
+
+function extractConflictDetails(payload: unknown): CaseUpdateConflictDetails | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const data = payload as Record<string, unknown>;
+  const maybeDetails = data.details ?? payload;
+  return isCaseUpdateConflictDetails(maybeDetails) ? (maybeDetails as CaseUpdateConflictDetails) : null;
 }
 
 export interface CaseTimeNodeRecord {
@@ -162,6 +240,10 @@ export interface CaseRecord {
   voidReason: string | null;
   salesCommission: string | null;
   handlingFee: string | null;
+  version: number;
+  updaterId: string | null;
+  updaterName: string | null;
+  updaterRole: UserRole | string | null;
   createdAt: string;
   updatedAt: string;
   participants: CaseParticipantsGroup;
@@ -177,10 +259,18 @@ export type CaseTableColumnKey =
   | 'caseType'
   | 'caseLevel'
   | 'claimantNames'
+  | 'respondentNames'
   | 'provinceCity'
   | 'assignedLawyerName'
   | 'assignedAssistantName'
   | 'assignedSaleName'
+  | 'contractDate'
+  | 'clueDate'
+  | 'targetAmount'
+  | 'contractForm'
+  | 'insuranceRiskLevel'
+  | 'insuranceTypes'
+  | 'dataSource'
   | 'entryDate'
   | 'createdAt'
   | 'updatedAt';
@@ -220,9 +310,11 @@ export interface CaseListQuery {
   department?: UserDepartment;
   assignedSaleId?: string;
   assignedLawyerId?: string;
+  caseNumber?: string;
   caseType?: CaseType;
   caseLevel?: CaseLevel;
   caseStatus?: CaseStatus;
+  caseId?: string;
   search?: string;
   orderBy?: 'createdAt' | 'updatedAt';
   orderDirection?: 'asc' | 'desc';
@@ -366,12 +458,32 @@ export async function createCase(payload: CasePayload): Promise<CaseRecord> {
   return response.data;
 }
 
-export async function updateCase(id: string, payload: CasePayload): Promise<CaseRecord> {
-  const response = await apiFetch<CaseDetailResponse>(`/api/cases/${id}`, {
-    method: 'PUT',
-    body: payload
-  });
-  return response.data;
+export async function updateCase(id: string, input: CasePayload | CaseUpdateRequest): Promise<CaseRecord> {
+  const requestBody: CaseUpdateRequest =
+    input && typeof input === 'object' && 'payload' in input
+      ? {
+          payload: (input as CaseUpdateRequest).payload,
+          meta: (input as CaseUpdateRequest).meta ?? undefined
+        }
+      : {
+          payload: input as CasePayload
+        };
+
+  try {
+    const response = await apiFetch<CaseDetailResponse>(`/api/cases/${id}`, {
+      method: 'PUT',
+      body: requestBody
+    });
+    return response.data;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      const details = extractConflictDetails(error.details);
+      if (details) {
+        throw new CaseUpdateConflictError(error.message, details);
+      }
+    }
+    throw error;
+  }
 }
 
 export async function deleteCase(id: string): Promise<void> {

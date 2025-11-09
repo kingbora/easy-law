@@ -10,6 +10,7 @@ import {
   Descriptions,
   Divider,
   Form,
+  type FormInstance,
   Checkbox,
   Input,
   InputNumber,
@@ -45,9 +46,11 @@ import {
   type TravelFeeType
 } from '@/lib/cases-api';
 import {
-  CASE_TIME_NODE_DEFINITIONS,
   CASE_TIME_NODE_LABEL_MAP,
-  CASE_TIME_NODE_ORDER_MAP
+  CASE_TIME_NODE_ORDER_MAP,
+  getCaseTimeNodeDefinitions,
+  getCaseTimeNodeLabelMap,
+  getCaseTimeNodeOrderMap
 } from '@/lib/case-time-nodes';
 import styles from './modal.module.scss';
 import { useSessionStore } from '@/lib/stores/session-store';
@@ -506,7 +509,11 @@ type BasicInfoFieldMeta =
       requiredMessage?: string;
       extraRules?: Rule[];
       labelOverrides?: Partial<Record<UserDepartment, string>>;
-      renderInput: (context: { department: UserDepartment; defaultCaseCategory: CaseCategory }) => ReactNode;
+      renderInput: (context: {
+        department: UserDepartment;
+        defaultCaseCategory: CaseCategory;
+        form: FormInstance<WorkInjuryCaseFormValues>;
+      }) => ReactNode;
       renderDisplay: (info: BasicInfoValues | undefined, defaultCaseCategory: CaseCategory) => ReactNode;
     }
   | {
@@ -732,38 +739,71 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
     kind: 'field',
     label: '收费金额（元）',
     requiredMessage: '请输入收费金额',
-    colSpan: 24,
-    renderInput: () => (
-      <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入收费金额" />
-    ),
+    renderInput: ({ form }) => {
+      const contractQuoteType = form.getFieldValue(['basicInfo', 'contractQuoteType']);
+      const isFixed = contractQuoteType === 'fixed';
+      if (!isFixed) {
+        return null;
+      }
+      return (
+        <InputNumber
+          style={{ width: '100%' }}
+          min={0}
+          precision={2}
+          placeholder="请输入收费金额"
+        />
+      );
+    },
     renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.contractQuoteAmount ?? null)
   },
   contractQuoteUpfront: {
     kind: 'field',
     label: '前期收费（元）',
     requiredMessage: '请输入前期收费金额',
-    colSpan: 12,
-    renderInput: () => (
-      <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入前期收费金额" />
-    ),
+    renderInput: ({ form }) => {
+      const contractQuoteType = form.getFieldValue(['basicInfo', 'contractQuoteType']);
+      const isRisk = contractQuoteType === 'risk';
+      if (!isRisk) {
+        return null;
+      }
+      return <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入前期收费金额" />;
+    },
     renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.contractQuoteUpfront ?? null)
   },
   contractQuoteRatio: {
     kind: 'field',
     label: '回款比例 (%)',
     requiredMessage: '请输入回款比例',
-    colSpan: 12,
-    renderInput: () => (
-      <InputNumber
+    renderInput: ({ form }) => {
+      const contractQuoteType = form.getFieldValue(['basicInfo', 'contractQuoteType']);
+      const isRisk = contractQuoteType === 'risk';
+      if (!isRisk) {
+        return null;
+      }
+      return <InputNumber
         style={{ width: '100%' }}
         min={0}
         max={100}
         precision={2}
         placeholder="请输入回款比例"
-      />
-    ),
+      />;
+    },
     renderDisplay: (info, _defaultCaseCategory) =>
       formatNumberWithSuffix(info?.contractQuoteRatio ?? null, '%')
+  },
+  contractQuoteOther: {
+    kind: 'field',
+    label: '收费说明',
+    requiredMessage: '请输入收费说明',
+    renderInput: ({ form }) => {
+      const contractQuoteType = form.getFieldValue(['basicInfo', 'contractQuoteType']);
+      const isOther = contractQuoteType === 'other';
+      if (!isOther) {
+        return null;
+      }
+      return <Input placeholder="请输入收费说明" />;
+    },
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.contractQuoteOther)
   },
   estimatedCollection: {
     kind: 'field',
@@ -790,7 +830,6 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
   travelFeeType: {
     kind: 'field',
     label: '差旅费承担',
-    colSpan: 24,
     labelOverrides: {
       insurance: '差旅费'
     },
@@ -800,14 +839,6 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
     ),
     renderDisplay: (info, _defaultCaseCategory) =>
       formatOptionLabel(TRAVEL_FEE_TYPE_LABEL_MAP, info?.travelFeeType ?? null)
-  },
-  contractQuoteOther: {
-    kind: 'field',
-    label: '收费说明',
-    colSpan: 24,
-    requiredMessage: '请输入收费说明',
-    renderInput: () => <Input placeholder="请输入收费说明" />,
-    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.contractQuoteOther)
   },
   insuranceTypes: {
     kind: 'field',
@@ -838,7 +869,6 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
     kind: 'field',
     label: '备注',
     colSpan: 24,
-    requiredMessage: '请输入备注',
     renderInput: () => <TextArea rows={3} placeholder="可补充其他情况" />,
     renderDisplay: (info, _defaultCaseCategory) => formatText(info?.remark)
   },
@@ -1037,6 +1067,9 @@ export default function WorkInjuryCaseModal({
   const departmentConfig = useMemo(() => CASE_DEPARTMENT_CONFIG[department], [department]);
   const basicInfoLayout = departmentConfig.basicInfoLayout;
   const requiredBasicInfoFields = departmentConfig.requiredBasicInfoFields;
+  const timeNodeDefinitions = useMemo(() => getCaseTimeNodeDefinitions(department), [department]);
+  const scopedTimeNodeLabelMap = useMemo(() => getCaseTimeNodeLabelMap(department), [department]);
+  const scopedTimeNodeOrderMap = useMemo(() => getCaseTimeNodeOrderMap(department), [department]);
 
   const sessionUser = useSessionStore(state => state.user);
   const { message } = App.useApp();
@@ -1233,16 +1266,23 @@ export default function WorkInjuryCaseModal({
     [disabledTrialStages]
   );
 
-  const buildTimeNodeFormValues = useCallback((nodes?: CaseTimeNodeRecord[]): TimeNodeFormValues => {
-    const values: TimeNodeFormValues = {};
-    CASE_TIME_NODE_DEFINITIONS.forEach(definition => {
-      values[definition.type] = null;
-    });
-    (nodes ?? []).forEach(node => {
-      values[node.nodeType] = node.occurredOn ? dayjs(node.occurredOn) : null;
-    });
-    return values;
-  }, []);
+  const buildTimeNodeFormValues = useCallback(
+    (nodes?: CaseTimeNodeRecord[]): TimeNodeFormValues => {
+      const values: TimeNodeFormValues = {};
+
+      timeNodeDefinitions.forEach((definition) => {
+        values[definition.type] = null;
+      });
+
+      (nodes ?? []).forEach((node) => {
+        const occurredOn = node.occurredOn ? dayjs(node.occurredOn) : null;
+        values[node.nodeType] = occurredOn;
+      });
+
+      return values;
+    },
+    [timeNodeDefinitions]
+  );
 
   const syncFormsFromValues = useCallback(
     (values: WorkInjuryCaseFormValues) => {
@@ -1667,7 +1707,7 @@ export default function WorkInjuryCaseModal({
     }
 
     const formValues = timeNodeForm.getFieldsValue() as TimeNodeFormValues;
-    const payload = CASE_TIME_NODE_DEFINITIONS.reduce<Array<{ nodeType: CaseTimeNodeType; occurredOn: Dayjs }>>(
+    const payload = timeNodeDefinitions.reduce<Array<{ nodeType: CaseTimeNodeType; occurredOn: Dayjs }>>(
       (acc, definition) => {
         const value = formValues[definition.type];
         if (value) {
@@ -1702,6 +1742,7 @@ export default function WorkInjuryCaseModal({
     clearDirty,
     message,
     onSaveTimeNodes,
+    timeNodeDefinitions,
     timeNodeForm
   ]);
 
@@ -2295,49 +2336,28 @@ export default function WorkInjuryCaseModal({
       const label = meta.labelOverrides?.[department] ?? meta.label;
       const rules: Rule[] = [];
       if (requiredBasicInfoFields.has(fieldKey)) {
-        rules.push({ required: true, message: meta.requiredMessage ?? `${label ?? '该字段'}为必填项` });
+        if (meta.requiredMessage) {
+          rules.push({ required: true, message: meta.requiredMessage });
+        }
       }
       if (meta.extraRules) {
         rules.push(...meta.extraRules);
       }
-      if (isInsuranceCase) {
-        switch (fieldKey) {
-          case 'contractQuoteAmount':
-            if (watchedContractQuoteType === 'fixed') {
-              rules.push({ required: true, message: meta.requiredMessage ?? '请输入收费金额' });
-            }
-            break;
-          case 'contractQuoteUpfront':
-            if (watchedContractQuoteType === 'risk') {
-              rules.push({ required: true, message: meta.requiredMessage ?? '请输入前期收费金额' });
-            }
-            break;
-          case 'contractQuoteRatio':
-            if (watchedContractQuoteType === 'risk') {
-              rules.push({ required: true, message: meta.requiredMessage ?? '请输入回款比例' });
-            }
-            break;
-          case 'contractQuoteOther':
-            if (watchedContractQuoteType === 'other') {
-              rules.push({ required: true, message: meta.requiredMessage ?? '请输入收费说明' });
-            }
-            break;
-          default:
-            break;
-        }
-      }
 
-      fieldColumns.push(
-        <Col span={meta.colSpan ?? 8} key={`basic-col-${elementKey}`}>
-          <Form.Item
-            label={label}
-            name={['basicInfo', fieldKey]}
-            rules={rules}
-          >
-            {meta.renderInput({ department, defaultCaseCategory })}
-          </Form.Item>
-        </Col>
-      );
+      const formItem = meta.renderInput({ department, defaultCaseCategory, form });
+
+      if (formItem != null) {
+        fieldColumns.push(
+          <Col span={meta.colSpan ?? 8} key={`basic-col-${elementKey}`}>
+            <Form.Item
+              label={label}
+              name={['basicInfo', fieldKey]}
+              rules={rules}>
+              {formItem}
+            </Form.Item>
+          </Col>
+        );
+      }
     });
 
     if (fieldColumns.length) {
@@ -2542,7 +2562,7 @@ export default function WorkInjuryCaseModal({
             onValuesChange={() => markDirty('timeNodes')}
           >
             <Row gutter={16}>
-              {CASE_TIME_NODE_DEFINITIONS.map(definition => (
+              {timeNodeDefinitions.map((definition) => (
                 <Col span={12} key={definition.type}>
                   <Form.Item label={definition.label} name={definition.type}>
                     <DatePicker
@@ -2856,8 +2876,14 @@ export default function WorkInjuryCaseModal({
     }
 
     const sortedNodes = [...nodes].sort((a, b) => {
-      const orderA = CASE_TIME_NODE_ORDER_MAP[a.nodeType] ?? Number.MAX_SAFE_INTEGER;
-      const orderB = CASE_TIME_NODE_ORDER_MAP[b.nodeType] ?? Number.MAX_SAFE_INTEGER;
+      const orderA =
+        scopedTimeNodeOrderMap[a.nodeType] ??
+        CASE_TIME_NODE_ORDER_MAP[a.nodeType] ??
+        Number.MAX_SAFE_INTEGER;
+      const orderB =
+        scopedTimeNodeOrderMap[b.nodeType] ??
+        CASE_TIME_NODE_ORDER_MAP[b.nodeType] ??
+        Number.MAX_SAFE_INTEGER;
       if (orderA === orderB) {
         const timeA = a.occurredOn ? dayjs(a.occurredOn).valueOf() : Number.MAX_SAFE_INTEGER;
         const timeB = b.occurredOn ? dayjs(b.occurredOn).valueOf() : Number.MAX_SAFE_INTEGER;
@@ -2871,7 +2897,9 @@ export default function WorkInjuryCaseModal({
       color: 'blue',
       children: (
         <div>
-          <Typography.Text strong>{CASE_TIME_NODE_LABEL_MAP[node.nodeType] ?? node.nodeType}</Typography.Text>
+          <Typography.Text strong>
+            {scopedTimeNodeLabelMap[node.nodeType] ?? CASE_TIME_NODE_LABEL_MAP[node.nodeType] ?? node.nodeType}
+          </Typography.Text>
           <div>{formatDate(node.occurredOn ?? null)}</div>
         </div>
       )

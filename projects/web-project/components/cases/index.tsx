@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import dayjs, { type Dayjs } from 'dayjs';
-import { App, Button, Card, Checkbox, Dropdown, Form, List, Modal, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { App, Button, Card, Checkbox, Dropdown, Form, Input, List, Modal, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import { ArrowDownOutlined, ArrowUpOutlined, EllipsisOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
@@ -17,6 +18,7 @@ import WorkInjuryCaseModal, {
 import {
   CASE_DEPARTMENT_CONFIG,
   DEFAULT_CASE_DEPARTMENT,
+  CASE_TABLE_COLUMN_LABELS,
   type CaseTableActionKey
 } from './department-config';
 import TimeNodeModal from './operations/TimeNodeModal';
@@ -55,10 +57,14 @@ import {
   type TravelFeeType,
   type CaseChangeLog,
   type CaseTableColumnKey,
+  type CaseUpdateConflictDetails,
+  type CaseUpdateMeta,
+  CaseUpdateConflictError,
   updateCase as updateCaseApi,
   updateCaseTablePreferences,
   updateCaseTimeNodes
 } from '@/lib/cases-api';
+import CaseConflictModal from './conflict-modal';
 import type { UserDepartment, UserRole } from '@/lib/users-api';
 import FollowUpModal from './operations/FollowUpModal';
 import styles from './styles.module.scss';
@@ -80,6 +86,11 @@ const CASE_LEVEL_LABEL_MAP: Record<CaseLevel, string> = {
   A: 'A',
   B: 'B',
   C: 'C'
+};
+
+const CONTRACT_FORM_LABELS: Record<ContractFormType, string> = {
+  electronic: '电子合同',
+  paper: '纸质合同'
 };
 
 const CASE_STATUS_OPTIONS: CaseStatus[] = ['open', 'closed', 'void'];
@@ -109,6 +120,14 @@ const CASE_TIME_NODE_EDIT_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRol
   'assistant'
 ]);
 
+interface CaseConflictState {
+  caseId: string;
+  payload: CasePayload;
+  meta: CaseUpdateMeta;
+  details: CaseUpdateConflictDetails;
+  successMessage?: string;
+}
+
 const sortParticipantsByOrder = (participants: CaseParticipant[] = []): CaseParticipant[] =>
   [...participants].sort((a, b) => {
     const orderA = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
@@ -129,6 +148,16 @@ const collectNonOpponentPartyNames = (participants?: CaseParticipantsGroup): str
   }
 
   return sortParticipantsByOrder(participants.claimants)
+    .map((item) => item.name.trim())
+    .filter((name) => name.length > 0);
+};
+
+const collectOpponentPartyNames = (participants?: CaseParticipantsGroup): string[] => {
+  if (!participants || !participants.respondents || participants.respondents.length === 0) {
+    return [];
+  }
+
+  return sortParticipantsByOrder(participants.respondents)
     .map((item) => item.name.trim())
     .filter((name) => name.length > 0);
 };
@@ -646,22 +675,33 @@ function mapFormToCasePayload(values: WorkInjuryCaseFormValues, department: Case
 }
 
 type CaseFilters = {
+  caseNumber?: string;
   caseType?: CaseType;
   caseLevel?: CaseLevel;
   caseStatus?: CaseStatus;
+  caseId?: string;
 };
 
 interface CasesPageProps {
   department: UserDepartment;
+  initialCaseId?: string | null;
 }
 
-export default function CasesPage({ department }: CasesPageProps) {
+export default function CasesPage({ department, initialCaseId }: CasesPageProps) {
   const { message } = App.useApp();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const activeDepartment = department ?? DEFAULT_CASE_DEPARTMENT;
   const departmentConfig =
     CASE_DEPARTMENT_CONFIG[activeDepartment] ?? CASE_DEPARTMENT_CONFIG[DEFAULT_CASE_DEPARTMENT];
   const pageDepartment = departmentConfig.department;
+  const filterOptionSet = useMemo(() => new Set(departmentConfig.filterOptions), [departmentConfig]);
+  const shouldShowCaseNumberFilter = filterOptionSet.has('caseNumber');
+  const shouldShowCaseTypeFilter = filterOptionSet.has('caseType');
+  const shouldShowCaseLevelFilter = filterOptionSet.has('caseLevel');
+  const shouldShowCaseStatusFilter = filterOptionSet.has('caseStatus');
 
   const columnOptions = useMemo(
     () => departmentConfig.columnOptions.map((option) => ({ ...option })),
@@ -724,6 +764,9 @@ export default function CasesPage({ department }: CasesPageProps) {
   const [caseModalCase, setCaseModalCase] = useState<CaseRecord | null>(null);
   const [caseModalCanEdit, setCaseModalCanEdit] = useState(false);
   const [caseModalInitialTab, setCaseModalInitialTab] = useState<WorkInjuryCaseTabKey | undefined>(undefined);
+  const [caseConflict, setCaseConflict] = useState<CaseConflictState | null>(null);
+  const [caseConflictRefreshing, setCaseConflictRefreshing] = useState(false);
+  const [caseConflictMerging, setCaseConflictMerging] = useState(false);
   const [timeNodeModalOpen, setTimeNodeModalOpen] = useState(false);
   const [timeNodeTarget, setTimeNodeTarget] = useState<CaseRecord | null>(null);
   const [timeNodeSaving, setTimeNodeSaving] = useState(false);
@@ -736,6 +779,7 @@ export default function CasesPage({ department }: CasesPageProps) {
   const [filterForm] = Form.useForm<CaseFilters>();
   const filtersRef = useRef<CaseFilters>({});
   const [filters, setFilters] = useState<CaseFilters>({});
+  const appliedInitialCaseIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setVisibleColumnKeys([...defaultColumns]);
@@ -756,7 +800,9 @@ export default function CasesPage({ department }: CasesPageProps) {
     filterForm.resetFields();
     setPagination(createInitialPagination());
     setCases([]);
+    appliedInitialCaseIdRef.current = null;
   }, [filterForm, pageDepartment]);
+
 
   const currentPage = pagination.current ?? 1;
   const currentPageSize = pagination.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -790,7 +836,14 @@ export default function CasesPage({ department }: CasesPageProps) {
     []
   );
   const hasActiveFilters = useMemo(
-    () => Boolean(filters.caseType || filters.caseLevel || filters.caseStatus),
+    () =>
+      Boolean(
+        filters.caseType ||
+          filters.caseLevel ||
+          filters.caseStatus ||
+          filters.caseId ||
+          (typeof filters.caseNumber === 'string' && filters.caseNumber.trim().length > 0)
+      ),
     [filters]
   );
 
@@ -804,9 +857,11 @@ export default function CasesPage({ department }: CasesPageProps) {
         orderDirection: 'desc',
         page,
         pageSize,
+        caseNumber: appliedFilters.caseNumber,
         caseType: appliedFilters.caseType,
         caseLevel: appliedFilters.caseLevel,
-        caseStatus: appliedFilters.caseStatus
+        caseStatus: appliedFilters.caseStatus,
+        caseId: appliedFilters.caseId
       });
 
       setCases(response.data);
@@ -835,6 +890,27 @@ export default function CasesPage({ department }: CasesPageProps) {
   }, [message, pageDepartment]);
 
   useEffect(() => {
+    const trimmedCaseId = typeof initialCaseId === 'string' ? initialCaseId.trim() : '';
+    if (!trimmedCaseId) {
+      return;
+    }
+    if (appliedInitialCaseIdRef.current === trimmedCaseId) {
+      return;
+    }
+    appliedInitialCaseIdRef.current = trimmedCaseId;
+
+    const nextFilters: CaseFilters = {
+      ...filtersRef.current,
+      caseId: trimmedCaseId
+    };
+
+    filtersRef.current = nextFilters;
+    setFilters(nextFilters);
+    filterForm.resetFields();
+    void loadCases(1, DEFAULT_PAGE_SIZE, nextFilters);
+  }, [filterForm, initialCaseId, loadCases]);
+
+  useEffect(() => {
     void loadCases(currentPage, currentPageSize);
   }, [loadCases, currentPage, currentPageSize]);
 
@@ -849,7 +925,9 @@ export default function CasesPage({ department }: CasesPageProps) {
 
   const handleFilterSubmit = useCallback(
     (values: CaseFilters) => {
+      const trimmedCaseNumber = values.caseNumber?.trim();
       const nextFilters: CaseFilters = {
+        caseNumber: trimmedCaseNumber ? trimmedCaseNumber : undefined,
         caseType: values.caseType || undefined,
         caseLevel: values.caseLevel || undefined,
         caseStatus: values.caseStatus || undefined
@@ -866,8 +944,18 @@ export default function CasesPage({ department }: CasesPageProps) {
     const nextFilters: CaseFilters = {};
     filtersRef.current = nextFilters;
     setFilters(nextFilters);
+    appliedInitialCaseIdRef.current = null;
+
+    if (searchParams?.has('caseId')) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('caseId');
+      const nextQuery = params.toString();
+      const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+      router.replace(nextUrl, { scroll: false });
+    }
+
     void loadCases(1, currentPageSize, nextFilters);
-  }, [filterForm, currentPageSize, loadCases]);
+  }, [filterForm, currentPageSize, loadCases, pathname, router, searchParams]);
 
   const openCreateModal = useCallback(() => {
     if (!canCreateCase) {
@@ -1211,6 +1299,125 @@ export default function CasesPage({ department }: CasesPageProps) {
   [message, updateCaseInState]
   );
 
+  const buildCaseUpdateMeta = useCallback((record: CaseRecord, fields: string[]): CaseUpdateMeta => {
+  const baseSnapshot: Record<string, unknown> = {};
+  const source = record as unknown as Record<string, unknown>;
+    fields.forEach((field) => {
+      baseSnapshot[field] = source[field];
+    });
+
+    return {
+      baseVersion: record.version,
+      baseSnapshot,
+      dirtyFields: fields
+    } satisfies CaseUpdateMeta;
+  }, []);
+
+  const submitCaseUpdate = useCallback(
+    async ({
+      caseRecord,
+      payload,
+      dirtyFields,
+      successMessage
+    }: {
+      caseRecord: CaseRecord;
+      payload: CasePayload;
+      dirtyFields: string[];
+      successMessage?: string;
+    }) => {
+      const meta = buildCaseUpdateMeta(caseRecord, dirtyFields);
+      try {
+        const updatedRecord = await updateCaseApi(caseRecord.id, { payload, meta });
+        updateCaseInState(updatedRecord);
+        if (successMessage) {
+          message.success(successMessage);
+        }
+        return updatedRecord;
+      } catch (error) {
+        if (error instanceof CaseUpdateConflictError) {
+          setCaseConflict({
+            caseId: caseRecord.id,
+            payload,
+            meta,
+            details: error.details,
+            successMessage
+          });
+          message.warning(error.message);
+          return undefined;
+        }
+        throw error;
+      }
+    },
+    [buildCaseUpdateMeta, message, setCaseConflict, updateCaseInState]
+  );
+
+  const handleConflictClose = useCallback(() => {
+    if (caseConflictMerging || caseConflictRefreshing) {
+      return;
+    }
+    setCaseConflict(null);
+  }, [caseConflictMerging, caseConflictRefreshing]);
+
+  const handleConflictRefresh = useCallback(async () => {
+    if (!caseConflict) {
+      return;
+    }
+    setCaseConflictRefreshing(true);
+    try {
+      const latest = await fetchCaseById(caseConflict.caseId);
+      updateCaseInState(latest);
+      message.success('已同步最新版本');
+      setCaseConflict(null);
+    } catch (error) {
+      const errorMessage = error instanceof ApiError ? error.message : '同步最新数据失败，请稍后重试';
+      message.error(errorMessage);
+    } finally {
+      setCaseConflictRefreshing(false);
+    }
+  }, [caseConflict, message, updateCaseInState]);
+
+  const handleConflictMerge = useCallback(async () => {
+    if (!caseConflict) {
+      return;
+    }
+    setCaseConflictMerging(true);
+    try {
+      const mergeMeta: CaseUpdateMeta = {
+        ...caseConflict.meta,
+        resolveMode: 'merge'
+      };
+      const updatedRecord = await updateCaseApi(caseConflict.caseId, {
+        payload: caseConflict.payload,
+        meta: mergeMeta
+      });
+      updateCaseInState(updatedRecord);
+      message.success(caseConflict.successMessage ?? '已合并最新变更');
+      setCaseConflict(null);
+    } catch (error) {
+      if (error instanceof CaseUpdateConflictError) {
+        setCaseConflict((previous) => {
+          if (!previous) {
+            return previous;
+          }
+          return {
+            ...previous,
+            meta: {
+              ...previous.meta,
+              baseVersion: error.details.latestVersion
+            },
+            details: error.details
+          } satisfies CaseConflictState;
+        });
+        message.warning(error.message);
+      } else {
+        const errorMessage = error instanceof ApiError ? error.message : '合并失败，请稍后重试';
+        message.error(errorMessage);
+      }
+    } finally {
+      setCaseConflictMerging(false);
+    }
+  }, [caseConflict, message, updateCaseInState]);
+
   useEffect(() => {
     setMessageApi(message);
     return () => {
@@ -1276,24 +1483,25 @@ export default function CasesPage({ department }: CasesPageProps) {
         return undefined;
       }
       try {
-        return await mutateCaseRecord(
-          caseModalCase,
-          () =>
-            updateCaseApi(caseModalCase.id, {
-              caseType: caseModalCase.caseType,
-              caseLevel: caseModalCase.caseLevel,
-              assignedLawyerId: values.assignedLawyerId ?? null,
-              assignedAssistantId: values.assignedAssistantId ?? null
-            }),
-          '人员分配已更新'
-        );
+        const updated = await submitCaseUpdate({
+          caseRecord: caseModalCase,
+          payload: {
+            caseType: caseModalCase.caseType,
+            caseLevel: caseModalCase.caseLevel,
+            assignedLawyerId: values.assignedLawyerId ?? null,
+            assignedAssistantId: values.assignedAssistantId ?? null
+          },
+          dirtyFields: ['assignedLawyerId', 'assignedAssistantId'],
+          successMessage: '人员分配已更新'
+        });
+        return updated ? mapCaseRecordToFormValues(updated) : undefined;
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '更新人员分配失败，请稍后重试';
         message.error(errorMessage);
         return undefined;
       }
     },
-  [caseModalCase, message, mutateCaseRecord]
+  [caseModalCase, message, submitCaseUpdate]
   );
 
   const handleCaseModalStatusSave = useCallback(
@@ -1303,25 +1511,26 @@ export default function CasesPage({ department }: CasesPageProps) {
         return undefined;
       }
       try {
-        return await mutateCaseRecord(
-          caseModalCase,
-          () =>
-            updateCaseApi(caseModalCase.id, {
-              caseType: caseModalCase.caseType,
-              caseLevel: caseModalCase.caseLevel,
-              caseStatus: values.caseStatus,
-              closedReason: values.caseStatus === 'closed' ? values.closedReason ?? null : null,
-              voidReason: values.caseStatus === 'void' ? values.voidReason ?? null : null
-            }),
-          '案件状态已更新'
-        );
+        const updated = await submitCaseUpdate({
+          caseRecord: caseModalCase,
+          payload: {
+            caseType: caseModalCase.caseType,
+            caseLevel: caseModalCase.caseLevel,
+            caseStatus: values.caseStatus,
+            closedReason: values.caseStatus === 'closed' ? values.closedReason ?? null : null,
+            voidReason: values.caseStatus === 'void' ? values.voidReason ?? null : null
+          },
+          dirtyFields: ['caseStatus', 'closedReason', 'voidReason'],
+          successMessage: '案件状态已更新'
+        });
+        return updated ? mapCaseRecordToFormValues(updated) : undefined;
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '更新案件状态失败，请稍后重试';
         message.error(errorMessage);
         return undefined;
       }
     },
-  [caseModalCase, message, mutateCaseRecord]
+  [caseModalCase, message, submitCaseUpdate]
   );
 
   const handleCaseModalHearingAdd = useCallback(
@@ -1349,23 +1558,24 @@ export default function CasesPage({ department }: CasesPageProps) {
           : existingHearings;
         const nextHearings = sortHearingInputs([...deduplicatedHearings, hearingPayload]);
 
-        return await mutateCaseRecord(
-          caseModalCase,
-          () =>
-            updateCaseApi(caseModalCase.id, {
-              caseType: caseModalCase.caseType,
-              caseLevel: caseModalCase.caseLevel,
-              hearings: nextHearings
-            }),
-          '庭审信息添加成功'
-        );
+        const updated = await submitCaseUpdate({
+          caseRecord: caseModalCase,
+          payload: {
+            caseType: caseModalCase.caseType,
+            caseLevel: caseModalCase.caseLevel,
+            hearings: nextHearings
+          },
+          dirtyFields: ['hearings'],
+          successMessage: '庭审信息添加成功'
+        });
+        return updated ? mapCaseRecordToFormValues(updated) : undefined;
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '新增庭审信息失败，请稍后重试';
         message.error(errorMessage);
         return undefined;
       }
     },
-  [caseModalCase, message, mutateCaseRecord]
+  [caseModalCase, message, submitCaseUpdate]
   );
 
   const handleCaseModalFollowUpAdd = useCallback(
@@ -1386,23 +1596,24 @@ export default function CasesPage({ department }: CasesPageProps) {
           note: values.note ?? null,
           followerId: currentUser?.id ?? null
         });
-        return await mutateCaseRecord(
-          caseModalCase,
-          () =>
-            updateCaseApi(caseModalCase.id, {
-              caseType: caseModalCase.caseType,
-              caseLevel: caseModalCase.caseLevel,
-              timeline: existingTimeline
-            }),
-          '跟进备注已添加'
-        );
+        const updated = await submitCaseUpdate({
+          caseRecord: caseModalCase,
+          payload: {
+            caseType: caseModalCase.caseType,
+            caseLevel: caseModalCase.caseLevel,
+            timeline: existingTimeline
+          },
+          dirtyFields: ['timeline'],
+          successMessage: '跟进备注已添加'
+        });
+        return updated ? mapCaseRecordToFormValues(updated) : undefined;
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '保存跟进备注失败，请稍后重试';
         message.error(errorMessage);
         return undefined;
       }
     },
-  [caseModalCase, currentUser, message, mutateCaseRecord]
+  [caseModalCase, currentUser, message, submitCaseUpdate]
   );
 
   const handleCaseModalTimeNodesSave = useCallback(
@@ -1474,24 +1685,25 @@ export default function CasesPage({ department }: CasesPageProps) {
         return undefined;
       }
       try {
-        return await mutateCaseRecord(
-          caseModalCase,
-          () =>
-            updateCaseApi(caseModalCase.id, {
-              caseType: caseModalCase.caseType,
-              caseLevel: caseModalCase.caseLevel,
-              salesCommission: values.salesCommission ?? null,
-              handlingFee: values.handlingFee ?? null
-            }),
-          '费用信息已更新'
-        );
+        const updated = await submitCaseUpdate({
+          caseRecord: caseModalCase,
+          payload: {
+            caseType: caseModalCase.caseType,
+            caseLevel: caseModalCase.caseLevel,
+            salesCommission: values.salesCommission ?? null,
+            handlingFee: values.handlingFee ?? null
+          },
+          dirtyFields: ['salesCommission', 'handlingFee'],
+          successMessage: '费用信息已更新'
+        });
+        return updated ? mapCaseRecordToFormValues(updated) : undefined;
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '更新费用信息失败，请稍后重试';
         message.error(errorMessage);
         return undefined;
       }
     },
-  [caseModalCase, message, mutateCaseRecord]
+  [caseModalCase, message, submitCaseUpdate]
   );
 
   const handleCaseModalBasicInfoSave = useCallback(
@@ -1502,42 +1714,66 @@ export default function CasesPage({ department }: CasesPageProps) {
       }
       const basic = basicInfo ?? {};
       try {
-        return await mutateCaseRecord(
-          caseModalCase,
-          () =>
-            updateCaseApi(caseModalCase.id, {
-              caseType: (basic.caseType ?? caseModalCase.caseType) as CasePayload['caseType'],
-              caseLevel: (basic.caseLevel ?? caseModalCase.caseLevel) as CasePayload['caseLevel'],
-              provinceCity: toNullableText(basic.provinceCity ?? null),
-              targetAmount: basic.targetAmount ?? null,
-              feeStandard: toNullableText(basic.feeStandard ?? null),
-              agencyFeeEstimate: basic.agencyFeeEstimate ?? null,
-              dataSource: toNullableText(basic.dataSource ?? null),
-              hasContract: basic.hasContract ?? null,
-              hasSocialSecurity: basic.hasSocialSecurity ?? null,
-              entryDate: formatDayValue(basic.entryDate ?? null),
-              injuryLocation: toNullableText(basic.injuryLocation ?? null),
-              injurySeverity: toNullableText(basic.injurySeverity ?? null),
-              injuryCause: toNullableText(basic.injuryCause ?? null),
-              workInjuryCertified: basic.workInjuryCertified ?? null,
-              monthlySalary: basic.monthlySalary ?? null,
-              appraisalLevel: toNullableText(basic.appraisalLevel ?? null),
-              appraisalEstimate: toNullableText(basic.appraisalEstimate ?? null),
-              existingEvidence: toNullableText(basic.existingEvidence ?? null),
-              customerCooperative: basic.customerCooperative ?? null,
-              witnessCooperative: basic.witnessCooperative ?? null,
-              remark: toNullableText(basic.remark ?? null),
-              department: caseModalCase.department ?? null
-            }),
-          '基本信息已保存'
-        );
+        const updated = await submitCaseUpdate({
+          caseRecord: caseModalCase,
+          payload: {
+            caseType: (basic.caseType ?? caseModalCase.caseType) as CasePayload['caseType'],
+            caseLevel: (basic.caseLevel ?? caseModalCase.caseLevel) as CasePayload['caseLevel'],
+            provinceCity: toNullableText(basic.provinceCity ?? null),
+            targetAmount: basic.targetAmount ?? null,
+            feeStandard: toNullableText(basic.feeStandard ?? null),
+            agencyFeeEstimate: basic.agencyFeeEstimate ?? null,
+            dataSource: toNullableText(basic.dataSource ?? null),
+            hasContract: basic.hasContract ?? null,
+            hasSocialSecurity: basic.hasSocialSecurity ?? null,
+            entryDate: formatDayValue(basic.entryDate ?? null),
+            injuryLocation: toNullableText(basic.injuryLocation ?? null),
+            injurySeverity: toNullableText(basic.injurySeverity ?? null),
+            injuryCause: toNullableText(basic.injuryCause ?? null),
+            workInjuryCertified: basic.workInjuryCertified ?? null,
+            monthlySalary: basic.monthlySalary ?? null,
+            appraisalLevel: toNullableText(basic.appraisalLevel ?? null),
+            appraisalEstimate: toNullableText(basic.appraisalEstimate ?? null),
+            existingEvidence: toNullableText(basic.existingEvidence ?? null),
+            customerCooperative: basic.customerCooperative ?? null,
+            witnessCooperative: basic.witnessCooperative ?? null,
+            remark: toNullableText(basic.remark ?? null),
+            department: caseModalCase.department ?? null
+          },
+          dirtyFields: [
+            'caseType',
+            'caseLevel',
+            'provinceCity',
+            'targetAmount',
+            'feeStandard',
+            'agencyFeeEstimate',
+            'dataSource',
+            'hasContract',
+            'hasSocialSecurity',
+            'entryDate',
+            'injuryLocation',
+            'injurySeverity',
+            'injuryCause',
+            'workInjuryCertified',
+            'monthlySalary',
+            'appraisalLevel',
+            'appraisalEstimate',
+            'existingEvidence',
+            'customerCooperative',
+            'witnessCooperative',
+            'remark',
+            'department'
+          ],
+          successMessage: '基本信息已保存'
+        });
+        return updated ? mapCaseRecordToFormValues(updated) : undefined;
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '保存基本信息失败，请稍后重试';
         message.error(errorMessage);
         return undefined;
       }
     },
-  [caseModalCase, message, mutateCaseRecord]
+  [caseModalCase, message, submitCaseUpdate]
   );
 
   const handleCaseModalPartiesSave = useCallback(
@@ -1552,23 +1788,24 @@ export default function CasesPage({ department }: CasesPageProps) {
         return undefined;
       }
       try {
-        return await mutateCaseRecord(
-          caseModalCase,
-          () =>
-            updateCaseApi(caseModalCase.id, {
-              caseType: caseModalCase.caseType,
-              caseLevel: caseModalCase.caseLevel,
-              participants
-            }),
-          '当事人信息已保存'
-        );
+        const updated = await submitCaseUpdate({
+          caseRecord: caseModalCase,
+          payload: {
+            caseType: caseModalCase.caseType,
+            caseLevel: caseModalCase.caseLevel,
+            participants
+          },
+          dirtyFields: ['participants'],
+          successMessage: '当事人信息已保存'
+        });
+        return updated ? mapCaseRecordToFormValues(updated) : undefined;
       } catch (error) {
         const errorMessage = error instanceof ApiError ? error.message : '保存当事人信息失败，请稍后重试';
         message.error(errorMessage);
         return undefined;
       }
     },
-  [caseModalCase, message, mutateCaseRecord]
+  [caseModalCase, message, submitCaseUpdate]
   );
 
   const handleLoadAssignableStaff = useCallback(() => {
@@ -1708,10 +1945,29 @@ export default function CasesPage({ department }: CasesPageProps) {
     return parsed.format(format);
   }, []);
 
+  const formatCurrencyCell = useCallback((value?: string | null) => {
+    if (!value) {
+      return '—';
+    }
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric.toLocaleString('zh-CN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+      });
+    }
+    return value;
+  }, []);
+
+  const formatStringListCell = useCallback((list?: string[] | null) => {
+    const sanitized = sanitizeStringList(list ?? []);
+    return sanitized.length ? sanitized.join('、') : '—';
+  }, []);
+
   const columnDefinitions = useMemo<Record<CaseTableColumnKey, ColumnsType<CaseRecord>[number]>>(
     () => ({
       caseNumber: {
-        title: columnLabelMap.caseNumber,
+        title: columnLabelMap.caseNumber ?? CASE_TABLE_COLUMN_LABELS.caseNumber,
         dataIndex: 'caseNumber',
         key: 'caseNumber',
         render: (_, record) => {
@@ -1732,7 +1988,7 @@ export default function CasesPage({ department }: CasesPageProps) {
         }
       },
       caseStatus: {
-        title: columnLabelMap.caseStatus,
+        title: columnLabelMap.caseStatus ?? CASE_TABLE_COLUMN_LABELS.caseStatus,
         dataIndex: 'caseStatus',
         key: 'caseStatus',
         render: (value: CaseStatus | null) =>
@@ -1745,19 +2001,19 @@ export default function CasesPage({ department }: CasesPageProps) {
           )
       },
       caseType: {
-        title: columnLabelMap.caseType,
+        title: columnLabelMap.caseType ?? CASE_TABLE_COLUMN_LABELS.caseType,
         dataIndex: 'caseType',
         key: 'caseType',
         render: (value: CaseType) => CASE_TYPE_LABEL_MAP[value] ?? value
       },
       caseLevel: {
-        title: columnLabelMap.caseLevel,
+        title: columnLabelMap.caseLevel ?? CASE_TABLE_COLUMN_LABELS.caseLevel,
         dataIndex: 'caseLevel',
         key: 'caseLevel',
         render: (value: CaseLevel) => CASE_LEVEL_LABEL_MAP[value] ?? value
       },
       claimantNames: {
-        title: columnLabelMap.claimantNames,
+        title: columnLabelMap.claimantNames ?? CASE_TABLE_COLUMN_LABELS.claimantNames,
         dataIndex: 'participants',
         key: 'claimantNames',
         render: (_value: CaseParticipantsGroup | undefined, record) => {
@@ -1765,50 +2021,107 @@ export default function CasesPage({ department }: CasesPageProps) {
           return names.length ? names.join('、') : '—';
         }
       },
+      respondentNames: {
+        title: columnLabelMap.respondentNames ?? CASE_TABLE_COLUMN_LABELS.respondentNames,
+        dataIndex: 'participants',
+        key: 'respondentNames',
+        render: (_value: CaseParticipantsGroup | undefined, record) => {
+          const names = collectOpponentPartyNames(record.participants);
+          return names.length ? names.join('、') : '—';
+        }
+      },
       provinceCity: {
-        title: columnLabelMap.provinceCity,
+        title: columnLabelMap.provinceCity ?? CASE_TABLE_COLUMN_LABELS.provinceCity,
         dataIndex: 'provinceCity',
         key: 'provinceCity',
         render: (value: string | null) => value ?? '—'
       },
       assignedLawyerName: {
-        title: columnLabelMap.assignedLawyerName,
+        title: columnLabelMap.assignedLawyerName ?? CASE_TABLE_COLUMN_LABELS.assignedLawyerName,
         dataIndex: 'assignedLawyerName',
         key: 'assignedLawyerName',
         render: (value: string | null, record) => value ?? record.assignedLawyerName ?? '—'
       },
       assignedAssistantName: {
-        title: columnLabelMap.assignedAssistantName,
+        title: columnLabelMap.assignedAssistantName ?? CASE_TABLE_COLUMN_LABELS.assignedAssistantName,
         dataIndex: 'assignedAssistantName',
         key: 'assignedAssistantName',
         render: (value: string | null, record) => value ?? record.assignedAssistantName ?? '—'
       },
       assignedSaleName: {
-        title: columnLabelMap.assignedSaleName,
+        title: columnLabelMap.assignedSaleName ?? CASE_TABLE_COLUMN_LABELS.assignedSaleName,
         dataIndex: 'assignedSaleName',
         key: 'assignedSaleName',
         render: (value: string | null, record) => value ?? record.assignedSaleName ?? '—'
       },
+      contractDate: {
+        title: columnLabelMap.contractDate ?? CASE_TABLE_COLUMN_LABELS.contractDate,
+        dataIndex: 'contractDate',
+        key: 'contractDate',
+        render: (value: string | null) => formatTableDate(value)
+      },
+      clueDate: {
+        title: columnLabelMap.clueDate ?? CASE_TABLE_COLUMN_LABELS.clueDate,
+        dataIndex: 'clueDate',
+        key: 'clueDate',
+        render: (value: string | null) => formatTableDate(value)
+      },
+      targetAmount: {
+        title: columnLabelMap.targetAmount ?? CASE_TABLE_COLUMN_LABELS.targetAmount,
+        dataIndex: 'targetAmount',
+        key: 'targetAmount',
+        render: (value: string | null) => formatCurrencyCell(value)
+      },
+      contractForm: {
+        title: columnLabelMap.contractForm ?? CASE_TABLE_COLUMN_LABELS.contractForm,
+        dataIndex: 'contractForm',
+        key: 'contractForm',
+        render: (value: ContractFormType | null) => (value ? CONTRACT_FORM_LABELS[value] ?? value : '—')
+      },
+      insuranceRiskLevel: {
+        title: columnLabelMap.insuranceRiskLevel ?? CASE_TABLE_COLUMN_LABELS.insuranceRiskLevel,
+        dataIndex: 'insuranceRiskLevel',
+        key: 'insuranceRiskLevel',
+        render: (value: CaseLevel | null) => (value ? CASE_LEVEL_LABEL_MAP[value] ?? value : '—')
+      },
+      insuranceTypes: {
+        title: columnLabelMap.insuranceTypes ?? CASE_TABLE_COLUMN_LABELS.insuranceTypes,
+        dataIndex: 'insuranceTypes',
+        key: 'insuranceTypes',
+        render: (_value: string[] | undefined, record) => formatStringListCell(record.insuranceTypes)
+      },
+      dataSource: {
+        title: columnLabelMap.dataSource ?? CASE_TABLE_COLUMN_LABELS.dataSource,
+        dataIndex: 'dataSource',
+        key: 'dataSource',
+        render: (value: string | null) => (value ? value : '—')
+      },
       entryDate: {
-        title: columnLabelMap.entryDate,
+        title: columnLabelMap.entryDate ?? CASE_TABLE_COLUMN_LABELS.entryDate,
         dataIndex: 'entryDate',
         key: 'entryDate',
         render: (value: string | null) => formatTableDate(value)
       },
       createdAt: {
-        title: columnLabelMap.createdAt,
+        title: columnLabelMap.createdAt ?? CASE_TABLE_COLUMN_LABELS.createdAt,
         dataIndex: 'createdAt',
         key: 'createdAt',
         render: (value: string | null) => formatTableDate(value, 'YYYY-MM-DD')
       },
       updatedAt: {
-        title: columnLabelMap.updatedAt,
+        title: columnLabelMap.updatedAt ?? CASE_TABLE_COLUMN_LABELS.updatedAt,
         dataIndex: 'updatedAt',
         key: 'updatedAt',
         render: (value: string | null) => formatTableDate(value, 'YYYY-MM-DD')
       }
     }),
-    [columnLabelMap, formatTableDate, handleCaseTitleClick]
+    [
+      columnLabelMap,
+      formatCurrencyCell,
+      formatStringListCell,
+      formatTableDate,
+      handleCaseTitleClick
+    ]
   );
 
   const actionColumn = useMemo<ColumnsType<CaseRecord>[number]>(
@@ -1896,199 +2209,219 @@ export default function CasesPage({ department }: CasesPageProps) {
   }, [visibleColumnKeys, columnDefinitions, actionColumn]);
 
   return (
-    <Space direction="vertical" size={24} style={{ width: '100%' }}>
-      <Card>
-        <Form
-          form={filterForm}
-          layout="inline"
-          onFinish={handleFilterSubmit}
-          style={{ rowGap: 16 }}
+    <>
+      <CaseConflictModal
+        open={Boolean(caseConflict)}
+        details={caseConflict?.details ?? null}
+        onCancel={handleConflictClose}
+        onRefresh={handleConflictRefresh}
+        onMerge={caseConflict?.details.type === 'mergeable' ? handleConflictMerge : undefined}
+        refreshing={caseConflictRefreshing}
+        merging={caseConflictMerging}
+      />
+      <Space direction="vertical" size={24} style={{ width: '100%' }}>
+        <Card>
+          <Form
+            form={filterForm}
+            layout="inline"
+            onFinish={handleFilterSubmit}
+            style={{ rowGap: 16 }}
           >
-          <Form.Item label="案件类型" name="caseType">
-            <Select
-              allowClear
-              placeholder="全部类型"
-              options={caseTypeOptions}
-              style={{ minWidth: 160 }}
-              />
-          </Form.Item>
-          <Form.Item label="案件级别" name="caseLevel">
-            <Select
-              allowClear
-              placeholder="全部级别"
-              options={caseLevelOptions}
-              style={{ minWidth: 160 }}
-              />
-          </Form.Item>
-          <Form.Item label="案件状态" name="caseStatus">
-            <Select
-              allowClear
-              placeholder="全部状态"
-              options={caseStatusSelectOptions}
-              style={{ minWidth: 160 }}
-              />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit">
-              搜索
-            </Button>
-          </Form.Item>
-          <Form.Item>
-            <Button onClick={handleFilterReset} disabled={!hasActiveFilters}>
-              重置
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
-      <Card
-        title={<Typography.Text strong>案件列表</Typography.Text>}
-        extra={
-          <Button
-            icon={<SettingOutlined />}
-            onClick={handleColumnModalOpen}
-            disabled={columnPreferencesLoading}
-          >
-            列设置
-          </Button>
-        }
-        styles={{ body: { padding: 0 } }}
-      >
-        <Table
-          rowKey="id"
-          dataSource={cases}
-          columns={tableColumns}
-          loading={loading || columnPreferencesLoading}
-          pagination={pagination}
-          onChange={handleTableChange}
-        />
-      </Card>
+            {shouldShowCaseNumberFilter ? (
+              <Form.Item label="案号" name="caseNumber">
+                <Input allowClear placeholder="输入案号关键字" style={{ minWidth: 200 }} />
+              </Form.Item>
+            ) : null}
+            {shouldShowCaseTypeFilter ? (
+              <Form.Item label="案件类型" name="caseType">
+                <Select
+                  allowClear
+                  placeholder="全部类型"
+                  options={caseTypeOptions}
+                  style={{ minWidth: 160 }}
+                />
+              </Form.Item>
+            ) : null}
+            {shouldShowCaseLevelFilter ? (
+              <Form.Item label="案件级别" name="caseLevel">
+                <Select
+                  allowClear
+                  placeholder="全部级别"
+                  options={caseLevelOptions}
+                  style={{ minWidth: 160 }}
+                />
+              </Form.Item>
+            ) : null}
+            {shouldShowCaseStatusFilter ? (
+              <Form.Item label="案件状态" name="caseStatus">
+                <Select
+                  allowClear
+                  placeholder="全部状态"
+                  options={caseStatusSelectOptions}
+                  style={{ minWidth: 160 }}
+                />
+              </Form.Item>
+            ) : null}
+            <Form.Item>
+              <Button type="primary" htmlType="submit">
+                搜索
+              </Button>
+            </Form.Item>
+            <Form.Item>
+              <Button onClick={handleFilterReset} disabled={!hasActiveFilters}>
+                重置
+              </Button>
+            </Form.Item>
+          </Form>
+        </Card>
 
-      <Modal
-        title="列表字段设置"
-        open={columnModalOpen}
-        onCancel={handleColumnModalCancel}
-        onOk={handleColumnModalSave}
-        okText="保存"
-        cancelText="取消"
-        confirmLoading={columnModalSaving}
-        destroyOnHidden
-        maskClosable={false}
-        okButtonProps={{ disabled: columnModalSelection.length === 0 }}
-      >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          勾选需要展示的字段，并使用上下箭头调整显示顺序。
-        </Typography.Paragraph>
-        <List
-          dataSource={columnModalOptionList}
-          renderItem={(item) => {
-            const selectionIndex = columnModalSelection.indexOf(item.key);
-            const isSelected = selectionIndex !== -1;
-            const disableUncheck = isSelected && columnModalSelection.length <= 1;
-            const canMoveUp = isSelected && selectionIndex > 0;
-            const canMoveDown = isSelected && selectionIndex < columnModalSelection.length - 1;
+        <Card
+          title={<Typography.Text strong>案件列表</Typography.Text>}
+          extra={
+            <Button
+              icon={<SettingOutlined />}
+              onClick={handleColumnModalOpen}
+              disabled={columnPreferencesLoading}
+            >
+              列设置
+            </Button>
+          }
+          styles={{ body: { padding: 0 } }}
+        >
+          <Table
+            rowKey="id"
+            dataSource={cases}
+            columns={tableColumns}
+            loading={loading || columnPreferencesLoading}
+            pagination={pagination}
+            onChange={handleTableChange}
+          />
+        </Card>
 
-            return (
-              <List.Item
-                key={item.key}
-                actions={[
-                  <Tooltip
-                    key="move-up"
-                    title={canMoveUp ? '上移' : '无法上移'}
-                  >
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<ArrowUpOutlined />}
-                      disabled={!canMoveUp}
-                      onClick={() => handleColumnMove(item.key, 'up')}
-                    />
-                  </Tooltip>,
-                  <Tooltip
-                    key="move-down"
-                    title={canMoveDown ? '下移' : '无法下移'}
-                  >
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<ArrowDownOutlined />}
-                      disabled={!canMoveDown}
-                      onClick={() => handleColumnMove(item.key, 'down')}
-                    />
-                  </Tooltip>
-                ]}
-              >
-                <Checkbox
-                  checked={isSelected}
-                  disabled={disableUncheck}
-                  onChange={(event) => handleColumnCheckboxChange(item.key, event.target.checked)}
+        <Modal
+          title="列表字段设置"
+          open={columnModalOpen}
+          onCancel={handleColumnModalCancel}
+          onOk={handleColumnModalSave}
+          okText="保存"
+          cancelText="取消"
+          confirmLoading={columnModalSaving}
+          destroyOnHidden
+          maskClosable={false}
+          okButtonProps={{ disabled: columnModalSelection.length === 0 }}
+        >
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+            勾选需要展示的字段，并使用上下箭头调整显示顺序。
+          </Typography.Paragraph>
+          <List
+            dataSource={columnModalOptionList}
+            renderItem={(item) => {
+              const selectionIndex = columnModalSelection.indexOf(item.key);
+              const isSelected = selectionIndex !== -1;
+              const disableUncheck = isSelected && columnModalSelection.length <= 1;
+              const canMoveUp = isSelected && selectionIndex > 0;
+              const canMoveDown = isSelected && selectionIndex < columnModalSelection.length - 1;
+
+              return (
+                <List.Item
+                  key={item.key}
+                  actions={[
+                    <Tooltip key="move-up" title={canMoveUp ? '上移' : '无法上移'}>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ArrowUpOutlined />}
+                        disabled={!canMoveUp}
+                        onClick={() => handleColumnMove(item.key, 'up')}
+                      />
+                    </Tooltip>,
+                    <Tooltip key="move-down" title={canMoveDown ? '下移' : '无法下移'}>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ArrowDownOutlined />}
+                        disabled={!canMoveDown}
+                        onClick={() => handleColumnMove(item.key, 'down')}
+                      />
+                    </Tooltip>
+                  ]}
                 >
-                  {item.label}
-                </Checkbox>
-              </List.Item>
-            );
-          }}
-        />
-      </Modal>
+                  <Checkbox
+                    checked={isSelected}
+                    disabled={disableUncheck}
+                    onChange={(event) => handleColumnCheckboxChange(item.key, event.target.checked)}
+                  >
+                    {item.label}
+                  </Checkbox>
+                </List.Item>
+              );
+            }}
+          />
+        </Modal>
 
-      {canCreateCase ? (
+        {canCreateCase ? (
+          <WorkInjuryCaseModal
+            open={newCaseModalOpen}
+            department={pageDepartment}
+            onCancel={() => setNewCaseModalOpen(false)}
+            onSubmit={handleCreateCase}
+            confirmLoading={creating}
+            visibleTabs={visibleModalTabs}
+            editableTabs={editableModalTabsArray}
+          />
+        ) : null}
+
         <WorkInjuryCaseModal
-          open={newCaseModalOpen}
+          open={caseModalOpen}
           department={pageDepartment}
-          onCancel={() => setNewCaseModalOpen(false)}
-          onSubmit={handleCreateCase}
-          confirmLoading={creating}
+          mode={caseModalMode}
+          initialValues={caseModalInitialValues}
+          initialActiveTab={caseModalInitialTab}
+          allowEdit={caseModalCanEdit}
           visibleTabs={visibleModalTabs}
           editableTabs={editableModalTabsArray}
+          onRequestEdit={handleCaseModalEdit}
+          onRequestView={handleCaseModalView}
+          onCancel={closeCaseModal}
+          onSaveBasicInfo={caseModalMode === 'update' ? handleCaseModalBasicInfoSave : undefined}
+          onSaveParties={caseModalMode === 'update' ? handleCaseModalPartiesSave : undefined}
+          onSaveAssignment={
+            modalOperationFlags.assignment ? handleCaseModalAssignmentSave : undefined
+          }
+          onSaveCaseStatus={modalOperationFlags.status ? handleCaseModalStatusSave : undefined}
+          onAddHearing={modalOperationFlags.hearing ? handleCaseModalHearingAdd : undefined}
+          onAddFollowUp={modalOperationFlags.followUp ? handleCaseModalFollowUpAdd : undefined}
+          onAddCollection={
+            modalOperationFlags.collection ? handleCaseModalCollectionAdd : undefined
+          }
+          onUpdateFees={modalOperationFlags.fees ? handleCaseModalFeeUpdate : undefined}
+          onSaveTimeNodes={modalOperationFlags.timeNodes ? handleCaseModalTimeNodesSave : undefined}
+          onLoadAssignableStaff={caseModalCase ? handleLoadAssignableStaff : undefined}
+          onLoadChangeLogs={
+            caseModalCase && modalOperationFlags.changeLog ? handleLoadChangeLogs : undefined
+          }
+          canEditAssignments={caseModalPermissions.canEditAssignments}
+          canUpdateStatus={caseModalPermissions.canUpdateStatus}
+          canAddHearings={caseModalPermissions.canAddHearings}
+          canAddFollowUps={caseModalPermissions.canAddFollowUps}
+          canAddCollections={caseModalPermissions.canAddCollections}
+          canUpdateFees={caseModalPermissions.canUpdateFees}
+          canViewChangeLogs={caseModalPermissions.canViewChangeLogs}
+          canManageTimeNodes={caseModalPermissions.canManageTimeNodes}
         />
-      ) : null}
 
-      <WorkInjuryCaseModal
-        open={caseModalOpen}
-        department={pageDepartment}
-        mode={caseModalMode}
-        initialValues={caseModalInitialValues}
-        initialActiveTab={caseModalInitialTab}
-        allowEdit={caseModalCanEdit}
-        visibleTabs={visibleModalTabs}
-        editableTabs={editableModalTabsArray}
-        onRequestEdit={handleCaseModalEdit}
-        onRequestView={handleCaseModalView}
-        onCancel={closeCaseModal}
-        onSaveBasicInfo={caseModalMode === 'update' ? handleCaseModalBasicInfoSave : undefined}
-        onSaveParties={caseModalMode === 'update' ? handleCaseModalPartiesSave : undefined}
-        onSaveAssignment={
-          modalOperationFlags.assignment ? handleCaseModalAssignmentSave : undefined
-        }
-        onSaveCaseStatus={modalOperationFlags.status ? handleCaseModalStatusSave : undefined}
-        onAddHearing={modalOperationFlags.hearing ? handleCaseModalHearingAdd : undefined}
-        onAddFollowUp={modalOperationFlags.followUp ? handleCaseModalFollowUpAdd : undefined}
-        onAddCollection={modalOperationFlags.collection ? handleCaseModalCollectionAdd : undefined}
-        onUpdateFees={modalOperationFlags.fees ? handleCaseModalFeeUpdate : undefined}
-        onSaveTimeNodes={modalOperationFlags.timeNodes ? handleCaseModalTimeNodesSave : undefined}
-        onLoadAssignableStaff={caseModalCase ? handleLoadAssignableStaff : undefined}
-        onLoadChangeLogs={
-          caseModalCase && modalOperationFlags.changeLog ? handleLoadChangeLogs : undefined
-        }
-        canEditAssignments={caseModalPermissions.canEditAssignments}
-        canUpdateStatus={caseModalPermissions.canUpdateStatus}
-        canAddHearings={caseModalPermissions.canAddHearings}
-        canAddFollowUps={caseModalPermissions.canAddFollowUps}
-        canAddCollections={caseModalPermissions.canAddCollections}
-        canUpdateFees={caseModalPermissions.canUpdateFees}
-        canViewChangeLogs={caseModalPermissions.canViewChangeLogs}
-        canManageTimeNodes={caseModalPermissions.canManageTimeNodes}
-      />
-
-      <UpdateStatusModal />
-      <FollowUpModal />
-      <TimeNodeModal
-        open={timeNodeModalOpen}
-        caseTitle={timeNodeTarget ? buildCaseTitle(timeNodeTarget) : undefined}
-        nodeTypes={timeNodeTarget?.timeNodes}
-        confirmLoading={timeNodeSaving}
-        onCancel={handleTimeNodeCancel}
-        onSubmit={handleTimeNodeSubmit}
-      />
-    </Space>
+        <UpdateStatusModal />
+        <FollowUpModal />
+        <TimeNodeModal
+          open={timeNodeModalOpen}
+          caseTitle={timeNodeTarget ? buildCaseTitle(timeNodeTarget) : undefined}
+          nodeTypes={timeNodeTarget?.timeNodes}
+          department={pageDepartment}
+          confirmLoading={timeNodeSaving}
+          onCancel={handleTimeNodeCancel}
+          onSubmit={handleTimeNodeSubmit}
+        />
+      </Space>
+    </>
   );
 }

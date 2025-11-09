@@ -4,7 +4,8 @@ import { DatePicker, Form, Modal, Select, Typography } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 
 import type { CaseTimeNodeRecord, CaseTimeNodeType } from '@/lib/cases-api';
-import { CASE_TIME_NODE_DEFINITIONS } from '@/lib/case-time-nodes';
+import { CASE_TIME_NODE_LABEL_MAP, getCaseTimeNodeDefinitions } from '@/lib/case-time-nodes';
+import type { UserDepartment } from '@/lib/users-api';
 
 interface TimeNodeFormValues {
   nodeType?: CaseTimeNodeType;
@@ -16,6 +17,7 @@ export interface TimeNodeModalProps {
   caseTitle?: string;
   confirmLoading?: boolean;
   nodeTypes?: CaseTimeNodeRecord[];
+  department?: UserDepartment;
   onCancel: () => void;
   onSubmit: (values: { nodeType: CaseTimeNodeType; occurredOn: Dayjs }) => Promise<void> | void;
 }
@@ -25,6 +27,7 @@ export default function TimeNodeModal({
   caseTitle,
   confirmLoading = false,
   nodeTypes,
+  department,
   onCancel,
   onSubmit
 }: TimeNodeModalProps) {
@@ -80,8 +83,29 @@ export default function TimeNodeModal({
     await onSubmit({ nodeType: values.nodeType, occurredOn: values.occurredOn });
   };
 
+  const definitions = useMemo(() => getCaseTimeNodeDefinitions(department), [department]);
+
+  const supplementalDefinitions = useMemo(() => {
+    if (!nodeTypes?.length) {
+      return [] as Array<{ type: CaseTimeNodeType; label: string }>;
+    }
+    const knownTypes = new Set(definitions.map((definition) => definition.type));
+    return nodeTypes
+      .filter((node): node is CaseTimeNodeRecord & { nodeType: CaseTimeNodeType } => !!node.nodeType)
+      .filter((node) => !knownTypes.has(node.nodeType))
+      .map((node) => ({
+        type: node.nodeType,
+        label: CASE_TIME_NODE_LABEL_MAP[node.nodeType] ?? node.nodeType
+      }));
+  }, [definitions, nodeTypes]);
+
+  const optionDefinitions = useMemo(
+    () => [...definitions, ...supplementalDefinitions],
+    [definitions, supplementalDefinitions]
+  );
+
   const options = useMemo(() => {
-    return CASE_TIME_NODE_DEFINITIONS.map(definition => {
+    return optionDefinitions.map((definition) => {
       const node = findNodeByType(definition.type);
       return {
         value: definition.type,
@@ -89,7 +113,7 @@ export default function TimeNodeModal({
         extra: node?.occurredOn ?? null
       };
     });
-  }, [findNodeByType]);
+  }, [findNodeByType, optionDefinitions]);
 
   return (
     <Modal

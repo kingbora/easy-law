@@ -55,7 +55,7 @@ const USER_ROLES: readonly UserRole[] = ['super_admin', 'admin', 'administration
 const USER_DEPARTMENTS: readonly UserDepartment[] = ['work_injury', 'insurance'];
 const USER_GENDERS = ['male', 'female'] as const;
 
-type BetterAuthResponse<TData> = {
+export type BetterAuthResponse<TData> = {
   data: TData | null;
   error: {
     status: number;
@@ -64,7 +64,7 @@ type BetterAuthResponse<TData> = {
   } | null;
 };
 
-function ensureAuthSuccess<TData>(result: BetterAuthResponse<TData>, fallbackMessage: string): TData {
+export function ensureAuthSuccess<TData>(result: BetterAuthResponse<TData>, fallbackMessage: string): TData {
   if (result.error) {
     const { status, message, statusText } = result.error;
     throw new ApiError(message ?? statusText ?? fallbackMessage, status ?? 500, result.error);
@@ -132,7 +132,7 @@ function normalizeSupervisor(value: unknown): UserSupervisorInfo | null {
   return null;
 }
 
-function mapUserPayload(raw: unknown): UserResponse | null {
+export function mapUserPayload(raw: unknown): UserResponse | null {
   if (typeof raw !== 'object' || raw === null) {
     return null;
   }
@@ -216,7 +216,7 @@ function mapListPayload(data: unknown): UserResponse[] {
   return [];
 }
 
-function mapSingularPayload(data: unknown, errorMessage: string): UserResponse {
+export function mapSingularPayload(data: unknown, errorMessage: string): UserResponse {
   const mapped = mapUserPayload(data);
   if (!mapped) {
     throw new ApiError(errorMessage, 500, data);

@@ -1,4 +1,5 @@
-import { and, count, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import { db } from '../db/client';
 import { departmentEnum, users } from '../db/schema/auth-schema';
@@ -22,7 +23,7 @@ import {
   type CaseChangeDetail,
   type caseLevelEnum,
   type caseTypeEnum,
-  type participantEntityEnum,
+  participantEntityEnum,
   type participantRoleEnum,
 } from '../db/schema/case-schema';
 import type { SessionUser } from '../utils/auth-session';
@@ -239,6 +240,198 @@ export interface CaseHearingUpsertInput extends Omit<CaseHearingInput, 'trialSta
   trialStage: TrialStage;
 }
 
+
+export interface CaseClientDTO {
+  id: string;
+  name: string;
+  entityType: ParticipantEntity | null;
+  phone: string | null;
+  idNumber: string | null;
+  caseId: string;
+  caseType: CaseType;
+  caseLevel: CaseLevel;
+  caseStatus: CaseStatus | null;
+  department: (typeof cases.$inferSelect)['department'];
+  assignedSaleName: string | null;
+  assignedLawyerName: string | null;
+  assignedAssistantName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CaseClientDetailDTO extends CaseClientDTO {
+  address: string | null;
+  isDishonest: boolean;
+}
+
+export interface CaseClientListOptions {
+  page?: number;
+  pageSize?: number;
+  department?: (typeof cases.$inferSelect)['department'];
+  search?: string;
+}
+
+export interface UpdateCaseClientInput {
+  name?: string;
+  entityType?: ParticipantEntity | null;
+  phone?: string | null;
+  idNumber?: string | null;
+  address?: string | null;
+  isDishonest?: boolean | null;
+}
+
+type UserRecord = typeof users.$inferSelect;
+type CaseRecord = typeof cases.$inferSelect;
+type CaseParticipantRecord = typeof caseParticipants.$inferSelect;
+type CaseCollectionRecord = typeof caseCollections.$inferSelect;
+type CaseTimelineRecord = typeof caseTimeline.$inferSelect;
+type CaseTimeNodeRecord = typeof caseTimeNodes.$inferSelect;
+type CaseHearingRecord = typeof caseHearings.$inferSelect;
+
+type CaseTimelineRecordWithFollower = CaseTimelineRecord & {
+  follower?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
+};
+
+type CaseHearingRecordWithRelations = CaseHearingRecord & {
+  trialLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
+};
+
+export interface CaseParticipantDTO {
+  id: string;
+  entityType: ParticipantEntity | null;
+  name: string;
+  idNumber: string | null;
+  phone: string | null;
+  address: string | null;
+  isDishonest: boolean;
+  sortOrder: number | null;
+}
+
+export interface CaseCollectionDTO {
+  id: string;
+  amount: string;
+  receivedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CaseTimelineDTO {
+  id: string;
+  occurredOn: string;
+  note: string | null;
+  followerId: string | null;
+  followerName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CaseTimeNodeDTO {
+  id: string;
+  nodeType: CaseTimeNodeType;
+  occurredOn: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CaseHearingDTO {
+  id: string;
+  trialLawyerId: string | null;
+  trialLawyerName: string | null;
+  hearingTime: string | null;
+  hearingLocation: string | null;
+  tribunal: string | null;
+  judge: string | null;
+  caseNumber: string | null;
+  contactPhone: string | null;
+  trialStage: TrialStage | null;
+  hearingResult: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CaseChangeLogDTO {
+  id: string;
+  action: string;
+  description: string | null;
+  changes: CaseChangeDetail[] | null;
+  actorId: string | null;
+  actorName: string | null;
+  actorRole: SessionUser['role'] | null;
+  createdAt: string;
+}
+
+export interface CaseDTO {
+  id: string;
+  caseType: CaseType;
+  caseLevel: CaseLevel;
+  caseCategory: CaseCategory;
+  provinceCity: string | null;
+  targetAmount: string | null;
+  feeStandard: string | null;
+  agencyFeeEstimate: string | null;
+  dataSource: string | null;
+  hasContract: boolean | null;
+  contractDate: string | null;
+  clueDate: string | null;
+  hasSocialSecurity: boolean | null;
+  entryDate: string | null;
+  injuryLocation: string | null;
+  injurySeverity: string | null;
+  injuryCause: string | null;
+  workInjuryCertified: boolean | null;
+  monthlySalary: string | null;
+  appraisalLevel: string | null;
+  appraisalEstimate: string | null;
+  existingEvidence: string | null;
+  customerCooperative: boolean | null;
+  witnessCooperative: boolean | null;
+  remark: string | null;
+  contractQuoteType: ContractQuoteType | null;
+  contractQuoteAmount: string | null;
+  contractQuoteUpfront: string | null;
+  contractQuoteRatio: string | null;
+  contractQuoteOther: string | null;
+  estimatedCollection: string | null;
+  litigationFeeType: LitigationFeeType | null;
+  travelFeeType: TravelFeeType | null;
+  contractForm: ContractFormType | null;
+  insuranceRiskLevel: CaseLevel | null;
+  insuranceTypes: string[];
+  insuranceMisrepresentations: string[];
+  department: (typeof cases.$inferSelect)['department'] | null;
+  assignedSaleId: string | null;
+  assignedSaleName: string | null;
+  assignedLawyerId: string | null;
+  assignedLawyerName: string | null;
+  assignedAssistantId: string | null;
+  assignedAssistantName: string | null;
+  caseStatus: CaseStatus | null;
+  closedReason: string | null;
+  voidReason: string | null;
+  salesCommission: string | null;
+  handlingFee: string | null;
+  version: number;
+  updaterId: string | null;
+  updaterName: string | null;
+  updaterRole: SessionUser['role'] | null;
+  createdAt: string;
+  updatedAt: string;
+  participants: {
+    claimants: CaseParticipantDTO[];
+    respondents: CaseParticipantDTO[];
+  };
+  collections: CaseCollectionDTO[];
+  timeNodes: CaseTimeNodeDTO[];
+  timeline: CaseTimelineDTO[];
+  hearings: CaseHearingDTO[];
+}
+
+export interface PaginationMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
 export interface CaseInput {
   caseType: CaseType;
   caseLevel: CaseLevel;
@@ -291,13 +484,39 @@ export interface CaseInput {
   hearings?: CaseHearingInput[] | null;
 }
 
+export interface CaseUpdateMeta {
+  baseVersion?: number | null;
+  baseSnapshot?: Record<string, unknown> | null;
+  dirtyFields?: string[] | null;
+  resolveMode?: 'merge';
+}
+
+export type CaseUpdateInput = CaseInput | {
+  payload: CaseInput;
+  meta?: CaseUpdateMeta | null;
+};
+
+interface NormalizedCaseUpdateMeta {
+  baseVersion: number | null;
+  baseSnapshot: Record<string, unknown>;
+  dirtyFields: string[];
+  resolveMode: 'merge' | null;
+}
+
+interface NormalizedCaseUpdateInput {
+  payload: CaseInput;
+  meta: NormalizedCaseUpdateMeta;
+}
+
 export interface CaseListFilters {
   department?: (typeof cases.$inferSelect)['department'];
   assignedSaleId?: string;
   assignedLawyerId?: string;
+  caseNumber?: string;
   caseType?: CaseType;
   caseLevel?: CaseLevel;
   caseStatus?: CaseStatus;
+  caseId?: string;
   search?: string;
 }
 
@@ -308,153 +527,238 @@ export interface ListCasesOptions extends CaseListFilters {
   orderDirection?: 'asc' | 'desc';
 }
 
-export interface PaginationMeta {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
+export async function updateCase(id: string, input: CaseUpdateInput, user: SessionUser) {
+  ensureCasePermission(user, 'update');
+
+  const normalizedInput = normalizeCaseUpdateInput(input);
+  const { payload, meta } = normalizedInput;
+
+  const accessContext = await buildCaseAccessContext(user);
+
+  const existing = await db.query.cases.findFirst({
+    where: eq(cases.id, id)
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, existing)) {
+    throw new AuthorizationError();
+  }
+
+  const analysis = evaluateCaseUpdateConflict(existing, normalizedInput);
+
+  if (meta.resolveMode === 'merge') {
+    if (analysis.status === 'hard') {
+      const message = '案件已被其他人更新，请刷新后重试';
+      const details = await buildConflictDetailsForCase(id, user, existing, analysis, meta, 'hard', message);
+      throw new CaseUpdateConflictError(message, details);
+    }
+  } else if (analysis.status !== 'ok') {
+    const message =
+      analysis.status === 'hard'
+        ? '案件已被其他人更新，请刷新后重试'
+        : '检测到其他人更新了案件，可选择合并或取消';
+    const details = await buildConflictDetailsForCase(
+      id,
+      user,
+      existing,
+      analysis,
+      meta,
+      analysis.status === 'hard' ? 'hard' : 'mergeable',
+      message
+    );
+    throw new CaseUpdateConflictError(message, details);
+  }
+
+  return db.transaction(async (tx) => {
+    const current = await tx.query.cases.findFirst({
+      where: eq(cases.id, id)
+    });
+
+    if (!current) {
+      return null;
+    }
+
+    if (!canAccessCase(accessContext, current)) {
+      throw new AuthorizationError();
+    }
+
+    const caseValues = buildCaseValues(payload);
+    caseValues.updaterId = user.id;
+    caseValues.updatedAt = new Date();
+    caseValues.version = (current.version ?? 0) + 1;
+
+    if (user.role === 'lawyer' || user.role === 'assistant') {
+      BASIC_INFO_FIELD_KEYS.forEach((field) => {
+        if (field in caseValues) {
+          (caseValues as Record<string, unknown>)[field] = current[field as keyof typeof current];
+        }
+      });
+    }
+
+    if (payload.department === undefined) {
+      if (current.department) {
+        caseValues.department = current.department;
+      } else if ((user.role === 'admin' || user.role === 'administration' || isSuperAdmin(user)) && user.department) {
+        caseValues.department = user.department as (typeof cases.$inferInsert)['department'];
+      }
+    }
+
+    if (payload.assignedSaleId === undefined) {
+      if (current.assignedSaleId) {
+        caseValues.assignedSaleId = current.assignedSaleId;
+      } else if (user.role === 'admin' || user.role === 'administration' || isSuperAdmin(user)) {
+        caseValues.assignedSaleId = user.id;
+      }
+    }
+
+    const [updatedCase] = await tx
+      .update(cases)
+      .set(caseValues)
+      .where(and(eq(cases.id, id), eq(cases.version, current.version ?? 0)))
+      .returning();
+
+    if (!updatedCase) {
+      const latest = await tx.query.cases.findFirst({
+        where: eq(cases.id, id)
+      });
+
+      const snapshot = latest ?? current;
+      const latestAnalysis = evaluateCaseUpdateConflict(snapshot, normalizedInput);
+      const resolvedStatus = latestAnalysis.status === 'ok' ? 'hard' : latestAnalysis.status;
+      const message =
+        resolvedStatus === 'mergeable'
+          ? '检测到其他人更新了案件，可选择合并或取消'
+          : '案件已被其他人更新，请刷新后重试';
+      const details = await buildConflictDetailsForCase(
+        id,
+        user,
+        snapshot,
+        latestAnalysis,
+        meta,
+        resolvedStatus === 'mergeable' ? 'mergeable' : 'hard',
+        message
+      );
+      throw new CaseUpdateConflictError(message, details);
+    }
+
+    const changeDetails = buildChangeDetails(current, updatedCase);
+    const shouldLog =
+      changeDetails.length > 0 ||
+      Boolean(payload.timeline || payload.hearings !== undefined || payload.participants || payload.collections);
+
+    if (shouldLog) {
+      const actor = extractActorContext(user);
+      await tx.insert(caseChangeLogs).values({
+        caseId: id,
+        action: 'update',
+        description: buildChangeDescription(changeDetails, payload),
+        changes: changeDetails.length > 0 ? changeDetails : null,
+        actorId: actor.actorId,
+        actorName: actor.actorName,
+        actorRole: actor.actorRole
+      });
+    }
+
+    if (payload.participants) {
+      await tx.delete(caseParticipants).where(eq(caseParticipants.caseId, id));
+      const participantValues = flattenParticipantsInput(payload.participants, id);
+      if (participantValues.length > 0) {
+        await tx.insert(caseParticipants).values(participantValues);
+      }
+    }
+
+    if (payload.collections) {
+      await tx.delete(caseCollections).where(eq(caseCollections.caseId, id));
+      const collectionValues = normalizeCollectionsInput(payload.collections, id);
+      if (collectionValues.length > 0) {
+        await tx.insert(caseCollections).values(collectionValues);
+      }
+    }
+
+    if (payload.timeline) {
+      await tx.delete(caseTimeline).where(eq(caseTimeline.caseId, id));
+      const timelineValues = normalizeTimelineInput(payload.timeline, id);
+      if (timelineValues.length > 0) {
+        await tx.insert(caseTimeline).values(timelineValues);
+      }
+    }
+
+    if (payload.hearings !== undefined) {
+      if (user.role === 'administration') {
+        throw new AuthorizationError('行政角色无权编辑庭审信息');
+      }
+      await tx.delete(caseHearings).where(eq(caseHearings.caseId, id));
+      const processedHearings = await applyDefaultTrialLawyerList(payload.hearings, user);
+      const hearingValues = normalizeHearingInputs(processedHearings, id);
+      if (hearingValues.length > 0) {
+        await tx.insert(caseHearings).values(hearingValues);
+      }
+    }
+
+    await syncCaseHearingEvents(tx, id);
+
+    const fullRecord = await tx.query.cases.findFirst({
+      where: eq(cases.id, id),
+      with: {
+        assignedSale: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        assignedLawyer: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        assignedAssistant: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        updater: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        participants: true,
+        collections: true,
+        timeline: {
+          with: {
+            follower: true
+          }
+        },
+        hearings: {
+          with: {
+            trialLawyer: {
+              columns: {
+                id: true,
+                name: true,
+                role: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!fullRecord) {
+      return null;
+    }
+
+    return mapCaseRecord(fullRecord as CaseWithRelations);
+  });
 }
-
-export interface CaseParticipantDTO {
-  id: string;
-  entityType: ParticipantEntity | null;
-  name: string;
-  idNumber: string | null;
-  phone: string | null;
-  address: string | null;
-  isDishonest: boolean;
-  sortOrder: number | null;
-}
-
-export interface CaseCollectionDTO {
-  id: string;
-  amount: string;
-  receivedAt: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseTimelineDTO {
-  id: string;
-  occurredOn: string;
-  createdAt: string;
-  updatedAt: string;
-  note: string;
-  followerId: string | null;
-  followerName: string | null;
-}
-
-export interface CaseTimeNodeDTO {
-  id: string;
-  nodeType: CaseTimeNodeType;
-  occurredOn: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseHearingDTO {
-  id: string;
-  trialLawyerId: string | null;
-  trialLawyerName: string | null;
-  hearingTime: string | null;
-  hearingLocation: string | null;
-  tribunal: string | null;
-  judge: string | null;
-  caseNumber: string | null;
-  contactPhone: string | null;
-  trialStage: TrialStage | null;
-  hearingResult: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseDTO {
-  id: string;
-  caseType: CaseType;
-  caseLevel: CaseLevel;
-  caseCategory: CaseCategory;
-  provinceCity: string | null;
-  targetAmount: string | null;
-  feeStandard: string | null;
-  agencyFeeEstimate: string | null;
-  dataSource: string | null;
-  hasContract: boolean | null;
-  contractDate: string | null;
-  clueDate: string | null;
-  hasSocialSecurity: boolean | null;
-  entryDate: string | null;
-  injuryLocation: string | null;
-  injurySeverity: string | null;
-  injuryCause: string | null;
-  workInjuryCertified: boolean | null;
-  monthlySalary: string | null;
-  appraisalLevel: string | null;
-  appraisalEstimate: string | null;
-  existingEvidence: string | null;
-  customerCooperative: boolean | null;
-  witnessCooperative: boolean | null;
-  remark: string | null;
-  contractQuoteType: ContractQuoteType | null;
-  contractQuoteAmount: string | null;
-  contractQuoteUpfront: string | null;
-  contractQuoteRatio: string | null;
-  contractQuoteOther: string | null;
-  estimatedCollection: string | null;
-  litigationFeeType: LitigationFeeType | null;
-  travelFeeType: TravelFeeType | null;
-  contractForm: ContractFormType | null;
-  insuranceRiskLevel: CaseLevel | null;
-  insuranceTypes: string[];
-  insuranceMisrepresentations: string[];
-  department: (typeof cases.$inferSelect)['department'];
-  assignedSaleId: string | null;
-  assignedSaleName: string | null;
-  assignedLawyerId: string | null;
-  assignedLawyerName: string | null;
-  assignedAssistantId: string | null;
-  assignedAssistantName: string | null;
-  caseStatus: CaseStatus | null;
-  closedReason: string | null;
-  voidReason: string | null;
-  salesCommission: string | null;
-  handlingFee: string | null;
-  createdAt: string;
-  updatedAt: string;
-  participants: {
-    claimants: CaseParticipantDTO[];
-    respondents: CaseParticipantDTO[];
-  };
-  collections: CaseCollectionDTO[];
-  timeNodes: CaseTimeNodeDTO[];
-  timeline: CaseTimelineDTO[];
-  hearings: CaseHearingDTO[];
-}
-
-export interface CaseChangeLogDTO {
-  id: string;
-  action: string;
-  description: string | null;
-  changes: CaseChangeDetail[] | null;
-  actorId: string | null;
-  actorName: string | null;
-  actorRole: string | null;
-  createdAt: string;
-}
-
-type CaseRecord = typeof cases.$inferSelect;
-type CaseParticipantRecord = typeof caseParticipants.$inferSelect;
-type CaseCollectionRecord = typeof caseCollections.$inferSelect;
-type CaseTimelineRecord = typeof caseTimeline.$inferSelect;
-type CaseTimeNodeRecord = typeof caseTimeNodes.$inferSelect;
-type CaseHearingRecord = typeof caseHearings.$inferSelect;
-type CaseHearingRecordWithRelations = CaseHearingRecord & {
-  trialLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
-};
-type UserRecord = typeof users.$inferSelect;
-
-type CaseTimelineRecordWithFollower = CaseTimelineRecord & {
-  follower?: UserRecord | null;
-};
 
 type CaseWithRelations = CaseRecord & {
   participants?: CaseParticipantRecord[];
@@ -465,6 +769,7 @@ type CaseWithRelations = CaseRecord & {
   assignedSale?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedAssistant?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
+  updater?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
 };
 
 type CaseChangeLogRecord = typeof caseChangeLogs.$inferSelect & {
@@ -898,7 +1203,7 @@ function normalizeTimeNodeTypeInput(
 }
 
 const CASE_STATUS_LABEL_MAP: Record<CaseStatus, string> = {
-  open: '未结案',
+  open: '跟进中',
   closed: '已结案',
   void: '废单'
 };
@@ -1149,6 +1454,244 @@ const CHANGE_FIELD_LABEL_MAP: Record<
 };
 
 type ChangeFieldKey = keyof typeof CHANGE_FIELD_LABEL_MAP;
+
+const MERGE_SAFE_FIELDS: ReadonlySet<ChangeFieldKey> = new Set(
+  Object.keys(CHANGE_FIELD_LABEL_MAP) as ChangeFieldKey[]
+);
+
+const COMPLEX_UPDATE_FIELDS: ReadonlySet<string> = new Set([
+  'participants',
+  'collections',
+  'timeline',
+  'hearings',
+  'timeNodes'
+]);
+
+function normalizeCaseUpdateMeta(meta?: CaseUpdateMeta | null): NormalizedCaseUpdateMeta {
+  const baseVersionValue = typeof meta?.baseVersion === 'number' ? meta?.baseVersion : null;
+  const baseSnapshotValue = meta?.baseSnapshot && typeof meta.baseSnapshot === 'object' ? meta.baseSnapshot : {};
+  const dirtyFieldList = Array.isArray(meta?.dirtyFields)
+    ? (meta!.dirtyFields as unknown[]).filter((item): item is string => typeof item === 'string')
+    : Object.keys(baseSnapshotValue);
+
+  const uniqueDirtyFields = Array.from(new Set(dirtyFieldList));
+
+  return {
+    baseVersion: baseVersionValue,
+    baseSnapshot: baseSnapshotValue,
+    dirtyFields: uniqueDirtyFields,
+    resolveMode: meta?.resolveMode === 'merge' ? 'merge' : null
+  } satisfies NormalizedCaseUpdateMeta;
+}
+
+function normalizeCaseUpdateInput(raw: CaseUpdateInput): NormalizedCaseUpdateInput {
+  if (raw && typeof raw === 'object' && 'payload' in raw && raw.payload) {
+    return {
+      payload: raw.payload,
+      meta: normalizeCaseUpdateMeta(raw.meta)
+    } satisfies NormalizedCaseUpdateInput;
+  }
+
+  return {
+    payload: raw as CaseInput,
+    meta: normalizeCaseUpdateMeta()
+  } satisfies NormalizedCaseUpdateInput;
+}
+
+function normalizeComparableValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+interface CaseUpdateConflictAnalysisResult {
+  status: 'ok' | CaseUpdateConflictType;
+  remoteChanges: CaseUpdateConflictField[];
+  clientChanges: CaseUpdateConflictField[];
+  conflictingFields: ChangeFieldKey[];
+}
+
+function evaluateCaseUpdateConflict(
+  existing: typeof cases.$inferSelect,
+  normalized: NormalizedCaseUpdateInput
+): CaseUpdateConflictAnalysisResult {
+  const { meta, payload } = normalized;
+
+  if (meta.baseVersion === null || meta.baseVersion === existing.version) {
+    return {
+      status: 'ok',
+      remoteChanges: [],
+      clientChanges: [],
+      conflictingFields: []
+    } satisfies CaseUpdateConflictAnalysisResult;
+  }
+
+  const payloadKeys = Object.keys(payload);
+  const hasComplexField = payloadKeys.some((key) => COMPLEX_UPDATE_FIELDS.has(key));
+  if (hasComplexField) {
+    return {
+      status: 'hard',
+      remoteChanges: [],
+      clientChanges: [],
+      conflictingFields: []
+    } satisfies CaseUpdateConflictAnalysisResult;
+  }
+
+  const fieldsToInspect = new Set<ChangeFieldKey>();
+  meta.dirtyFields.forEach((fieldName) => {
+    if (MERGE_SAFE_FIELDS.has(fieldName as ChangeFieldKey)) {
+      fieldsToInspect.add(fieldName as ChangeFieldKey);
+    }
+  });
+  Object.keys(meta.baseSnapshot).forEach((fieldName) => {
+    if (MERGE_SAFE_FIELDS.has(fieldName as ChangeFieldKey)) {
+      fieldsToInspect.add(fieldName as ChangeFieldKey);
+    }
+  });
+
+  const remoteChanges: CaseUpdateConflictField[] = [];
+  const clientChanges: CaseUpdateConflictField[] = [];
+  const conflictingFieldSet = new Set<ChangeFieldKey>();
+  const payloadRecord = payload as unknown as Partial<Record<ChangeFieldKey, unknown>>;
+
+  fieldsToInspect.forEach((field) => {
+    const hasBase = Object.prototype.hasOwnProperty.call(meta.baseSnapshot, field);
+    const baseValue = hasBase ? meta.baseSnapshot[field] : (existing as Record<string, unknown>)[field];
+    const currentValue = (existing as Record<string, unknown>)[field];
+    const clientHasValue = Object.prototype.hasOwnProperty.call(payload, field);
+    const clientValue = clientHasValue ? payloadRecord[field] : undefined;
+
+    const baseComparable = normalizeComparableValue(baseValue);
+    const currentComparable = normalizeComparableValue(currentValue);
+    const clientComparable = clientHasValue ? normalizeComparableValue(clientValue) : baseComparable;
+
+    const remoteChanged = hasBase ? baseComparable !== currentComparable : false;
+    const clientChanged = clientHasValue ? baseComparable !== clientComparable : false;
+
+    if (remoteChanged) {
+      remoteChanges.push({
+        field,
+        label: CHANGE_FIELD_LABEL_MAP[field],
+        baseValue: formatValueForLog(baseValue),
+        remoteValue: formatValueForLog(currentValue)
+      });
+    }
+
+    if (clientChanged) {
+      clientChanges.push({
+        field,
+        label: CHANGE_FIELD_LABEL_MAP[field],
+        baseValue: formatValueForLog(baseValue),
+        clientValue: formatValueForLog(clientValue)
+      });
+    }
+
+    if (remoteChanged && clientChanged) {
+      conflictingFieldSet.add(field);
+    }
+
+    if (!hasBase && clientChanged) {
+      conflictingFieldSet.add(field);
+    }
+  });
+
+  if (conflictingFieldSet.size > 0) {
+    return {
+      status: 'hard',
+      remoteChanges,
+      clientChanges,
+      conflictingFields: Array.from(conflictingFieldSet)
+    } satisfies CaseUpdateConflictAnalysisResult;
+  }
+
+  if (remoteChanges.length === 0) {
+    return {
+      status: 'ok',
+      remoteChanges: [],
+      clientChanges,
+      conflictingFields: []
+    } satisfies CaseUpdateConflictAnalysisResult;
+  }
+
+  return {
+    status: 'mergeable',
+    remoteChanges,
+    clientChanges,
+    conflictingFields: []
+  } satisfies CaseUpdateConflictAnalysisResult;
+}
+
+async function buildConflictDetailsForCase(
+  caseId: string,
+  user: SessionUser,
+  existing: typeof cases.$inferSelect,
+  analysis: CaseUpdateConflictAnalysisResult,
+  meta: NormalizedCaseUpdateMeta,
+  type: CaseUpdateConflictType,
+  message: string
+): Promise<CaseUpdateConflictDetails> {
+  const latestDto = await getCaseById(caseId, user);
+  const latestVersion = latestDto?.version ?? existing.version ?? 0;
+  const updatedAtText = latestDto?.updatedAt ?? formatTimestamp(existing.updatedAt) ?? new Date().toISOString();
+
+  return {
+    type,
+    message,
+    caseId,
+    baseVersion: meta.baseVersion ?? null,
+    latestVersion,
+    remoteChanges: analysis.remoteChanges,
+    clientChanges: analysis.clientChanges,
+    conflictingFields: analysis.conflictingFields,
+    updatedAt: updatedAtText,
+    updatedById: latestDto?.updaterId ?? existing.updaterId ?? null,
+    updatedByName: latestDto?.updaterName ?? null,
+    updatedByRole: latestDto?.updaterRole ?? null
+  } satisfies CaseUpdateConflictDetails;
+}
+
+export type CaseUpdateConflictType = 'hard' | 'mergeable';
+
+export interface CaseUpdateConflictField {
+  field: ChangeFieldKey;
+  label: string;
+  baseValue: string | null;
+  remoteValue?: string | null;
+  clientValue?: string | null;
+}
+
+export interface CaseUpdateConflictDetails {
+  type: CaseUpdateConflictType;
+  message: string;
+  caseId: string;
+  baseVersion: number | null;
+  latestVersion: number;
+  remoteChanges: CaseUpdateConflictField[];
+  clientChanges: CaseUpdateConflictField[];
+  conflictingFields: ChangeFieldKey[];
+  updatedAt: string;
+  updatedById: string | null;
+  updatedByName: string | null;
+  updatedByRole: string | null;
+}
+
+export class CaseUpdateConflictError extends Error {
+  status = 409;
+  details: CaseUpdateConflictDetails;
+
+  constructor(message: string, details: CaseUpdateConflictDetails) {
+    super(message);
+    this.name = 'CaseUpdateConflictError';
+    this.details = details;
+  }
+}
 
 function buildChangeDetails(
   previous: typeof cases.$inferSelect,
@@ -1493,6 +2036,94 @@ function mapHearing(record?: CaseHearingRecordWithRelations | null): CaseHearing
   } satisfies CaseHearingDTO;
 }
 
+type CaseClientQueryRecord = {
+  id: string;
+  name: string | null;
+  entityType: ParticipantEntity | null;
+  phone: string | null;
+  idNumber: string | null;
+  caseId: string;
+  caseType: CaseType;
+  caseLevel: CaseLevel;
+  caseStatus: CaseStatus | null;
+  department: (typeof cases.$inferSelect)['department'];
+  assignedSaleName: string | null;
+  assignedLawyerName: string | null;
+  assignedAssistantName: string | null;
+  createdAt: string | Date | null;
+  updatedAt: string | Date | null;
+};
+
+type CaseClientDetailQueryRecord = CaseClientQueryRecord & {
+  address: string | null;
+  isDishonest: boolean | null;
+};
+
+function mapCaseClientRecord(record: CaseClientQueryRecord): CaseClientDTO {
+  return {
+    id: record.id,
+    name: record.name?.trim() && record.name.trim().length > 0 ? record.name.trim() : '未填写姓名',
+    entityType: record.entityType ?? null,
+    phone: record.phone ?? null,
+    idNumber: record.idNumber ?? null,
+    caseId: record.caseId,
+    caseType: record.caseType,
+    caseLevel: record.caseLevel,
+    caseStatus: record.caseStatus ?? null,
+    department: record.department,
+    assignedSaleName: record.assignedSaleName ?? null,
+    assignedLawyerName: record.assignedLawyerName ?? null,
+    assignedAssistantName: record.assignedAssistantName ?? null,
+    createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
+    updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString()
+  } satisfies CaseClientDTO;
+}
+
+function mapCaseClientDetailRecord(record: CaseClientDetailQueryRecord): CaseClientDetailDTO {
+  const base = mapCaseClientRecord(record);
+  return {
+    ...base,
+    address: record.address ?? null,
+    isDishonest: Boolean(record.isDishonest)
+  } satisfies CaseClientDetailDTO;
+}
+
+async function loadCaseClientDetail(id: string): Promise<CaseClientDetailQueryRecord | null> {
+  const assignedSaleUser = alias(users, 'case_client_detail_assigned_sale');
+  const assignedLawyerUser = alias(users, 'case_client_detail_assigned_lawyer');
+  const assignedAssistantUser = alias(users, 'case_client_detail_assigned_assistant');
+
+  const [record] = await db
+    .select({
+      id: caseParticipants.id,
+      name: caseParticipants.name,
+      entityType: caseParticipants.entityType,
+      phone: caseParticipants.phone,
+      idNumber: caseParticipants.idNumber,
+      caseId: caseParticipants.caseId,
+      caseType: cases.caseType,
+      caseLevel: cases.caseLevel,
+      caseStatus: cases.caseStatus,
+      department: cases.department,
+      assignedSaleName: assignedSaleUser.name,
+      assignedLawyerName: assignedLawyerUser.name,
+      assignedAssistantName: assignedAssistantUser.name,
+      createdAt: cases.createdAt,
+      updatedAt: cases.updatedAt,
+      address: caseParticipants.address,
+      isDishonest: caseParticipants.isDishonest
+    })
+    .from(caseParticipants)
+    .innerJoin(cases, eq(caseParticipants.caseId, cases.id))
+    .leftJoin(assignedSaleUser, eq(cases.assignedSaleId, assignedSaleUser.id))
+    .leftJoin(assignedLawyerUser, eq(cases.assignedLawyerId, assignedLawyerUser.id))
+    .leftJoin(assignedAssistantUser, eq(cases.assignedAssistantId, assignedAssistantUser.id))
+    .where(and(eq(caseParticipants.id, id), eq(caseParticipants.role, 'claimant')))
+    .limit(1);
+
+  return (record as CaseClientDetailQueryRecord | undefined) ?? null;
+}
+
 function mapCaseRecord(record: CaseWithRelations): CaseDTO {
   const participants = [...(record.participants ?? [])].sort((a, b) => {
     const aOrder = a.sortOrder ?? 0;
@@ -1597,6 +2228,10 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     voidReason: record.voidReason ?? null,
     salesCommission: formatNumeric(record.salesCommission),
     handlingFee: formatNumeric(record.handlingFee),
+  version: record.version ?? 0,
+  updaterId: record.updaterId ?? null,
+  updaterName: record.updater?.name ?? null,
+  updaterRole: record.updater?.role ?? null,
     createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
     updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString(),
     participants: {
@@ -1629,6 +2264,11 @@ function buildWhereClause(options: CaseListFilters): SQL<unknown> | undefined {
   if (options.department) {
     conditions.push(eq(cases.department, options.department));
   }
+  const rawCaseId = options.caseId;
+  const trimmedCaseId = typeof rawCaseId === 'string' ? rawCaseId.trim() : '';
+  if (trimmedCaseId) {
+    conditions.push(eq(cases.id, trimmedCaseId));
+  }
   if (options.assignedSaleId) {
     conditions.push(eq(cases.assignedSaleId, options.assignedSaleId));
   }
@@ -1646,6 +2286,22 @@ function buildWhereClause(options: CaseListFilters): SQL<unknown> | undefined {
     if (normalizedStatus) {
       conditions.push(eq(cases.caseStatus, normalizedStatus));
     }
+  }
+
+  const rawCaseNumber = options.caseNumber;
+  const trimmedCaseNumber = typeof rawCaseNumber === 'string' ? rawCaseNumber.trim() : '';
+  if (trimmedCaseNumber) {
+    const caseNumberTerm = `%${trimmedCaseNumber}%`;
+    conditions.push(
+      sql<unknown>`
+        EXISTS (
+          SELECT 1
+          FROM ${caseHearings}
+          WHERE ${caseHearings.caseId} = ${cases.id}
+            AND ${caseHearings.caseNumber} ILIKE ${caseNumberTerm}
+        )
+      `
+    );
   }
 
   const trimmedSearch = options.search?.trim();
@@ -1805,6 +2461,13 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
           role: true
         }
       },
+      updater: {
+        columns: {
+          id: true,
+          name: true,
+          role: true
+        }
+      },
       participants: true,
       collections: true,
       timeNodes: true,
@@ -1852,6 +2515,252 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
       totalPages
     } satisfies PaginationMeta
   };
+}
+
+export async function listCaseClients(options: CaseClientListOptions = {}, user: SessionUser) {
+  ensureCasePermission(user, 'list');
+
+  const page = Math.max(options.page ?? DEFAULT_PAGE, 1);
+  const pageSize = Math.min(Math.max(options.pageSize ?? DEFAULT_PAGE_SIZE, 1), 100);
+  const offset = (page - 1) * pageSize;
+
+  const accessContext = await buildCaseAccessContext(user);
+  const accessWhere = buildAccessWhere(accessContext);
+
+  const filterConditions: SQL<unknown>[] = [eq(caseParticipants.role, 'claimant')];
+
+  if (options.department) {
+    filterConditions.push(eq(cases.department, options.department));
+  }
+
+  const trimmedSearch = options.search?.trim();
+  if (trimmedSearch) {
+    const keyword = `%${trimmedSearch}%`;
+    filterConditions.push(
+      sql<unknown>`
+        (
+          ${caseParticipants.name} ILIKE ${keyword}
+          OR ${caseParticipants.phone} ILIKE ${keyword}
+          OR ${caseParticipants.idNumber} ILIKE ${keyword}
+        )
+      `
+    );
+  }
+
+  const filterWhere = filterConditions.length
+    ? filterConditions.length === 1
+      ? filterConditions[0]
+      : and(...filterConditions)
+    : undefined;
+
+  const whereClause = mergeWhere(filterWhere, accessWhere);
+
+  const assignedSaleUser = alias(users, 'case_client_assigned_sale');
+  const assignedLawyerUser = alias(users, 'case_client_assigned_lawyer');
+  const assignedAssistantUser = alias(users, 'case_client_assigned_assistant');
+
+  const baseListQuery = db
+    .select({
+      id: caseParticipants.id,
+      name: caseParticipants.name,
+      entityType: caseParticipants.entityType,
+      phone: caseParticipants.phone,
+      idNumber: caseParticipants.idNumber,
+      caseId: cases.id,
+      caseType: cases.caseType,
+      caseLevel: cases.caseLevel,
+      caseStatus: cases.caseStatus,
+      department: cases.department,
+      assignedSaleName: assignedSaleUser.name,
+      assignedLawyerName: assignedLawyerUser.name,
+      assignedAssistantName: assignedAssistantUser.name,
+      createdAt: cases.createdAt,
+      updatedAt: cases.updatedAt
+    })
+    .from(caseParticipants)
+    .innerJoin(cases, eq(caseParticipants.caseId, cases.id))
+    .leftJoin(assignedSaleUser, eq(cases.assignedSaleId, assignedSaleUser.id))
+    .leftJoin(assignedLawyerUser, eq(cases.assignedLawyerId, assignedLawyerUser.id))
+    .leftJoin(assignedAssistantUser, eq(cases.assignedAssistantId, assignedAssistantUser.id));
+
+  const recordsQuery = whereClause ? baseListQuery.where(whereClause) : baseListQuery;
+
+  const records = await recordsQuery
+    .orderBy(desc(cases.updatedAt))
+    .limit(pageSize)
+    .offset(offset);
+
+  const baseTotalQuery = db
+    .select({ value: count() })
+    .from(caseParticipants)
+    .innerJoin(cases, eq(caseParticipants.caseId, cases.id));
+
+  const totalQuery = whereClause ? baseTotalQuery.where(whereClause) : baseTotalQuery;
+
+  const totalResult = await totalQuery;
+  const total = Number(totalResult?.[0]?.value ?? 0);
+  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
+
+  return {
+    data: records.map((record) => mapCaseClientRecord(record as CaseClientQueryRecord)),
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages
+    } satisfies PaginationMeta
+  };
+}
+
+export async function getCaseClientById(id: string, user: SessionUser): Promise<CaseClientDetailDTO | null> {
+  ensureCasePermission(user, 'list');
+
+  const trimmedId = id?.trim();
+  if (!trimmedId) {
+    throw new BadRequestError('客户ID不能为空');
+  }
+
+  const detailRecord = await loadCaseClientDetail(trimmedId);
+  if (!detailRecord) {
+    return null;
+  }
+
+  const accessContext = await buildCaseAccessContext(user);
+  const projection = await db.query.cases.findFirst({
+    where: eq(cases.id, detailRecord.caseId),
+    columns: {
+      id: true,
+      department: true,
+      assignedSaleId: true,
+      assignedLawyerId: true,
+      assignedAssistantId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
+    }
+  });
+
+  if (!projection) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, projection)) {
+    throw new AuthorizationError();
+  }
+
+  return mapCaseClientDetailRecord(detailRecord);
+}
+
+export async function updateCaseClient(
+  id: string,
+  input: UpdateCaseClientInput,
+  user: SessionUser
+): Promise<CaseClientDetailDTO | null> {
+  ensureCasePermission(user, 'update');
+
+  const trimmedId = id?.trim();
+  if (!trimmedId) {
+    throw new BadRequestError('客户ID不能为空');
+  }
+
+  const existingDetail = await loadCaseClientDetail(trimmedId);
+  if (!existingDetail) {
+    return null;
+  }
+
+  const accessContext = await buildCaseAccessContext(user);
+  const projection = await db.query.cases.findFirst({
+    where: eq(cases.id, existingDetail.caseId),
+    columns: {
+      id: true,
+      department: true,
+      assignedSaleId: true,
+      assignedLawyerId: true,
+      assignedAssistantId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
+    }
+  });
+
+  if (!projection) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, projection)) {
+    throw new AuthorizationError();
+  }
+
+  const updateValues: Partial<typeof caseParticipants.$inferInsert> = {};
+
+  if (input.name !== undefined) {
+    const trimmedName = input.name?.trim();
+    if (!trimmedName) {
+      throw new BadRequestError('客户名称不能为空');
+    }
+    updateValues.name = trimmedName;
+  }
+
+  if (input.entityType !== undefined) {
+    if (input.entityType === null) {
+      updateValues.entityType = null;
+    } else if ((participantEntityEnum.enumValues as readonly string[]).includes(input.entityType)) {
+      updateValues.entityType = input.entityType;
+    } else {
+      throw new BadRequestError('请选择有效的客户类型');
+    }
+  }
+
+  if (input.phone !== undefined) {
+    const trimmedPhone = input.phone?.trim();
+    updateValues.phone = trimmedPhone && trimmedPhone.length > 0 ? trimmedPhone : null;
+  }
+
+  if (input.idNumber !== undefined) {
+    const trimmedIdNumber = input.idNumber?.trim();
+    updateValues.idNumber = trimmedIdNumber && trimmedIdNumber.length > 0 ? trimmedIdNumber : null;
+  }
+
+  if (input.address !== undefined) {
+    const trimmedAddress = input.address?.trim();
+    updateValues.address = trimmedAddress && trimmedAddress.length > 0 ? trimmedAddress : null;
+  }
+
+  if (input.isDishonest !== undefined && input.isDishonest !== null) {
+    updateValues.isDishonest = Boolean(input.isDishonest);
+  } else if (input.isDishonest === null) {
+    updateValues.isDishonest = false;
+  }
+
+  if (Object.keys(updateValues).length === 0) {
+    return mapCaseClientDetailRecord(existingDetail);
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(caseParticipants)
+      .set(updateValues)
+      .where(eq(caseParticipants.id, trimmedId));
+
+    await tx
+      .update(cases)
+      .set({
+        updatedAt: new Date(),
+        updaterId: user.id ?? null
+      })
+      .where(eq(cases.id, existingDetail.caseId));
+  });
+
+  const refreshed = await loadCaseClientDetail(trimmedId);
+  return refreshed ? mapCaseClientDetailRecord(refreshed) : null;
 }
 
 export async function getCaseTablePreferences(
@@ -1938,6 +2847,13 @@ export async function getCaseById(id: string, user: SessionUser) {
         }
       },
       assignedAssistant: {
+        columns: {
+          id: true,
+          name: true,
+          role: true
+        }
+      },
+      updater: {
         columns: {
           id: true,
           name: true,
@@ -2070,6 +2986,13 @@ export async function createCase(input: CaseInput, user: SessionUser) {
             role: true
           }
         },
+        updater: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
         participants: true,
         collections: true,
         timeline: {
@@ -2093,171 +3016,6 @@ export async function createCase(input: CaseInput, user: SessionUser) {
 
     if (!fullRecord) {
       throw new Error('Failed to load created case');
-    }
-
-    return mapCaseRecord(fullRecord as CaseWithRelations);
-  });
-}
-
-export async function updateCase(id: string, input: CaseInput, user: SessionUser) {
-  ensureCasePermission(user, 'update');
-
-  const accessContext = await buildCaseAccessContext(user);
-
-  const existing = await db.query.cases.findFirst({
-    where: eq(cases.id, id)
-  });
-
-  if (!existing) {
-    return null;
-  }
-
-  if (!canAccessCase(accessContext, existing)) {
-    throw new AuthorizationError();
-  }
-
-  return db.transaction(async (tx) => {
-    const caseValues = buildCaseValues(input);
-    caseValues.updaterId = user.id;
-    caseValues.updatedAt = new Date();
-
-    if (user.role === 'lawyer' || user.role === 'assistant') {
-      BASIC_INFO_FIELD_KEYS.forEach(field => {
-        if (field in caseValues) {
-          (caseValues as Record<string, unknown>)[field] = existing[field as keyof typeof existing];
-        }
-      });
-    }
-
-    if (input.department === undefined) {
-      if (existing.department) {
-        caseValues.department = existing.department;
-      } else if ((user.role === 'admin' || user.role === 'administration' || isSuperAdmin(user)) && user.department) {
-        caseValues.department = user.department as (typeof cases.$inferInsert)['department'];
-      }
-    }
-
-    if (input.assignedSaleId === undefined) {
-      if (existing.assignedSaleId) {
-        caseValues.assignedSaleId = existing.assignedSaleId;
-      } else if (user.role === 'admin' || user.role === 'administration' || isSuperAdmin(user)) {
-        caseValues.assignedSaleId = user.id;
-      }
-    }
-
-    const [updatedCase] = await tx
-      .update(cases)
-      .set(caseValues)
-      .where(eq(cases.id, id))
-      .returning();
-
-    if (!updatedCase) {
-      return null;
-    }
-
-    const changeDetails = buildChangeDetails(existing, updatedCase);
-    const shouldLog =
-      changeDetails.length > 0 ||
-      Boolean(input.timeline || input.hearings !== undefined || input.participants || input.collections);
-
-    if (shouldLog) {
-      const actor = extractActorContext(user);
-      await tx.insert(caseChangeLogs).values({
-        caseId: id,
-        action: 'update',
-        description: buildChangeDescription(changeDetails, input),
-        changes: changeDetails.length > 0 ? changeDetails : null,
-        actorId: actor.actorId,
-        actorName: actor.actorName,
-        actorRole: actor.actorRole
-      });
-    }
-
-    if (input.participants) {
-      await tx.delete(caseParticipants).where(eq(caseParticipants.caseId, id));
-      const participantValues = flattenParticipantsInput(input.participants, id);
-      if (participantValues.length > 0) {
-        await tx.insert(caseParticipants).values(participantValues);
-      }
-    }
-
-    if (input.collections) {
-      await tx.delete(caseCollections).where(eq(caseCollections.caseId, id));
-      const collectionValues = normalizeCollectionsInput(input.collections, id);
-      if (collectionValues.length > 0) {
-        await tx.insert(caseCollections).values(collectionValues);
-      }
-    }
-
-    if (input.timeline) {
-      await tx.delete(caseTimeline).where(eq(caseTimeline.caseId, id));
-      const timelineValues = normalizeTimelineInput(input.timeline, id);
-      if (timelineValues.length > 0) {
-        await tx.insert(caseTimeline).values(timelineValues);
-      }
-    }
-
-    if (input.hearings !== undefined) {
-      if (user.role === 'administration') {
-        throw new AuthorizationError('行政角色无权编辑庭审信息');
-      }
-      await tx.delete(caseHearings).where(eq(caseHearings.caseId, id));
-      const processedHearings = await applyDefaultTrialLawyerList(input.hearings, user);
-      const hearingValues = normalizeHearingInputs(processedHearings, id);
-      if (hearingValues.length > 0) {
-        await tx.insert(caseHearings).values(hearingValues);
-      }
-    }
-
-    await syncCaseHearingEvents(tx, id);
-
-    const fullRecord = await tx.query.cases.findFirst({
-      where: eq(cases.id, id),
-      with: {
-        assignedSale: {
-          columns: {
-            id: true,
-            name: true,
-            role: true
-          }
-        },
-        assignedLawyer: {
-          columns: {
-            id: true,
-            name: true,
-            role: true
-          }
-        },
-        assignedAssistant: {
-          columns: {
-            id: true,
-            name: true,
-            role: true
-          }
-        },
-        participants: true,
-        collections: true,
-        timeline: {
-          with: {
-            follower: true
-          }
-        },
-        hearings: {
-          with: {
-            trialLawyer: {
-              columns: {
-                id: true,
-                name: true,
-                role: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (!fullRecord) {
-      return null;
     }
 
     return mapCaseRecord(fullRecord as CaseWithRelations);

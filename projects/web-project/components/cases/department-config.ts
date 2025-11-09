@@ -1,4 +1,16 @@
 import type { CaseTableColumnKey } from '@/lib/cases-api';
+// 案件列表筛选项类型定义
+export type CaseTableFilterKey =
+  | 'caseNumber'
+  | 'caseStatus'
+  | 'caseType'
+  | 'caseLevel'
+  | 'provinceCity'
+  | 'assignedLawyerName'
+  | 'assignedAssistantName'
+  | 'assignedSaleName'
+  | 'entryDate'
+  | 'createdAt';
 import type { UserDepartment } from '@/lib/users-api';
 
 import type { WorkInjuryCaseTabKey } from './modal';
@@ -69,35 +81,84 @@ export interface CaseDepartmentConfig {
   allowCreate: boolean;
   basicInfoLayout: BasicInfoLayoutRow[];
   requiredBasicInfoFields: ReadonlySet<BasicInfoFieldKey>;
+  filterOptions: CaseTableFilterKey[];
 }
+// 各部门案件列表筛选项配置
+const DEPARTMENT_FILTER_OPTIONS: Record<UserDepartment, CaseTableFilterKey[]> = {
+  work_injury: [
+    'caseStatus',
+    'caseType',
+    'caseLevel',
+    'provinceCity',
+    'assignedLawyerName',
+    'assignedAssistantName',
+    'entryDate',
+    'createdAt'
+  ],
+  insurance: [
+    'caseNumber',
+    'caseStatus',
+    'caseLevel'
+  ]
+};
 
 export const DEFAULT_CASE_DEPARTMENT: UserDepartment = 'work_injury';
 
-const SHARED_COLUMN_OPTIONS: Array<{ key: CaseTableColumnKey; label: string }> = [
-  { key: 'caseNumber', label: '案号' },
-  { key: 'caseStatus', label: '案件状态' },
-  { key: 'caseType', label: '案件类型' },
-  { key: 'caseLevel', label: '案件级别' },
-  { key: 'claimantNames', label: '当事人' },
-  { key: 'provinceCity', label: '省份/城市' },
-  { key: 'assignedLawyerName', label: '负责律师' },
-  { key: 'assignedAssistantName', label: '负责助理' },
-  { key: 'assignedSaleName', label: '跟进销售' },
-  { key: 'entryDate', label: '入职时间' },
-  { key: 'createdAt', label: '创建时间' },
-  { key: 'updatedAt', label: '更新时间' }
-];
+export const CASE_TABLE_COLUMN_LABELS: Record<CaseTableColumnKey, string> = {
+  caseNumber: '案号',
+  caseStatus: '案件状态',
+  caseType: '案件类型',
+  caseLevel: '案件级别',
+  claimantNames: '当事人',
+  respondentNames: '对方当事人',
+  provinceCity: '省份/城市',
+  assignedLawyerName: '负责律师',
+  assignedAssistantName: '负责助理',
+  assignedSaleName: '跟进销售',
+  contractDate: '合同日期',
+  clueDate: '线索日期',
+  targetAmount: '标的额',
+  contractForm: '合同形式',
+  insuranceRiskLevel: '风险等级',
+  insuranceTypes: '保险类型',
+  dataSource: '数据来源',
+  entryDate: '入职时间',
+  createdAt: '创建时间',
+  updatedAt: '更新时间'
+};
 
-const SHARED_DEFAULT_COLUMNS: CaseTableColumnKey[] = [
-  'caseNumber',
-  'caseStatus',
-  'caseType',
-  'caseLevel',
-  'claimantNames',
-  'provinceCity',
-  'assignedLawyerName',
-  'assignedAssistantName'
-];
+const DEPARTMENT_COLUMN_OPTION_KEYS: Record<UserDepartment, CaseTableColumnKey[]> = {
+  work_injury: [
+    'caseNumber',
+    'caseStatus',
+    'caseType',
+    'caseLevel',
+    'claimantNames',
+    'respondentNames',
+    'provinceCity',
+    'assignedLawyerName',
+    'assignedSaleName',
+    'dataSource',
+    'targetAmount',
+    'createdAt'
+  ],
+  insurance: [
+    'caseNumber',
+    'caseStatus',
+    'claimantNames',
+    'respondentNames',
+    'contractDate',
+    'clueDate',
+    'targetAmount',
+    'contractForm',
+    'insuranceRiskLevel',
+    'insuranceTypes',
+    'assignedLawyerName',
+    'assignedSaleName',
+    'dataSource',
+    'createdAt'
+  ]
+};
 
 const SHARED_VISIBLE_TABS: WorkInjuryCaseTabKey[] = [
   'basic',
@@ -124,17 +185,22 @@ const SHARED_MODAL_OPERATIONS: CaseModalOperationsConfig = {
 const SHARED_TABLE_ACTIONS: ReadonlyArray<CaseTableActionKey> = ['update-status', 'add-follow-up', 'add-time-node'];
 
 const DEPARTMENT_DEFAULT_COLUMNS: Record<UserDepartment, CaseTableColumnKey[]> = {
-  work_injury: [],
-  insurance: [
+  work_injury: [
     'caseNumber',
     'caseStatus',
     'caseType',
     'caseLevel',
     'claimantNames',
-    'provinceCity',
-    'assignedSaleName',
     'assignedLawyerName',
-    'assignedAssistantName'
+    'assignedSaleName'
+  ],
+  insurance: [
+    'caseNumber',
+    'caseStatus',
+    'claimantNames',
+    'contractDate',
+    'contractForm',
+    'insuranceRiskLevel'
   ]
 };
 
@@ -176,12 +242,10 @@ const DEPARTMENT_BASIC_INFO_LAYOUT: Record<UserDepartment, BasicInfoLayoutRow[]>
     ['remark', '', '']
   ],
   insurance: [
-    ['contractDate', 'contractForm', 'contractQuoteType'],
-    ['contractQuoteAmount', 'contractQuoteUpfront', 'contractQuoteRatio'],
-    ['contractQuoteOther', '', ''],
-    ['clueDate', 'targetAmount', 'caseLevel'],
-    ['dataSource', 'estimatedCollection', 'litigationFeeType'],
-    ['travelFeeType', '', ''],
+    ['contractDate', 'contractForm', 'caseLevel'],
+    ['clueDate', 'targetAmount', 'dataSource'],
+    ['estimatedCollection', 'litigationFeeType', 'travelFeeType'],
+    ['contractQuoteType', 'contractQuoteAmount', 'contractQuoteUpfront', 'contractQuoteRatio', 'contractQuoteOther'],
     ['insuranceTypes', '', ''],
     ['insuranceMisrepresentations', '', ''],
     ['remark', '', '']
@@ -202,8 +266,7 @@ const DEPARTMENT_REQUIRED_BASIC_FIELDS: Record<UserDepartment, BasicInfoFieldKey
     'litigationFeeType',
     'travelFeeType',
     'insuranceTypes',
-    'insuranceMisrepresentations',
-    'remark'
+    'insuranceMisrepresentations'
   ]
 };
 
@@ -216,9 +279,23 @@ const buildDepartmentConfig = (department: UserDepartment): CaseDepartmentConfig
   const allowCreateOverride = DEPARTMENT_ALLOW_CREATE_OVERRIDES[department];
   const departmentBasicInfoLayout = DEPARTMENT_BASIC_INFO_LAYOUT[department];
   const requiredFields = DEPARTMENT_REQUIRED_BASIC_FIELDS[department];
+  const filterOptions = DEPARTMENT_FILTER_OPTIONS[department] || [];
+  const columnKeys = DEPARTMENT_COLUMN_OPTION_KEYS[department] ?? [];
 
-  const defaultColumns =
-    defaultColumnsOverride.length > 0 ? [...defaultColumnsOverride] : [...SHARED_DEFAULT_COLUMNS];
+  const columnOptions =
+    columnKeys.length > 0
+      ? columnKeys.map((key) => ({ key, label: CASE_TABLE_COLUMN_LABELS[key] }))
+      : (Object.entries(CASE_TABLE_COLUMN_LABELS) as Array<[CaseTableColumnKey, string]>).map(
+          ([key, label]) => ({ key, label })
+        );
+  const availableColumnSet = new Set(columnOptions.map((option) => option.key));
+
+  const defaultColumnsCandidate =
+    defaultColumnsOverride.length > 0 ? defaultColumnsOverride : columnOptions.map((option) => option.key);
+  const defaultColumns = defaultColumnsCandidate.filter((key) => availableColumnSet.has(key));
+  if (defaultColumns.length === 0 && columnOptions.length > 0) {
+    defaultColumns.push(columnOptions[0].key);
+  }
   const visibleTabs =
     visibleTabsOverride.length > 0 ? [...visibleTabsOverride] : [...SHARED_VISIBLE_TABS];
   const editableTabs =
@@ -233,7 +310,7 @@ const buildDepartmentConfig = (department: UserDepartment): CaseDepartmentConfig
   return {
     department,
     tableKey: `${department}_cases`,
-    columnOptions: [...SHARED_COLUMN_OPTIONS],
+    columnOptions,
     defaultColumns,
     visibleTabs,
     editableTabs,
@@ -241,7 +318,8 @@ const buildDepartmentConfig = (department: UserDepartment): CaseDepartmentConfig
     tableActions,
     allowCreate: allowCreateOverride ?? true,
     basicInfoLayout: [...departmentBasicInfoLayout],
-    requiredBasicInfoFields: new Set(requiredFields)
+    requiredBasicInfoFields: new Set(requiredFields),
+    filterOptions
   };
 };
 

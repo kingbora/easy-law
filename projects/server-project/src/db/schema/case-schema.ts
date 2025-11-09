@@ -99,6 +99,7 @@ export const cases = pgTable('case_record', {
   updaterId: text('updater_id').references(() => users.id), // 更新人
   salesCommission: text('sales_commission'), // 销售提成
   handlingFee: text('handling_fee'), // 办案费用
+  version: integer('version').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });

@@ -10,6 +10,7 @@ import {
   getCaseHearings,
   getCaseChangeLogs,
   listCases,
+  CaseUpdateConflictError,
   updateCaseTablePreferences,
   updateCase,
   updateCaseTimeNodes
@@ -167,14 +168,23 @@ router.put(
   asyncHandler(async (req, res) => {
     const session = req.sessionContext!;
 
-    const updated = await updateCase(req.params.id, req.body, session.user);
+    try {
+      const updated = await updateCase(req.params.id, req.body, session.user);
 
-    if (!updated) {
-      res.status(404).json({ message: 'Case not found' });
-      return;
+      if (!updated) {
+        res.status(404).json({ message: 'Case not found' });
+        return;
+      }
+
+      res.json({ data: updated });
+    } catch (error) {
+      if (error instanceof CaseUpdateConflictError) {
+        res.status(error.status).json({ message: error.message, details: error.details });
+        return;
+      }
+
+      throw error;
     }
-
-    res.json({ data: updated });
   })
 );
 
