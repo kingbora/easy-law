@@ -18,7 +18,7 @@ import {
   updateUser,
   type UserRole
 } from '@/lib/users-api';
-import { useSessionStore } from '@/lib/stores/session-store';
+import { useCurrentUser } from '@/lib/stores/session-store';
 import {
   DEFAULT_TEAM_PAGINATION,
   mapUserToTeamMember,
@@ -28,6 +28,7 @@ import {
 } from '@/lib/stores/team-store';
 import { ROLE_LABEL_MAP, ROLE_COLOR_MAP, DEPARTMENT_LABEL_MAP, DEPARTMENT_COLOR_MAP } from '@/utils/constants';
 import { useDashboardHeaderAction } from '../header-context';
+import styles from './styles.module.scss';
 
 type TeamMemberTreeNode = TeamMember & { children?: TeamMemberTreeNode[] };
 
@@ -67,10 +68,7 @@ export default function TeamManagementPage() {
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
   const [filterForm] = Form.useForm<Filters>();
 
-  const currentUser = useSessionStore((state) => state.user);
-  const currentUserInitialized = useSessionStore((state) => state.initialized);
-  const currentUserLoading = useSessionStore((state) => state.loading);
-  const refreshSession = useSessionStore((state) => state.refresh);
+  const currentUser = useCurrentUser();
 
   const members = useTeamStore((state) => state.members);
   const teamLoading = useTeamStore((state) => state.loading);
@@ -83,12 +81,6 @@ export default function TeamManagementPage() {
   const setTeamPagination = useTeamStore((state) => state.setPagination);
   const upsertTeamMember = useTeamStore((state) => state.upsertMember);
   const removeTeamMember = useTeamStore((state) => state.removeMember);
-
-  useEffect(() => {
-    if (!currentUserInitialized && !currentUserLoading) {
-      void refreshSession();
-    }
-  }, [refreshSession, currentUserInitialized, currentUserLoading]);
 
   useEffect(() => {
     if (teamInitialized) {
@@ -648,7 +640,7 @@ export default function TeamManagementPage() {
       ? canManageMember(modalState.record)
       : true;
 
-  if (!currentUserLoading && !hasTeamAccess) {
+  if (!hasTeamAccess) {
     return <Result status="403" title="暂无权限" subTitle="您无权访问团队管理，请联系管理员。" />;
   }
 
@@ -691,6 +683,7 @@ export default function TeamManagementPage() {
           dataSource={treeMembers}
           pagination={{
             ...pagination,
+            className: styles.pagination,
             showTotal: (_, range) => `共 ${totalMemberCount} 人，当前显示第 ${range[0]}-${range[1]} 条`,
             onChange: handlePaginationChange,
             onShowSizeChange: handlePageSizeChange
@@ -699,7 +692,7 @@ export default function TeamManagementPage() {
                 defaultExpandAllRows: true,
                 expandIconColumnIndex: 0,
               }}
-          loading={teamLoading || currentUserLoading}
+          loading={teamLoading}
         />
       </Card>
 

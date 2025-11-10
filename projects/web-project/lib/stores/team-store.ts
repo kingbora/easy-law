@@ -65,7 +65,7 @@ export const DEFAULT_TEAM_PAGINATION: TeamPaginationState = {
   showQuickJumper: true,
   showSizeChanger: true,
   align: 'end',
-  total: 0
+  total: 0,
 };
 
 export function mapUserToTeamMember(user: UserResponse, fallbackPassword?: string): TeamMember {

@@ -372,7 +372,7 @@ export default function MyClientsPage() {
           </Form.Item>
         </Form>
       </Card>
-      <Card title={<Typography.Text strong>我的客户</Typography.Text>}>
+      <Card styles={{ body: { padding: 0 } }} title={<Typography.Text strong>我的客户</Typography.Text>}>
         <Table<CaseClientRecord>
           rowKey={(record) => record.id}
           dataSource={clients}
