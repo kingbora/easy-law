@@ -400,7 +400,7 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
         <DashboardHeaderActionProvider setAction={setHeaderAction}>
           <Layout className={styles.layout} hasSider>
             <Sider
-              width={220}
+              width={200}
               className={styles.sidebar}
               breakpoint="lg"
               collapsedWidth={64}
@@ -411,7 +411,7 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
               <div className={styles.logo}>
                 <Image
                   priority
-                  src={siderCollapsed ? '/images/logo-icon.png' : '/images/logo.jpg'}
+                  src={siderCollapsed ? '/images/logo-icon.png' : '/images/logo.png'}
                   width={siderCollapsed ? 32 : 120}
                   height={siderCollapsed ? 32 : 50}
                   alt="simple law"
