@@ -12,6 +12,6 @@ export default function CaseManagementPage() {
   if (!department) {
     return <div>无法确定您的部门，请联系管理员。</div>;
   }
-  const caseId = searchParams.get('caseId');
+  const caseId = searchParams?.get('caseId');
   return <CasesPage department={department} initialCaseId={caseId} />;
 }

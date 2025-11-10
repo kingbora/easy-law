@@ -23,7 +23,7 @@ import {
   type MenuProps,
 } from 'antd';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import zhCN from 'antd/locale/zh_CN';
@@ -86,8 +86,7 @@ function isTeamPermissionRole(role: UserRole): role is TeamPermissionRole {
 
 export default function DashboardLayoutClient({ children, initialUser }: DashboardLayoutClientProps) {
   const { message } = App.useApp();
-  const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() || '/';
   const rawSessionUser = useSessionStore((state) => state.user);
   const updateSessionUser = useSessionStore((state) => state.updateUser);
   const clearSession = useSessionStore((state) => state.clear);
@@ -211,7 +210,7 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
         }
         clearSession();
         message.success('已退出登录');
-        router.push('/login');
+        location.reload();
       } catch (error) {
         message.error(error instanceof Error ? error.message : '退出失败，请刷新页面再试试');
       } finally {

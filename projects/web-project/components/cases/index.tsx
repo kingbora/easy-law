@@ -928,7 +928,7 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
       const params = new URLSearchParams(searchParams.toString());
       params.delete('caseId');
       const nextQuery = params.toString();
-      const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+      const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : (pathname || '/cases');
       router.replace(nextUrl, { scroll: false });
     }
 

@@ -21,7 +21,7 @@ const LoginPageContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectParam = useMemo(() => {
-    const redirect = searchParams.get('redirect');
+    const redirect = searchParams?.get('redirect');
     return redirect && redirect.startsWith('/') ? redirect : undefined;
   }, [searchParams]);
   const [isSubmitting, setIsSubmitting] = useState(false);

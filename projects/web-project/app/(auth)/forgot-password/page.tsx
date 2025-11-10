@@ -19,7 +19,7 @@ const ForgotPasswordPageContent = () => {
   const { message } = App.useApp();
   const searchParams = useSearchParams();
   const redirectParam = useMemo(() => {
-    const redirect = searchParams.get('redirect');
+    const redirect = searchParams?.get('redirect');
     return redirect && redirect.startsWith('/') ? redirect : undefined;
   }, [searchParams]);
   const [isSubmitting, setIsSubmitting] = useState(false);
