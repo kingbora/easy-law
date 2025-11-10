@@ -2286,6 +2286,7 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
           confirmLoading={columnModalSaving}
           destroyOnHidden
           maskClosable={false}
+          className="scrollable-modal"
           okButtonProps={{ disabled: columnModalSelection.length === 0 }}
         >
           <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>

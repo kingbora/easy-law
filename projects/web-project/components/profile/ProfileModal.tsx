@@ -170,6 +170,7 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
       confirmLoading={confirmLoading || uploading}
       destroyOnHidden
       maskClosable={false}
+      className="scrollable-modal"
     >
       <Form form={form} layout="vertical">
         <Form.Item label="头像">

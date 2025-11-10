@@ -1,0 +1,262 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 24px;
+  padding-bottom: 32px;
+}
+
+.loadingSkeleton {
+  margin-top: 32px;
+}
+
+
+.summaryCard {
+  border-radius: 16px;
+
+  :global(.ant-card-body) {
+    padding: 20px 24px;
+    min-height: 160px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+}
+
+.summaryCardBody {
+  width: 100%;
+}
+
+.summaryCardTrend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.trendUp {
+  color: #389e0d;
+}
+
+.trendDown {
+  color: #d4380d;
+}
+
+.summaryCardDescription {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.sectionCard {
+  border-radius: 16px;
+
+  :global(.ant-card-head-title) {
+    font-weight: 600;
+    font-size: 16px;
+  }
+
+  :global(.ant-card-body) {
+    padding: 20px 24px;
+  }
+}
+
+.caseListItem,
+.eventListItem,
+.teamListItem,
+.receiptListItem {
+  padding: 14px 0 !important;
+}
+
+.caseListMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.caseListTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #141414;
+}
+
+.caseListTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.caseListMetaRight {
+  min-width: 140px;
+  text-align: right;
+}
+
+.eventListContent {
+  width: 100%;
+}
+
+.eventTag {
+  border-radius: 12px;
+  padding: 2px 12px;
+  font-weight: 500;
+}
+
+.statusLegend {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.statusLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.statusLegendTitle {
+  font-weight: 600;
+}
+
+.statusLegendValue {
+  font-weight: 600;
+}
+
+.statusLegendPercent {
+  opacity: 0.8;
+}
+
+.barChart {
+  height: 220px;
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 12px 8px 8px;
+}
+
+.barItem {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.barValue {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.barWrapper {
+  width: 100%;
+  height: 140px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(24, 144, 255, 0.05);
+  border-radius: 12px 12px 0 0;
+}
+
+.bar {
+  width: 60%;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(180deg, #36cfc9 0%, #08979c 100%);
+}
+
+.barLabel {
+  font-size: 14px;
+  color: #595959;
+}
+
+.teamSummaryWrap {
+  width: 100%;
+}
+
+.teamSummaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(5, 5, 5, 0.06);
+}
+
+.teamSummaryRow:last-child {
+  border-bottom: none;
+}
+
+.teamSummaryRole {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.teamSummaryValue {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.statistic {
+  min-width: 120px;
+}
+
+.receiptListTitle {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.receiptAmount {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.pipelineRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pipelineLabel {
+  width: 80px;
+  font-weight: 500;
+}
+
+.pipelineBar {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(5, 5, 5, 0.06);
+  overflow: hidden;
+}
+
+.pipelineBarInner {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.pipelineValue {
+  font-weight: 600;
+  min-width: 50px;
+  text-align: right;
+}
+
+.footerActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 768px) {
+  .summaryCard :global(.ant-card-body) {
+    min-height: 140px;
+  }
+
+  .caseListMetaRight {
+    text-align: left;
+    margin-top: 8px;
+  }
+
+  .pipelineLabel {
+    width: 60px;
+  }
+}

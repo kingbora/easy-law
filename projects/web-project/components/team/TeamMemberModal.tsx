@@ -379,6 +379,7 @@ export default function TeamMemberModal({
       maskClosable={false}
       destroyOnHidden
       width={560}
+      className="scrollable-modal"
     >
       <Space direction="vertical" size={24} style={{ width: '100%' }}>
         <Descriptions column={1} bordered>

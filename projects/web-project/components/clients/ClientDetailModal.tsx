@@ -192,6 +192,7 @@ export function ClientDetailModal({
       maskClosable={!saving}
       okText="保存"
       cancelText="取消"
+      className="scrollable-modal"
     >
       <Spin spinning={loading}>
         <Tabs
