@@ -198,18 +198,69 @@ export function mapUserPayload(raw: unknown): UserResponse | null {
   };
 }
 
+function isSystemCreatedUser(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) {
+    return false;
+  }
+
+  const container = raw as Record<string, unknown>;
+  const base = (container.user as Record<string, unknown> | undefined) ?? container;
+
+  if (typeof base !== 'object' || base === null) {
+    return false;
+  }
+
+  const baseData =
+    'data' in base && typeof (base as { data?: unknown }).data === 'object' && (base as { data?: unknown }).data !== null
+      ? ((base as { data: Record<string, unknown> }).data)
+      : undefined;
+  const containerData =
+    'data' in container && typeof (container as { data?: unknown }).data === 'object' && (container as { data?: unknown }).data !== null
+      ? ((container as { data: Record<string, unknown> }).data)
+      : undefined;
+  const mergedData = {
+    ...(containerData ?? {}),
+    ...(baseData ?? {})
+  } as Record<string, unknown>;
+
+  const baseCreatorId =
+    'creatorId' in base && typeof (base as { creatorId?: unknown }).creatorId === 'string'
+      ? ((base as { creatorId: string }).creatorId)
+      : null;
+  const containerCreatorId =
+    'creatorId' in container && typeof (container as { creatorId?: unknown }).creatorId === 'string'
+      ? ((container as { creatorId: string }).creatorId)
+      : null;
+  const mergedCreatorId =
+    typeof mergedData.creatorId === 'string'
+      ? (mergedData.creatorId as string)
+      : null;
+
+  const creatorIdSource = baseCreatorId ?? containerCreatorId ?? mergedCreatorId;
+  return typeof creatorIdSource === 'string' && creatorIdSource.trim().toLowerCase() === 'system';
+}
+
 function mapListPayload(data: unknown): UserResponse[] {
   if (Array.isArray(data)) {
-    return data.map((item) => mapUserPayload(item)).filter(Boolean) as UserResponse[];
+    return data
+      .filter((item) => !isSystemCreatedUser(item))
+      .map((item) => mapUserPayload(item))
+      .filter(Boolean) as UserResponse[];
   }
 
   if (typeof data === 'object' && data !== null) {
     const value = data as Record<string, unknown>;
     if (Array.isArray(value.users)) {
-      return value.users.map((item) => mapUserPayload(item)).filter(Boolean) as UserResponse[];
+      return value.users
+        .filter((item) => !isSystemCreatedUser(item))
+        .map((item) => mapUserPayload(item))
+        .filter(Boolean) as UserResponse[];
     }
     if (Array.isArray(value.accounts)) {
-      return value.accounts.map((item) => mapUserPayload(item)).filter(Boolean) as UserResponse[];
+      return value.accounts
+        .filter((item) => !isSystemCreatedUser(item))
+        .map((item) => mapUserPayload(item))
+        .filter(Boolean) as UserResponse[];
     }
   }
 

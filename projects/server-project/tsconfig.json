@@ -5,8 +5,8 @@
     "moduleResolution": "Node",
     "rootDir": "src",
     "outDir": "dist",
-  "types": ["node"],
-  "typeRoots": ["./src/types", "./node_modules/@types"],
+    "types": ["node"],
+    "typeRoots": ["./src/types", "./node_modules/@types"],
     "strict": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -15,6 +15,6 @@
     "resolveJsonModule": true,
     "sourceMap": true
   },
-  "include": ["src", "../../packages/shared-types/src/permissions.ts"],
+  "include": ["src"],
   "exclude": ["dist", "node_modules"]
 }
