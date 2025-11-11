@@ -6,8 +6,6 @@ dist
 expo/
 .expo
 .env*
-drizzle/
-projects/**/drizzle/
 coverage
 *.log
 tsconfig.tsbuildinfo
