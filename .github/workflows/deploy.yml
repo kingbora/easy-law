@@ -149,6 +149,8 @@ jobs:
 
           # 设置环境变量
           export DATABASE_URL="${{ secrets.DATABASE_URL }}"
+          export QINIU_ACCESS_KEY="${{ secrets.QINIU_ACCESS_KEY }}"
+          export QINIU_SECRET_KEY="${{ secrets.QINIU_SECRET_KEY }}"
           
           echo "=== 复制Nginx配置文件 ==="
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/conf.d
@@ -170,12 +172,13 @@ jobs:
           systemctl status nginx --no-pager -l
           echo "服务状态:"
           docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    
     - name: Upload build and image artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          path: publish
-          retention-days: 1
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: publish
+        retention-days: 1
 
   # 健康检查（部署后）
   health-check:
