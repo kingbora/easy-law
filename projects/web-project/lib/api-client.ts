@@ -10,7 +10,18 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_RESTFUL_BASE_URL;
+const RAW_API_BASE_URL = process.env.NEXT_PUBLIC_RESTFUL_BASE_URL;
+
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/$/, '');
+}
+
+export function getApiBaseUrl(): string {
+  if (!RAW_API_BASE_URL) {
+    throw new Error('未配置 NEXT_PUBLIC_RESTFUL_BASE_URL 环境变量');
+  }
+  return normalizeBaseUrl(RAW_API_BASE_URL);
+}
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
@@ -27,7 +38,10 @@ export async function apiFetch<TResponse>(path: string, options: RequestOptions 
     ...(headers ?? {})
   };
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const baseUrl = getApiBaseUrl();
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  const response = await fetch(`${baseUrl}${normalizedPath}`, {
     method: method ?? 'GET',
     credentials: credentials ?? 'include',
     ...rest,

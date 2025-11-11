@@ -31,7 +31,7 @@ import { authClient } from '@/lib/auth-client';
 import ProfileModal from '@/components/profile/ProfileModal';
 import ResetPasswordModal from '@/components/profile/ResetPasswordModal';
 import ScheduleDrawer from '@/components/schedule/ScheduleDrawer';
-import { ApiError } from '@/lib/api-client';
+import { ApiError, getApiBaseUrl } from '@/lib/api-client';
 import { updateUser, type CurrentUserResponse } from '@/lib/users-api';
 import { SessionInitialUserContext, useSessionStore } from '@/lib/stores/session-store';
 import { DashboardHeaderActionProvider } from './header-context';
@@ -246,13 +246,26 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
     [message]
   );
 
-  const uploadAvatar = useCallback(async (file: File): Promise<string> => {
+  const uploadAvatar = useCallback(async (file: File, existingPath?: string | null): Promise<string> => {
     const formData = new FormData();
     formData.append('file', file);
+    if (existingPath) {
+      formData.append('currentPath', existingPath);
+    }
 
-    const response = await fetch('/api/profile/avatar', {
+    let baseUrl: string;
+    try {
+      baseUrl = getApiBaseUrl();
+    } catch (error) {
+      const messageText =
+        error instanceof Error ? error.message : '上传头像失败，请稍后重试';
+      throw new Error(messageText);
+    }
+
+    const response = await fetch(`${baseUrl}/api/profile/avatar`, {
       method: 'POST',
-      body: formData
+      body: formData,
+      credentials: 'include'
     });
 
     let payload: unknown = null;
@@ -278,11 +291,12 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
   }, []);
 
   const handleProfileSubmit = useCallback(
-    async ({ name, email, gender, avatarFile }: {
+    async ({ name, email, gender, avatarFile, currentAvatarPath }: {
       name: string;
       email: string;
       gender: 'male' | 'female';
       avatarFile?: File | null;
+      currentAvatarPath?: string | null;
     }) => {
       if (!sessionUser?.id) {
         message.error('未获取到用户信息');
@@ -293,7 +307,7 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
       try {
         let imagePath: string | null | undefined = undefined;
         if (avatarFile) {
-          imagePath = await uploadAvatar(avatarFile);
+          imagePath = await uploadAvatar(avatarFile, currentAvatarPath ?? sessionUser?.image ?? null);
         }
 
         const payload = {

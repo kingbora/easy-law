@@ -47,6 +47,7 @@ interface ProfileSubmitPayload {
   email: string;
   gender: 'male' | 'female';
   avatarFile?: File | null;
+  currentAvatarPath?: string | null;
 }
 
 const fileToBase64 = (file: File): Promise<string> =>
@@ -145,7 +146,8 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
         name: values.name.trim(),
         email: values.email.trim(),
         gender: values.gender,
-        avatarFile
+        avatarFile,
+        currentAvatarPath: initialValues?.image ?? null
       });
     } catch (error) {
       // validation errors handled by form
