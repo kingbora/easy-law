@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import {
   App,
@@ -31,7 +32,8 @@ import {
 } from '@/lib/calendar-events-api';
 import { ApiError } from '@/lib/api-client';
 import { useSessionStore } from '@/lib/stores/session-store';
-import { useWorkInjuryCaseOperationsStore } from '@/components/cases/operations/useCaseOperationsStore';
+import { TRIAL_STAGE_LABEL_MAP } from '@easy-law/shared-types';
+import type { TrialStage } from '@easy-law/shared-types';
 
 const { Title, Text } = Typography;
 
@@ -47,27 +49,22 @@ interface TodoFormValues {
 
 const CUSTOM_EVENT_COLOR = '#52c41a';
 
-const formatTrialStage = (stage: string | null | undefined) => {
+const formatTrialStage = (stage?: TrialStage) => {
   if (!stage) {
     return '未设置审理阶段';
   }
-  const stageLabel: Record<string, string> = {
-    first_instance: '一审',
-    second_instance: '二审',
-    retrial: '再审'
-  };
-  return stageLabel[stage] ?? stage;
+  return TRIAL_STAGE_LABEL_MAP[stage] ?? stage;
 };
 
 const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
   const { message } = App.useApp();
   const sessionUser = useSessionStore((state) => state.user);
+  const router = useRouter();
   const [calendarValue, setCalendarValue] = useState<Dayjs>(dayjs());
   const [events, setEvents] = useState<CalendarEventRecord[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [todoForm] = Form.useForm<TodoFormValues>();
-  const openWorkInjuryCaseDetail = useWorkInjuryCaseOperationsStore((state) => state.openCaseDetailExternally);
 
   const loadEvents = useCallback(async () => {
     setLoadingEvents(true);
@@ -172,26 +169,17 @@ const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
         message.warning('未关联案件，无法查看详情');
         return;
       }
-      void openWorkInjuryCaseDetail(caseId);
+      onClose();
+      router.push(`/cases/my?caseId=${caseId}`);
     },
-    [message, openWorkInjuryCaseDetail]
+    [message, onClose, router]
   );
 
   const dateCellRender: CalendarProps<Dayjs>['cellRender'] = (current) => {
     const dateKey = current.format('YYYY-MM-DD');
     const cellEvents = eventsByDate.get(dateKey) ?? [];
     if (cellEvents.length !== 0) {
-      return (
-        <ul className={styles.dateCellList}>
-          {cellEvents.slice(0, 3).map((event) => (
-            <li key={event.id} className={styles.dateCellItem}>
-              <Badge color={event.tagColor || CUSTOM_EVENT_COLOR} />
-              <span>{event.eventTime ?? '全天'}</span>
-            </li>
-          ))}
-          {cellEvents.length > 3 ? <li className={styles.dateCellItem}>…</li> : null}
-        </ul>
-      );
+      return <Badge count={cellEvents.length} size="small" className={styles.fixedBadge}></Badge>;
     }
     return null;
   };

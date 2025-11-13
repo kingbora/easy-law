@@ -1,4 +1,4 @@
-import type { CaseTableColumnKey } from '@/lib/cases-api';
+import type { CaseTableColumnKey, UserDepartment } from '@easy-law/shared-types';
 // 案件列表筛选项类型定义
 export type CaseTableFilterKey =
   | 'caseNumber'
@@ -11,7 +11,6 @@ export type CaseTableFilterKey =
   | 'assignedSaleName'
   | 'entryDate'
   | 'createdAt';
-import type { UserDepartment } from '@/lib/users-api';
 
 import type { WorkInjuryCaseTabKey } from './modal';
 

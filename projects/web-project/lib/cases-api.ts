@@ -18,51 +18,6 @@ import type {
   UserDepartment
 } from '@easy-law/shared-types';
 
-export type {
-  AssignableStaffMember,
-  AssignableStaffResponse,
-  CaseCategory,
-  CaseChangeDetail,
-  CaseChangeLog,
-  CaseCollectionInput,
-  CaseCollectionRecord,
-  CaseHearingInput,
-  CaseHearingRecord,
-  CaseListQuery,
-  CaseListResponse,
-  CaseParticipant,
-  CaseParticipantEntity,
-  CaseParticipantInput,
-  CaseParticipantsGroup,
-  CaseParticipantsInput,
-  CasePayload,
-  CaseRecord,
-  CaseStatus,
-  CaseTableColumnKey,
-  CaseTablePreference,
-  CaseTimeNodeInput,
-  CaseTimeNodeRecord,
-  CaseTimeNodeType,
-  CaseTimelineInput,
-  CaseTimelineRecord,
-  CaseType,
-  CaseLevel,
-  ContractFormType,
-  ContractQuoteType,
-  CreateCaseCollectionPayload,
-  LitigationFeeType,
-  PaginationMeta,
-  TrialStage,
-  TravelFeeType,
-  UserDepartment,
-  UserRole,
-  CaseUpdateConflictDetails,
-  CaseUpdateConflictField,
-  CaseUpdateConflictType,
-  CaseUpdateMeta,
-  CaseUpdateRequest
-} from '@easy-law/shared-types';
-
 export class CaseUpdateConflictError extends ApiError {
   override details: CaseUpdateConflictDetails;
 

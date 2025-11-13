@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { Button, Form, Input, Modal, Select, Space, Spin, Switch, Tabs, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useRouter } from "next/navigation";
 
 import type { CaseClientDetail, UpdateCaseClientPayload } from "@/lib/clients-api";
-import { CASE_STATUS_COLOR_MAP, CASE_STATUS_LABEL_MAP, CASE_TYPE_LABEL_MAP, DEPARTMENT_LABEL_MAP } from "@/utils/constants";
+import { CASE_STATUS_COLOR_MAP, CASE_STATUS_LABEL_MAP, CASE_TYPE_LABEL_MAP, DEPARTMENT_LABEL_MAP } from "@easy-law/shared-types";
+import { useSessionStore } from "@/lib/stores/session-store";
 
 const ENTITY_TYPE_OPTIONS = [
   { value: "personal", label: "自然人" },
@@ -52,6 +53,7 @@ export function ClientDetailModal({
 }: ClientDetailModalProps) {
   const [form] = Form.useForm<ClientDetailFormValues>();
   const router = useRouter();
+  const currentUser = useSessionStore((state) => state.user);
 
   useEffect(() => {
     if (!open) {
@@ -86,13 +88,13 @@ export function ClientDetailModal({
     await onSubmit(payload);
   };
 
-  const handleViewCase = (caseId: string) => {
+  const handleViewCase = useCallback((caseId: string) => {
     if (!caseId) {
       return;
     }
     onCancel();
     router.push(`/cases/my?caseId=${caseId}`);
-  };
+  }, [onCancel, router]);
 
   const relatedCases: RelatedCaseRecord[] = client
     ? [
@@ -108,7 +110,8 @@ export function ClientDetailModal({
       ]
     : [];
 
-  const relatedCaseColumns: ColumnsType<RelatedCaseRecord> = [
+  const relatedCaseColumns = useMemo<ColumnsType<RelatedCaseRecord>>(() => {
+    return ([
     {
       title: "案件类型",
       dataIndex: "caseType",
@@ -125,13 +128,13 @@ export function ClientDetailModal({
         </Tag>
       )
     },
-    {
+    currentUser?.role === 'super_admin' ? {
       title: "所属部门",
       dataIndex: "department",
       key: "department",
       render: (value: CaseClientDetail["department"]) =>
         value ? DEPARTMENT_LABEL_MAP[value] : "未设置"
-    },
+    } : null,
     {
       title: "负责团队",
       dataIndex: "assignedLawyerName",
@@ -159,7 +162,8 @@ export function ClientDetailModal({
         </Button>
       )
     }
-  ];
+  ] as ColumnsType<RelatedCaseRecord>).filter(Boolean);
+  }, [currentUser, handleViewCase]);
 
   const renderMeta = client ? (
     <Space direction="vertical" size={4}>
@@ -172,9 +176,13 @@ export function ClientDetailModal({
           {client.caseStatus ? CASE_STATUS_LABEL_MAP[client.caseStatus] : "状态未知"}
         </Tag>
       </Typography.Text>
-      <Typography.Text type="secondary">
-        所属部门：{client.department ? DEPARTMENT_LABEL_MAP[client.department] : "未设置"}
-      </Typography.Text>
+      {
+        currentUser?.role === 'super_admin' ? (
+          <Typography.Text type="secondary">
+            所属部门：{client.department ? DEPARTMENT_LABEL_MAP[client.department] : "未设置"}
+          </Typography.Text>
+        ) : null
+      }
       <Typography.Text type="secondary">
         负责团队：律师 {client.assignedLawyerName ?? "未分配"} / 助理 {client.assignedAssistantName ?? "未分配"} / 销售 {client.assignedSaleName ?? "未分配"}
       </Typography.Text>

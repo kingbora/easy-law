@@ -26,14 +26,12 @@ import {
   TeamOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { USER_DEPARTMENTS } from '@easy-law/shared-types';
-import type { CaseStatus, UserDepartment, UserRole } from '@easy-law/shared-types';
+import { TRIAL_STAGE_LABEL_MAP, USER_DEPARTMENTS } from '@easy-law/shared-types';
+import type { CaseStatus, TrialStage, UserDepartment, UserRole } from '@easy-law/shared-types';
 
 import { fetchCalendarEvents, type CalendarEventRecord } from '@/lib/calendar-events-api';
 import {
   fetchCases,
-  type CaseListQuery,
-  type CaseRecord
 } from '@/lib/cases-api';
 import {
   fetchUsers,
@@ -48,8 +46,10 @@ import {
   CASE_TYPE_LABEL_MAP,
   DEPARTMENT_LABEL_MAP,
   ROLE_COLOR_MAP,
-  ROLE_LABEL_MAP
-} from '@/utils/constants';
+  ROLE_LABEL_MAP,
+  type CaseListQuery,
+  type CaseRecord
+} from '@easy-law/shared-types';
 
 import styles from './page.module.scss';
 
@@ -95,7 +95,7 @@ interface EventSummary {
   tagColor: string;
   description?: string | null;
   caseNumber?: string | null;
-  trialStage?: string | null;
+  trialStage?: TrialStage | null;
 }
 
 interface FinancialReceiptSummary {
@@ -661,7 +661,11 @@ function EventList({ title, data }: { title: string; data: EventSummary[] }) {
               <Space direction="vertical" size={4} className={styles.eventListContent}>
                 <Space size={12}>
                   <Tag color={item.tagColor} className={styles.eventTag}>{item.title}</Tag>
-                  <Text type="secondary">{item.trialStage ?? ''}</Text>
+                  {
+                    item.trialStage ?
+                      <Text type="secondary">{TRIAL_STAGE_LABEL_MAP[item.trialStage]}</Text>
+                    : null
+                  }
                 </Space>
                 <Text strong>{item.date}{item.time ? ` ${item.time}` : ''}</Text>
                 {item.caseNumber ? <Text type="secondary">案号：{item.caseNumber}</Text> : null}

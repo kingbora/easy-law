@@ -6,8 +6,8 @@ import {
 	useWorkInjuryCaseOperationsStore,
 	type CaseStatusUpdatePayload
 } from './useCaseOperationsStore';
-import { type CaseStatus } from '@/lib/cases-api';
-import { CASE_STATUS_LABEL_MAP } from '@/utils/constants';
+import { type CaseStatus } from '@easy-law/shared-types';
+import { CASE_STATUS_LABEL_MAP } from '@easy-law/shared-types';
 export type UpdateStatusFormValues = CaseStatusUpdatePayload;
 
 const CASE_STATUS_OPTIONS: CaseStatus[] = ['open', 'closed', 'void'];

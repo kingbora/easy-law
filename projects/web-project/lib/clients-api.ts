@@ -1,6 +1,5 @@
 import { apiFetch } from './api-client';
-import type { CaseLevel, CaseStatus, CaseType } from './cases-api';
-import type { UserDepartment } from './users-api';
+import type { CaseLevel, CaseStatus, CaseType, UserDepartment } from '@easy-law/shared-types';
 
 export interface ClientListQuery {
   page?: number;

@@ -3,12 +3,12 @@ import dayjs from 'dayjs';
 import { createAppStore } from './createStore';
 import {
   fetchUsers,
-  type UserDepartment,
   type UserResponse,
-  type UserRole,
+  
   type UserSupervisorInfo
 } from '@/lib/users-api';
 import { ApiError } from '@/lib/api-client';
+import type { UserRole, UserDepartment } from '@easy-law/shared-types';
 
 export interface TeamMember {
   id: string;

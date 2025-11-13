@@ -1,43 +1,44 @@
-import type {
-  AssignableStaffMember as SharedAssignableStaffMember,
-  AssignableStaffResponse as SharedAssignableStaffResponse,
-  CaseCategory as SharedCaseCategory,
-  CaseChangeDetail as SharedCaseChangeDetail,
-  CaseChangeLog as SharedCaseChangeLog,
-  CaseCollectionInput as SharedCaseCollectionInput,
-  CaseCollectionRecord as SharedCaseCollectionRecord,
-  CaseHearingInput as SharedCaseHearingInput,
-  CaseHearingRecord as SharedCaseHearingRecord,
-  CaseParticipant as SharedCaseParticipant,
-  CaseParticipantEntity as SharedCaseParticipantEntity,
-  CaseParticipantInput as SharedCaseParticipantInput,
-  CaseParticipantsInput as SharedCaseParticipantsInput,
-  CasePayload as SharedCasePayload,
-  CaseRecord as SharedCaseRecord,
-  CaseStatus as SharedCaseStatus,
-  CaseTableColumnKey as SharedCaseTableColumnKey,
-  CaseTablePreference as SharedCaseTablePreference,
-  CaseTimeNodeInput as SharedCaseTimeNodeInput,
-  CaseTimeNodeRecord as SharedCaseTimeNodeRecord,
-  CaseTimeNodeType as SharedCaseTimeNodeType,
-  CaseTimelineInput as SharedCaseTimelineInput,
-  CaseTimelineRecord as SharedCaseTimelineRecord,
-  CaseUpdateConflictDetails as SharedCaseUpdateConflictDetails,
-  CaseUpdateConflictField as SharedCaseUpdateConflictField,
-  CaseUpdateConflictType as SharedCaseUpdateConflictType,
-  CaseUpdateMeta as SharedCaseUpdateMeta,
-  CaseUpdateRequest as SharedCaseUpdateRequest,
-  CaseLevel as SharedCaseLevel,
-  CaseType as SharedCaseType,
-  ContractFormType as SharedContractFormType,
-  ContractQuoteType as SharedContractQuoteType,
-  LitigationFeeType as SharedLitigationFeeType,
-  ListCasesOptions as SharedListCasesOptions,
-  PaginationMeta as SharedPaginationMeta,
-  TrialStage as SharedTrialStage,
-  TravelFeeType as SharedTravelFeeType,
-  UserDepartment as SharedUserDepartment,
-  UserRole as SharedUserRole
+import {
+  type AssignableStaffMember as SharedAssignableStaffMember,
+  type AssignableStaffResponse as SharedAssignableStaffResponse,
+  type CaseCategory as SharedCaseCategory,
+  type CaseChangeDetail as SharedCaseChangeDetail,
+  type CaseChangeLog as SharedCaseChangeLog,
+  type CaseCollectionInput as SharedCaseCollectionInput,
+  type CaseCollectionRecord as SharedCaseCollectionRecord,
+  type CaseHearingInput as SharedCaseHearingInput,
+  type CaseHearingRecord as SharedCaseHearingRecord,
+  type CaseParticipant as SharedCaseParticipant,
+  type CaseParticipantEntity as SharedCaseParticipantEntity,
+  type CaseParticipantInput as SharedCaseParticipantInput,
+  type CaseParticipantsInput as SharedCaseParticipantsInput,
+  type CasePayload as SharedCasePayload,
+  type CaseRecord as SharedCaseRecord,
+  type CaseStatus as SharedCaseStatus,
+  type CaseTableColumnKey as SharedCaseTableColumnKey,
+  type CaseTablePreference as SharedCaseTablePreference,
+  type CaseTimeNodeInput as SharedCaseTimeNodeInput,
+  type CaseTimeNodeRecord as SharedCaseTimeNodeRecord,
+  type CaseTimeNodeType as SharedCaseTimeNodeType,
+  type CaseTimelineInput as SharedCaseTimelineInput,
+  type CaseTimelineRecord as SharedCaseTimelineRecord,
+  type CaseUpdateConflictDetails as SharedCaseUpdateConflictDetails,
+  type CaseUpdateConflictField as SharedCaseUpdateConflictField,
+  type CaseUpdateConflictType as SharedCaseUpdateConflictType,
+  type CaseUpdateMeta as SharedCaseUpdateMeta,
+  type CaseUpdateRequest as SharedCaseUpdateRequest,
+  type CaseLevel as SharedCaseLevel,
+  type CaseType as SharedCaseType,
+  type ContractFormType as SharedContractFormType,
+  type ContractQuoteType as SharedContractQuoteType,
+  type LitigationFeeType as SharedLitigationFeeType,
+  type ListCasesOptions as SharedListCasesOptions,
+  type PaginationMeta as SharedPaginationMeta,
+  type TrialStage as SharedTrialStage,
+  type TravelFeeType as SharedTravelFeeType,
+  type UserDepartment as SharedUserDepartment,
+  type UserRole as SharedUserRole,
+  TRIAL_STAGE_LABEL_MAP
 } from '@easy-law/shared-types';
 import { and, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -83,7 +84,7 @@ type CaseAction = 'list' | 'create' | 'update' | 'delete';
 const CASE_PERMISSIONS: Record<string, Set<CaseAction>> = {
   super_admin: new Set(['list', 'create', 'update', 'delete']),
   admin: new Set(['list', 'create', 'update']),
-  administration: new Set(['list', 'update']),
+  administration: new Set(['list', 'create', 'update']),
   lawyer: new Set(['list', 'create', 'update', 'delete']),
   assistant: new Set(['list', 'create', 'update']),
   sale: new Set(['list', 'create', 'update'])
@@ -649,10 +650,10 @@ function combineOr(conditions: SQL<unknown>[]): SQL<unknown> | undefined {
 }
 
 type CaseAccessProjection = Pick<
-  CaseDTO,
-  'id' | 'department' | 'assignedSaleId' | 'assignedLawyerId' | 'assignedAssistantId'
+  typeof cases.$inferSelect,
+  'id' | 'department' | 'assignedSaleId' | 'assignedLawyerId' | 'assignedAssistantId' | 'creatorId'
 > & {
-  hearings?: Array<Pick<CaseHearingDTO, 'trialLawyerId'>>;
+  hearings?: Array<Pick<typeof caseHearings.$inferSelect, 'trialLawyerId'>>;
 };
 
 interface CaseAccessContext {
@@ -661,6 +662,7 @@ interface CaseAccessContext {
   assignedSaleIds: Set<string>;
   assignedLawyerIds: Set<string>;
   assignedAssistantIds: Set<string>;
+  creatorIds: Set<string>;
   hearingTrialLawyerIds: Set<string>;
   hearingCaseIds: Set<string>;
 }
@@ -673,6 +675,7 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
       assignedSaleIds: new Set(),
       assignedLawyerIds: new Set(),
       assignedAssistantIds: new Set(),
+      creatorIds: new Set(),
       hearingTrialLawyerIds: new Set(),
       hearingCaseIds: new Set()
     } satisfies CaseAccessContext;
@@ -684,44 +687,23 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
     assignedSaleIds: new Set([user.id]),
     assignedLawyerIds: new Set([user.id]),
     assignedAssistantIds: new Set([user.id]),
+    creatorIds: new Set([user.id]),
     hearingTrialLawyerIds: new Set([user.id]),
     hearingCaseIds: new Set()
   };
 
-  if ((user.role === 'admin' || user.role === 'administration') && user.department) {
+  if (user.role === 'admin' && user.department) {
     context.departments.add(user.department as (typeof departmentEnum.enumValues)[number]);
   }
 
-  if (user.role === 'lawyer') {
-    const assistants = await db.query.users.findMany({
-      columns: {
-        id: true,
-        role: true
-      },
-      where: eq(users.supervisorId, user.id)
-    });
-
-    assistants
-      .filter((member) => member.role === 'assistant')
-      .forEach((assistant) => {
-        context.assignedAssistantIds.add(assistant.id);
-        context.assignedSaleIds.add(assistant.id);
-      });
-  }
-
-  if (user.role === 'assistant' && user.supervisorId) {
-    const supervisor = await db.query.users.findFirst({
-      columns: {
-        id: true,
-        role: true
-      },
-      where: eq(users.id, user.supervisorId)
-    });
-
-    if (supervisor?.role === 'lawyer') {
-      context.assignedLawyerIds.add(supervisor.id);
-      context.hearingTrialLawyerIds.add(supervisor.id);
-      context.assignedSaleIds.add(supervisor.id);
+  if (user.role === 'administration') {
+    const supervisorId = user.supervisorId ?? (await fetchSupervisorIdForUser(user.id));
+    if (supervisorId) {
+      context.assignedSaleIds.add(supervisorId);
+      context.assignedLawyerIds.add(supervisorId);
+      context.assignedAssistantIds.add(supervisorId);
+      context.creatorIds.add(supervisorId);
+      context.hearingTrialLawyerIds.add(supervisorId);
     }
   }
 
@@ -750,7 +732,8 @@ function buildColumnCondition(
     | typeof cases.id
     | typeof cases.assignedSaleId
     | typeof cases.assignedLawyerId
-    | typeof cases.assignedAssistantId,
+    | typeof cases.assignedAssistantId
+    | typeof cases.creatorId,
   ids: Set<string>
 ): SQL<unknown> | undefined {
   const values = Array.from(ids).filter((value) => Boolean(value && value.trim().length > 0));
@@ -789,6 +772,11 @@ function buildAccessWhere(context: CaseAccessContext): SQL<unknown> | undefined 
     orConditions.push(assistantCondition);
   }
 
+  const creatorCondition = buildColumnCondition(cases.creatorId, context.creatorIds);
+  if (creatorCondition) {
+    orConditions.push(creatorCondition);
+  }
+
   const hearingCaseCondition = buildColumnCondition(cases.id, context.hearingCaseIds);
   if (hearingCaseCondition) {
     orConditions.push(hearingCaseCondition);
@@ -819,6 +807,10 @@ function canAccessCase(context: CaseAccessContext, record: CaseAccessProjection)
   }
 
   if (record.assignedAssistantId && context.assignedAssistantIds.has(record.assignedAssistantId)) {
+    return true;
+  }
+
+  if (record.creatorId && context.creatorIds.has(record.creatorId)) {
     return true;
   }
 
@@ -978,12 +970,6 @@ function normalizeTextInput(value: string | null | undefined): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
-
-const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
-  first_instance: '一审',
-  second_instance: '二审',
-  retrial: '再审'
-};
 
 const CASE_TIME_NODE_DEFINITIONS: ReadonlyArray<{ type: CaseTimeNodeType; label: string }> = [
   { type: 'apply_employment_confirmation', label: '申请确认劳动关系' },
@@ -2458,7 +2444,8 @@ export async function getCaseClientById(id: string, user: SessionUser): Promise<
       department: true,
       assignedSaleId: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -2505,7 +2492,8 @@ export async function updateCaseClient(
       department: true,
       assignedSaleId: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -2742,8 +2730,32 @@ export async function createCase(input: CaseInput, user: SessionUser) {
       caseValues.caseCategory = 'insurance';
     }
 
-    if (!caseValues.assignedSaleId) {
+    if (!caseValues.assignedSaleId && user.role === 'sale') {
       caseValues.assignedSaleId = user.id;
+    }
+
+    if (!caseValues.assignedLawyerId && user.role === 'lawyer') {
+      caseValues.assignedLawyerId = user.id;
+    }
+
+    if (user.role === 'assistant') {
+      if (!caseValues.assignedAssistantId) {
+        caseValues.assignedAssistantId = user.id;
+      }
+
+      if (!caseValues.assignedLawyerId && user.supervisorId) {
+        const supervisor = await tx.query.users.findFirst({
+          where: eq(users.id, user.supervisorId),
+          columns: {
+            id: true,
+            role: true
+          }
+        });
+
+        if (supervisor && supervisor.role === 'lawyer') {
+          caseValues.assignedLawyerId = supervisor.id;
+        }
+      }
     }
 
     const [created] = await tx.insert(cases).values(caseValues).returning();
@@ -2859,7 +2871,8 @@ export async function deleteCase(id: string, user: SessionUser) {
       assignedSaleId: true,
       department: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -2917,7 +2930,8 @@ export async function createCaseCollection(
       department: true,
       assignedSaleId: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -3021,7 +3035,8 @@ export async function updateCaseTimeNodes(
       department: true,
       assignedSaleId: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -3137,7 +3152,8 @@ export async function getCaseHearings(
       assignedSaleId: true,
       department: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -3201,7 +3217,8 @@ export async function getCaseChangeLogs(
       assignedSaleId: true,
       department: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -3296,6 +3313,8 @@ export async function getAssignableStaff(
   });
 
   const activeMembers = members.filter((member) => !member.banned);
+  const currentMember = activeMembers.find((member) => member.id === user.id) ?? null;
+  const userSupervisorId = currentMember?.supervisorId ?? user.supervisorId ?? null;
 
   const toDTO = (member: typeof members[number]): AssignableStaffMemberDTO => ({
     id: member.id,
@@ -3303,6 +3322,17 @@ export async function getAssignableStaff(
     role: normalizeUserRoleValue(member.role),
     department: normalizeUserDepartmentValue(member.department)
   });
+
+  const filterBySupervisorGroup = (
+    list: typeof members,
+    supervisorId: string | null | undefined
+  ) => {
+    if (!supervisorId) {
+      return list;
+    }
+    const filtered = list.filter((member) => member.supervisorId === supervisorId || member.id === user.id);
+    return filtered.length > 0 ? filtered : list;
+  };
 
   const filterByDepartment = (
     list: typeof members,
@@ -3369,9 +3399,25 @@ export async function getAssignableStaff(
 
   const lawyerCandidates = departmentMembers.filter((member) => member.role === 'lawyer');
   const assistantCandidates = departmentMembers.filter((member) => member.role === 'assistant');
+  const salesCandidates = departmentMembers.filter((member) => member.role === 'sale');
+
+  const visibleLawyers = (() => {
+    if (user.role === 'lawyer') {
+      return filterBySupervisorGroup(lawyerCandidates, userSupervisorId);
+    }
+    return lawyerCandidates;
+  })();
+
+  const visibleSales = (() => {
+    if (user.role === 'sale') {
+      return filterBySupervisorGroup(salesCandidates, userSupervisorId);
+    }
+    return salesCandidates;
+  })();
 
   return {
-    lawyers: sortStaff(lawyerCandidates.map(toDTO)),
-    assistants: sortStaff(assistantCandidates.map(toDTO))
+    lawyers: sortStaff(visibleLawyers.map(toDTO)),
+    assistants: sortStaff(assistantCandidates.map(toDTO)),
+    sales: sortStaff(visibleSales.map(toDTO))
   };
 }

@@ -15,13 +15,10 @@ import {
   type ClientListQuery,
   type UpdateCaseClientPayload
 } from '@/lib/clients-api';
-import type { UserDepartment} from '@/lib/cases-api';
-import { type CaseStatus } from '@/lib/cases-api';
 import { useSessionStore } from '@/lib/stores/session-store';
-import { CASE_STATUS_LABEL_MAP } from '@/utils/constants';
 import { useDashboardHeaderAction } from '../header-context';
 import { ClientDetailModal } from '@/components/clients/ClientDetailModal';
-import { DEPARTMENT_LABEL_MAP } from '@/utils/constants';
+import { type CaseStatus, type UserDepartment, DEPARTMENT_LABEL_MAP, CASE_STATUS_LABEL_MAP } from '@easy-law/shared-types';
 
 type Filters = {
   search?: string;
@@ -260,7 +257,7 @@ export default function MyClientsPage() {
   }, [filters, isSuperAdmin]);
 
   const columns = useMemo<ColumnsType<CaseClientRecord>>(() => {
-    return [
+    return ([
       {
         title: '客户名称',
         dataIndex: 'name',
@@ -327,21 +324,21 @@ export default function MyClientsPage() {
           </Space>
         )
       },
-      {
+      isSuperAdmin ? {
         title: '所属部门',
         dataIndex: 'department',
         key: 'department',
         render: (value: UserDepartment | null) =>
           value ? <Tag color={value === 'work_injury' ? 'geekblue' : 'gold'}>{DEPARTMENT_LABEL_MAP[value]}</Tag> : '未设置'
-      },
+      } : null,
       {
         title: '更新时间',
         dataIndex: 'updatedAt',
         key: 'updatedAt',
         render: (value: string) => dayjs(value).isValid() ? dayjs(value).format('YYYY-MM-DD HH:mm') : '未知'
       }
-    ];
-  }, [handleOpenClientModal]);
+    ] as ColumnsType<CaseClientRecord>).filter(Boolean) as ColumnsType<CaseClientRecord>;
+  }, [handleOpenClientModal, isSuperAdmin]);
 
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>

@@ -8,7 +8,7 @@ import { CameraOutlined, UserOutlined } from '@ant-design/icons';
 import imageCompression from 'browser-image-compression';
 import styles from './ProfileModal.module.scss';
 import type { UserRole } from '@easy-law/shared-types';
-import { ROLE_COLOR_MAP, ROLE_LABEL_MAP } from '@/utils/constants';
+import { ROLE_COLOR_MAP, ROLE_LABEL_MAP } from '@easy-law/shared-types';
 
 const MAX_COMPRESSED_SIZE = 2 * 1024 * 1024; // 2MB
 

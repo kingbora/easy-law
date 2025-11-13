@@ -45,6 +45,12 @@
   gap: 4px;
 }
 
+.fixedBadge {
+  position: absolute !important;
+  top: -6px;
+  right: -6px;
+}
+
 .todoItem {
   display: flex;
   align-items: flex-start;

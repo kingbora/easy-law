@@ -1,5 +1,4 @@
-import type { CaseTimeNodeType } from './cases-api';
-import type { UserDepartment } from './users-api';
+import type { CaseTimeNodeType, UserDepartment } from '@easy-law/shared-types';
 
 export interface CaseTimeNodeDefinition {
   type: CaseTimeNodeType;

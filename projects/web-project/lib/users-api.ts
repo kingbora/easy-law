@@ -1,9 +1,6 @@
 import { ApiError } from './api-client';
 import { authClient } from './auth-client';
 import type { UserDepartment, UserRole } from '@easy-law/shared-types';
-
-export type { UserDepartment, UserRole } from '@easy-law/shared-types';
-
 export interface UserSupervisorInfo {
   id: string;
   name: string | null;

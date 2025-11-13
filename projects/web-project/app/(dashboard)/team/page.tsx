@@ -16,7 +16,6 @@ import {
   createUser,
   deleteUser,
   updateUser,
-  type UserRole
 } from '@/lib/users-api';
 import { useCurrentUser } from '@/lib/stores/session-store';
 import {
@@ -26,7 +25,7 @@ import {
   type TeamFilters,
   type TeamMember
 } from '@/lib/stores/team-store';
-import { ROLE_LABEL_MAP, ROLE_COLOR_MAP, DEPARTMENT_LABEL_MAP, DEPARTMENT_COLOR_MAP } from '@/utils/constants';
+import { type UserRole, ROLE_LABEL_MAP, ROLE_COLOR_MAP, DEPARTMENT_LABEL_MAP, DEPARTMENT_COLOR_MAP } from '@easy-law/shared-types';
 import { useDashboardHeaderAction } from '../header-context';
 import styles from './styles.module.scss';
 

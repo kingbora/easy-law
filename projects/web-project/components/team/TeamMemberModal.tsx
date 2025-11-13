@@ -7,8 +7,8 @@ import { App, Button, Descriptions, Input, Modal, Select, Space, Typography } fr
 import { EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
-import type { UserRole, UserDepartment } from '@/lib/users-api';
-import { DEPARTMENT_LABEL_MAP } from '@/utils/constants';
+import type { UserRole, UserDepartment } from '@easy-law/shared-types';
+import { DEPARTMENT_LABEL_MAP } from '@easy-law/shared-types';
 
 export const DEFAULT_INITIAL_PASSWORD = 'a@000123';
 

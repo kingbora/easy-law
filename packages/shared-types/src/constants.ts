@@ -1,4 +1,4 @@
-import type { CaseLevel, CaseStatus, CaseType, ContractFormType, UserDepartment, UserRole } from '@easy-law/shared-types';
+import type { CaseLevel, CaseStatus, CaseType, ContractFormType, TrialStage, UserDepartment, UserRole } from './types';
 
 export const ROLE_LABEL_MAP: Record<UserRole, string> = {
   super_admin: '超级管理员',
@@ -55,4 +55,10 @@ export const CASE_LEVEL_LABEL_MAP: Record<CaseLevel, string> = {
 export const CONTRACT_FORM_LABELS: Record<ContractFormType, string> = {
   electronic: '电子合同',
   paper: '纸质合同'
+};
+
+export const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
+  first_instance: '一审',
+  second_instance: '二审',
+  retrial: '再审'
 };

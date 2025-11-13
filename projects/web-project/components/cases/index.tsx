@@ -27,7 +27,7 @@ import { useDashboardHeaderAction } from '@/app/(dashboard)/header-context';
 import { ApiError } from '@/lib/api-client';
 import { useSessionStore } from '@/lib/stores/session-store';
 import { useWorkInjuryCaseOperationsStore } from './operations/useCaseOperationsStore';
-import { CASE_LEVEL_LABEL_MAP, CASE_STATUS_COLOR_MAP, CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS, CASE_TYPE_LABEL_MAP, CONTRACT_FORM_LABELS } from '@/utils/constants';
+import { CASE_LEVEL_LABEL_MAP, CASE_STATUS_COLOR_MAP, CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS, CASE_TYPE_LABEL_MAP, CONTRACT_FORM_LABELS } from '@easy-law/shared-types';
 import {
   createCase as createCaseApi,
   createCaseCollection as createCaseCollectionApi,
@@ -36,36 +36,38 @@ import {
   fetchCaseById,
   fetchCases,
   fetchCaseTablePreferences,
-  type CaseHearingRecord,
-  type CaseParticipantInput,
-  type CaseParticipantsInput,
-  type CaseParticipantsGroup,
-  type CaseParticipant,
-  type CasePayload,
-  type CaseRecord,
-  type CaseStatus,
-  type CaseLevel,
-  type CaseTimelineInput,
-  type CaseTimeNodeType,
-  type TrialStage,
-  type CaseType,
-  type CaseCollectionInput,
-  type CaseCategory,
-  type ContractFormType,
-  type ContractQuoteType,
-  type LitigationFeeType,
-  type TravelFeeType,
-  type CaseChangeLog,
-  type CaseTableColumnKey,
-  type CaseUpdateConflictDetails,
-  type CaseUpdateMeta,
   CaseUpdateConflictError,
   updateCase as updateCaseApi,
   updateCaseTablePreferences,
   updateCaseTimeNodes
 } from '@/lib/cases-api';
 import CaseConflictModal from './conflict-modal';
-import type { UserDepartment, UserRole } from '@/lib/users-api';
+import type { 
+  UserDepartment, 
+  UserRole, 
+  CaseHearingRecord,
+  CaseParticipantInput,
+  CaseParticipantsInput,
+  CaseParticipantsGroup,
+  CaseParticipant,
+  CasePayload,
+  CaseRecord,
+  CaseStatus,
+  CaseLevel,
+  CaseTimelineInput,
+  CaseTimeNodeType,
+  TrialStage,
+  CaseType,
+  CaseCollectionInput,
+  CaseCategory,
+  ContractFormType,
+  ContractQuoteType,
+  LitigationFeeType,
+  TravelFeeType,
+  CaseChangeLog,
+  CaseTableColumnKey,
+  CaseUpdateConflictDetails,
+  CaseUpdateMeta, } from '@easy-law/shared-types';
 import FollowUpModal from './operations/FollowUpModal';
 import styles from './styles.module.scss';
 
@@ -76,6 +78,9 @@ const CASE_STATUS_OPTIONS: CaseStatus[] = ['open', 'closed', 'void'];
 const CASE_CREATE_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'super_admin',
   'admin',
+  'administration',
+  'lawyer',
+  'assistant',
   'sale'
 ]);
 
@@ -1466,10 +1471,11 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
           payload: {
             caseType: caseModalCase.caseType,
             caseLevel: caseModalCase.caseLevel,
+            assignedSaleId: values.assignedSaleId ?? null,
             assignedLawyerId: values.assignedLawyerId ?? null,
             assignedAssistantId: values.assignedAssistantId ?? null
           },
-          dirtyFields: ['assignedLawyerId', 'assignedAssistantId'],
+          dirtyFields: ['assignedSaleId', 'assignedLawyerId', 'assignedAssistantId'],
           successMessage: '人员分配已更新'
         });
         return updated ? mapCaseRecordToFormValues(updated) : undefined;

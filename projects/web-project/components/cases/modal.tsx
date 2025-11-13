@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { CASE_STATUS_LABEL_MAP, ROLE_LABEL_MAP } from '@/utils/constants';
+import { TRIAL_STAGE_LABEL_MAP, CASE_STATUS_LABEL_MAP, ROLE_LABEL_MAP } from '@easy-law/shared-types';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   App,
@@ -29,21 +29,22 @@ import {
 import type { TabsProps } from 'antd';
 import type { Rule } from 'antd/es/form';
 import dayjs, { type Dayjs } from 'dayjs';
-import {
-  type CaseCategory,
-  type CaseHearingRecord,
-  type CaseChangeLog,
-  type CaseStatus,
-  type CaseTimelineRecord,
-  type CaseTimeNodeRecord,
-  type CaseTimeNodeType,
-  type ContractFormType,
-  type ContractQuoteType,
-  type LitigationFeeType,
-  type TrialStage,
-  type AssignableStaffResponse,
-  type TravelFeeType
-} from '@/lib/cases-api';
+import type {
+  CaseCategory,
+  CaseHearingRecord,
+  CaseChangeLog,
+  CaseStatus,
+  CaseTimelineRecord,
+  CaseTimeNodeRecord,
+  CaseTimeNodeType,
+  ContractFormType,
+  ContractQuoteType,
+  LitigationFeeType,
+  TrialStage,
+  AssignableStaffResponse,
+  TravelFeeType,
+  UserDepartment, UserRole
+} from '@easy-law/shared-types';
 import {
   CASE_TIME_NODE_LABEL_MAP,
   CASE_TIME_NODE_ORDER_MAP,
@@ -53,7 +54,6 @@ import {
 } from '@/lib/case-time-nodes';
 import styles from './modal.module.scss';
 import { useSessionStore } from '@/lib/stores/session-store';
-import type { UserDepartment, UserRole } from '@/lib/users-api';
 import {
   CASE_DEPARTMENT_CONFIG,
   type BasicInfoFieldKey
@@ -197,12 +197,6 @@ const YES_NO_COOPERATION = [
 const CASE_CLOSED_OPTIONS = ['调解', '判决', '撤诉', '和解'] as const;
 const CASE_VOID_OPTIONS = ['退单', '跑单'] as const;
 
-const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
-  first_instance: '一审',
-  second_instance: '二审',
-  retrial: '再审'
-};
-
 const CASE_STATUS_OPTIONS: CaseStatusValue[] = ['open', 'closed', 'void'];
 
 const CASE_STATUS_COLOR_MAP: Record<CaseStatusValue, string> = {
@@ -281,6 +275,7 @@ type CollectionRecord = {
 export interface AssignStaffFormValues {
   assignedLawyerId?: string | null;
   assignedAssistantId?: string | null;
+  assignedSaleId?: string | null;
 }
 
 export interface CaseStatusFormValues {
@@ -1150,11 +1145,52 @@ export default function WorkInjuryCaseModal({
   const mainFormSaving = Boolean(confirmLoading);
 
   const baseInitialValues = useMemo(() => {
-    if (mode === 'create') {
-      return buildInitialValues(department);
+    const baseValues =
+      mode === 'create' ? buildInitialValues(department) : initialValues ?? buildInitialValues(department);
+
+    if (!sessionUser) {
+      return baseValues;
     }
-    return initialValues ?? buildInitialValues(department);
-  }, [department, mode, initialValues]);
+
+    const nextAdminInfo: NonNullable<WorkInjuryCaseFormValues['adminInfo']> = {
+      ...(baseValues.adminInfo ?? {})
+    };
+    let changed = false;
+
+    if (!nextAdminInfo.assignedSaleId && sessionUser.role === 'sale') {
+      nextAdminInfo.assignedSaleId = sessionUser.id;
+      nextAdminInfo.assignedSaleName = sessionUser.name ?? undefined;
+      changed = true;
+    }
+
+    if (!nextAdminInfo.assignedLawyer && sessionUser.role === 'lawyer') {
+      nextAdminInfo.assignedLawyer = sessionUser.id;
+      nextAdminInfo.assignedLawyerName = sessionUser.name ?? undefined;
+      changed = true;
+    }
+
+    if (sessionUser.role === 'assistant') {
+      if (!nextAdminInfo.assignedAssistant) {
+        nextAdminInfo.assignedAssistant = sessionUser.id;
+        nextAdminInfo.assignedAssistantName = sessionUser.name ?? undefined;
+        changed = true;
+      }
+      if (!nextAdminInfo.assignedLawyer && sessionUser.supervisor?.id) {
+        nextAdminInfo.assignedLawyer = sessionUser.supervisor.id;
+        nextAdminInfo.assignedLawyerName = sessionUser.supervisor.name ?? undefined;
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      return baseValues;
+    }
+
+    return {
+      ...baseValues,
+      adminInfo: nextAdminInfo
+    } satisfies WorkInjuryCaseFormValues;
+  }, [department, mode, initialValues, sessionUser]);
 
   const [cachedDisplayValues, setCachedDisplayValues] = useState<WorkInjuryCaseFormValues>(baseInitialValues);
 
@@ -1198,6 +1234,8 @@ export default function WorkInjuryCaseModal({
   const assignedLawyerName = displayValues.adminInfo?.assignedLawyerName ?? null;
   const assignedAssistantId = displayValues.adminInfo?.assignedAssistant ?? null;
   const assignedAssistantName = displayValues.adminInfo?.assignedAssistantName ?? null;
+  const assignedSaleId = displayValues.adminInfo?.assignedSaleId ?? null;
+  const assignedSaleName = displayValues.adminInfo?.assignedSaleName ?? null;
 
   const lawyerOptions = useMemo(() => {
     const optionMap = new Map<string, { value: string; label: string }>();
@@ -1238,6 +1276,25 @@ export default function WorkInjuryCaseModal({
 
     return Array.from(optionMap.values());
   }, [assignableStaff?.assistants, assignedAssistantId, assignedAssistantName]);
+  const salesOptions = useMemo(() => {
+    const optionMap = new Map<string, { value: string; label: string }>();
+    (assignableStaff?.sales ?? []).forEach(member => {
+      optionMap.set(member.id, {
+        value: member.id,
+        label: member.name ?? '未命名成员'
+      });
+    });
+
+    if (assignedSaleId) {
+      const existingLabel = optionMap.get(assignedSaleId)?.label;
+      optionMap.set(assignedSaleId, {
+        value: assignedSaleId,
+        label: assignedSaleName ?? existingLabel ?? '已分配成员'
+      });
+    }
+
+    return Array.from(optionMap.values());
+  }, [assignableStaff?.sales, assignedSaleId, assignedSaleName]);
   const caseStatusSelectOptions = useMemo(
     () =>
       CASE_STATUS_OPTIONS.map(status => ({
@@ -1280,7 +1337,8 @@ export default function WorkInjuryCaseModal({
       const adminInfo = values.adminInfo ?? {};
       assignmentForm.setFieldsValue({
         assignedLawyerId: adminInfo.assignedLawyer ?? null,
-        assignedAssistantId: adminInfo.assignedAssistant ?? null
+        assignedAssistantId: adminInfo.assignedAssistant ?? null,
+        assignedSaleId: adminInfo.assignedSaleId ?? null
       });
       feeForm.setFieldsValue({
         salesCommission: adminInfo.salesCommission ?? null,
@@ -1647,7 +1705,8 @@ export default function WorkInjuryCaseModal({
     const adminInfo = displayValues.adminInfo ?? {};
     assignmentForm.setFieldsValue({
       assignedLawyerId: adminInfo.assignedLawyer ?? null,
-      assignedAssistantId: adminInfo.assignedAssistant ?? null
+      assignedAssistantId: adminInfo.assignedAssistant ?? null,
+      assignedSaleId: adminInfo.assignedSaleId ?? null
     });
     clearDirty('assignment');
   }, [assignmentForm, clearDirty, displayValues, isEditable]);
@@ -1939,7 +1998,8 @@ export default function WorkInjuryCaseModal({
     try {
       const payload: AssignStaffFormValues = {
         assignedLawyerId: values.assignedLawyerId ?? null,
-        assignedAssistantId: values.assignedAssistantId ?? null
+        assignedAssistantId: values.assignedAssistantId ?? null,
+        assignedSaleId: values.assignedSaleId ?? null
       };
       const updated = await onSaveAssignment(payload);
       if (updated !== undefined) {
@@ -2384,7 +2444,24 @@ export default function WorkInjuryCaseModal({
             onValuesChange={() => markDirty('assignment')}
           >
             <Row gutter={16}>
-              <Col span={12}>
+              <Col span={8}>
+                <Form.Item
+                  label="销售人员"
+                  name="assignedSaleId"
+                  rules={[{ required: true, message: '请选择销售人员' }]}
+                >
+                  <Select
+                    placeholder="请选择销售人员"
+                    options={salesOptions}
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    loading={assignableStaffLoading}
+                    disabled={!canEditAssignments}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
                 <Form.Item
                   label="承办律师"
                   name="assignedLawyerId"
@@ -2401,7 +2478,7 @@ export default function WorkInjuryCaseModal({
                   />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col span={8}>
                 <Form.Item label="律师助理" name="assignedAssistantId">
                   <Select
                     placeholder="请选择律师助理"
@@ -2415,17 +2492,6 @@ export default function WorkInjuryCaseModal({
                 </Form.Item>
               </Col>
             </Row>
-            {onLoadAssignableStaff ? (
-              <Space size="middle" wrap style={{ marginTop: 16 }}>
-                <Button
-                  type="link"
-                  onClick={() => void ensureAssignableStaff(true)}
-                  disabled={assignableStaffLoading}
-                >
-                  刷新可分配成员
-                </Button>
-              </Space>
-            ) : null}
           </Form>
         </Spin>
       ) : (

@@ -1,10 +1,11 @@
+import type { TrialStage } from '@easy-law/shared-types';
 import { apiFetch } from './api-client';
 
 export type CalendarEventType = 'custom' | 'hearing';
 
 export interface CalendarEventMetadata {
   caseNumber?: string | null;
-  trialStage?: string | null;
+  trialStage?: TrialStage | null;
   hearingId?: string | null;
   hearingTime?: string | null;
 }

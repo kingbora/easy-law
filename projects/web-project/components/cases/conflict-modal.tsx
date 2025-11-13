@@ -6,7 +6,7 @@ import type {
   CaseUpdateConflictDetails,
   CaseUpdateConflictField,
   CaseUpdateConflictType
-} from '@/lib/cases-api';
+} from '@easy-law/shared-types';
 
 interface ConflictRow {
   key: string;
