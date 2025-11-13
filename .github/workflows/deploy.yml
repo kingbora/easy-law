@@ -45,6 +45,13 @@ jobs:
     - name: Run Database Migrations
       run: pnpm db:migrate
 
+    - name: Run seed super admin user
+      run: |
+        export SUPER_ROLE_EMAIL="${{ secrets.SUPER_ROLE_EMAIL }}"
+        export SUPER_ROLE_PASSWORD="${{ secrets.SUPER_ROLE_PASSWORD }}"
+        export SUPER_ROLE_NICKNAME="${{ secrets.SUPER_ROLE_NICKNAME }}"
+        pnpm db:seed
+
     - name: Create build directory
       run: |
         mkdir -p deployment
