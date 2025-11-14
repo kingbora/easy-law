@@ -1,0 +1,13 @@
+{
+  "name": "@easy-law/shared-types",
+  "version": "0.0.1",
+  "private": true,
+  "files": [
+    "src"
+  ],
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "better-auth": "1.3.7"
+  }
+}

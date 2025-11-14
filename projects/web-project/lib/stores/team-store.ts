@@ -3,12 +3,12 @@ import dayjs from 'dayjs';
 import { createAppStore } from './createStore';
 import {
   fetchUsers,
-  type UserDepartment,
   type UserResponse,
-  type UserRole,
+  
   type UserSupervisorInfo
 } from '@/lib/users-api';
 import { ApiError } from '@/lib/api-client';
+import type { UserRole, UserDepartment } from '@easy-law/shared-types';
 
 export interface TeamMember {
   id: string;
@@ -65,7 +65,7 @@ export const DEFAULT_TEAM_PAGINATION: TeamPaginationState = {
   showQuickJumper: true,
   showSizeChanger: true,
   align: 'end',
-  total: 0
+  total: 0,
 };
 
 export function mapUserToTeamMember(user: UserResponse, fallbackPassword?: string): TeamMember {

@@ -5,11 +5,15 @@ import {
   createCaseCollection,
   deleteCase,
   getAssignableStaff,
+  getCaseTablePreferences,
   getCaseById,
   getCaseHearings,
   getCaseChangeLogs,
   listCases,
-  updateCase
+  CaseUpdateConflictError,
+  updateCaseTablePreferences,
+  updateCase,
+  updateCaseTimeNodes
 } from '../services/cases-service';
 import { asyncHandler } from '../utils/async-handler';
 
@@ -57,6 +61,33 @@ router.get(
     const department = typeof query.department === 'string' ? query.department : undefined;
     const result = await getAssignableStaff(session.user, department);
     res.json({ data: result });
+  })
+);
+
+router.get(
+  '/column-preferences',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+    const query = sanitizeQueryParams(req.query);
+    const tableKey = typeof query.tableKey === 'string' ? query.tableKey : undefined;
+
+    const preference = await getCaseTablePreferences(tableKey, session.user);
+
+    res.json({ data: preference });
+  })
+);
+
+router.put(
+  '/column-preferences',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+    const body = req.body ?? {};
+    const tableKey = typeof body.tableKey === 'string' ? body.tableKey : undefined;
+    const visibleColumns = (body as { visibleColumns?: unknown }).visibleColumns;
+
+    const preference = await updateCaseTablePreferences(tableKey, visibleColumns, session.user);
+
+    res.json({ data: preference });
   })
 );
 
@@ -137,7 +168,38 @@ router.put(
   asyncHandler(async (req, res) => {
     const session = req.sessionContext!;
 
-    const updated = await updateCase(req.params.id, req.body, session.user);
+    try {
+      const updated = await updateCase(req.params.id, req.body, session.user);
+
+      if (!updated) {
+        res.status(404).json({ message: 'Case not found' });
+        return;
+      }
+
+      res.json({ data: updated });
+    } catch (error) {
+      if (error instanceof CaseUpdateConflictError) {
+        res.status(error.status).json({ message: error.message, details: error.details });
+        return;
+      }
+
+      throw error;
+    }
+  })
+);
+
+router.put(
+  '/:id/time-nodes',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+    const payload = Array.isArray(req.body) ? req.body : req.body?.timeNodes;
+
+    if (!Array.isArray(payload) || payload.length === 0) {
+      res.status(400).json({ message: '请提供要更新的时间节点' });
+      return;
+    }
+
+    const updated = await updateCaseTimeNodes(req.params.id, payload, session.user);
 
     if (!updated) {
       res.status(404).json({ message: 'Case not found' });

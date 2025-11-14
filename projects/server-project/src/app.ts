@@ -7,7 +7,10 @@ import { auth } from './auth';
 import { AUTH_BASE_PATH } from './constants';
 import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
 import { requireSession } from './middlewares/session';
+import calendarEventsRouter from './routes/calendar-events';
 import casesRouter from './routes/cases';
+import clientsRouter from './routes/clients';
+import profileRouter from './routes/profile';
 
 const app = express();
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
@@ -28,6 +31,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/restful/api/cases', requireSession, casesRouter);
+app.use('/restful/api/clients', requireSession, clientsRouter);
+app.use('/restful/api/calendar-events', requireSession, calendarEventsRouter);
+app.use('/restful/api/profile', requireSession, profileRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });

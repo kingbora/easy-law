@@ -1,7 +1,7 @@
 'use client';
 
 import { MailOutlined } from '@ant-design/icons';
-import { Alert, Button, Form, Input, Typography, message } from 'antd';
+import { Alert, App, Button, Form, Input, Typography } from 'antd';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useState } from 'react';
@@ -16,9 +16,10 @@ type ForgotFormValues = {
 };
 
 const ForgotPasswordPageContent = () => {
+  const { message } = App.useApp();
   const searchParams = useSearchParams();
   const redirectParam = useMemo(() => {
-    const redirect = searchParams.get('redirect');
+    const redirect = searchParams?.get('redirect');
     return redirect && redirect.startsWith('/') ? redirect : undefined;
   }, [searchParams]);
   const [isSubmitting, setIsSubmitting] = useState(false);

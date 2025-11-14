@@ -5,6 +5,19 @@ body {
   color: #0f2d4b;
 }
 
+html,body {
+  scrollbar-width: thin;
+  scrollbar-color: #eaeaea transparent;
+}
+
 * {
   box-sizing: border-box;
+}
+
+.scrollable-modal .ant-modal-body {
+  max-height: calc(-300px + 100vh);
+  padding: 0px;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: #eaeaea transparent;
 }

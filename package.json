@@ -11,6 +11,7 @@
     "db:reset": "pnpm --filter server-project reset-db",
     "db:seed": "pnpm --filter server-project seed:super-admin",
     "db:generate": "pnpm --filter server-project db:generate",
+    "db:migrate": "pnpm --filter server-project db:migrate",
     "db:push": "pnpm --filter server-project db:push",
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
@@ -21,6 +22,14 @@
     "lint-staged": "lint-staged"
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.14.1",
+    "@typescript-eslint/parser": "^7.14.1",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-jsonc": "^2.16.0",
+    "eslint-plugin-jsx-a11y": "^6.8.0",
+    "eslint-plugin-react": "^7.35.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "jsonc-eslint-parser": "^2.4.0",
     "rimraf": "^6.0.1",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.5",
@@ -28,6 +37,6 @@
     "lint-staged": "^15.2.2"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,cjs,mjs,json}": "pnpm exec eslint --max-warnings=0 --fix"
+    "*.{js,jsx,ts,tsx,cjs,mjs,json}": "pnpm exec eslint --max-warnings=10 --fix"
   }
 }

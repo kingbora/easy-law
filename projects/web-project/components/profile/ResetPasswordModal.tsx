@@ -47,9 +47,10 @@ export default function ResetPasswordModal({ open, onCancel, onSubmit, confirmLo
       cancelText="取消"
       onCancel={onCancel}
       onOk={handleOk}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={false}
       confirmLoading={confirmLoading}
+      className="scrollable-modal"
     >
       <Form form={form} layout="vertical">
         <Form.Item

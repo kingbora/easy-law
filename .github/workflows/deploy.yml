@@ -42,6 +42,16 @@ jobs:
     - name: Build projects
       run: pnpm build
 
+    - name: Run Database Migrations
+      run: pnpm db:migrate
+
+    - name: Run seed super admin user
+      run: |
+        export SUPER_ROLE_EMAIL="${{ secrets.SUPER_ROLE_EMAIL }}"
+        export SUPER_ROLE_PASSWORD="${{ secrets.SUPER_ROLE_PASSWORD }}"
+        export SUPER_ROLE_NICKNAME="${{ secrets.SUPER_ROLE_NICKNAME }}"
+        pnpm db:seed
+
     - name: Create build directory
       run: |
         mkdir -p deployment
@@ -119,31 +129,12 @@ jobs:
         mkdir -p ../publish
         echo "=== 保存镜像 ==="
         docker save lawyer-app:latest -o ../publish/app-image.tar
+        gzip ../publish/app-image.tar
         # 复制其他部署文件
         cp -r ../deployment/nginx ../publish/nginx
         cp -r ../deployment/scripts ../publish/scripts
         echo "=== 构建和测试完成 ==="
-        
-    - name: Upload build and image artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: publish
-        retention-days: 1
-  
-  # 部署到生产环境
-  deploy-production:
-    needs: build-and-images
-    if: github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Download docker artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: build-artifacts
-        path: publish
-        
+
     - name: Copy project to ECS
       uses: appleboy/scp-action@v0.1.3
       with:
@@ -168,6 +159,8 @@ jobs:
 
           # 设置环境变量
           export DATABASE_URL="${{ secrets.DATABASE_URL }}"
+          export QINIU_ACCESS_KEY="${{ secrets.QINIU_ACCESS_KEY }}"
+          export QINIU_SECRET_KEY="${{ secrets.QINIU_SECRET_KEY }}"
           
           echo "=== 复制Nginx配置文件 ==="
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/conf.d
@@ -189,6 +182,13 @@ jobs:
           systemctl status nginx --no-pager -l
           echo "服务状态:"
           docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    
+    - name: Upload build and image artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: publish
+        retention-days: 1
 
   # 健康检查（部署后）
   health-check:
@@ -196,6 +196,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+    - name: Upload build and image artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: publish
+        retention-days: 1
     - name: Check service health
       uses: appleboy/ssh-action@v1.0.3
       with:

@@ -33,7 +33,37 @@
 .headerRight {
   display: flex;
   align-items: center;
+  gap: 16px;
+}
+
+.iconGroup {
+  display: flex;
+  align-items: center;
   gap: 12px;
+}
+
+.iconButton {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: none;
+  background-color: #f6f7f9;
+  color: #1f2937;
+  cursor: pointer;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  padding: 0;
+  outline: none;
+}
+
+.iconButton:hover {
+  background-color: #eef1f6;
+}
+
+.iconButton:focus-visible {
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2);
 }
 
 .content {
@@ -44,10 +74,49 @@
   flex-direction: column;
 }
 
-.avatarButton {
-  cursor: pointer;
-  display: flex;
+.profileTrigger {
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  background: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  outline: none;
+}
+
+
+.profileTrigger:hover {
+  background-color: #eef1f6;
+}
+
+.profileTrigger:focus-visible {
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2);
+}
+
+.profileAvatar {
+  flex: none;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.08);
+}
+
+.profileName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.5;
+  margin-left: 8px;
+}
+
+.profileCaret {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: 4px;
 }
 
 .themeGroupLabel {

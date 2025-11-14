@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-
+import { TRIAL_STAGE_LABEL_MAP, CASE_STATUS_LABEL_MAP, ROLE_LABEL_MAP } from '@easy-law/shared-types';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   App,
@@ -10,6 +10,8 @@ import {
   Descriptions,
   Divider,
   Form,
+  type FormInstance,
+  Checkbox,
   Input,
   InputNumber,
   Modal,
@@ -25,19 +27,37 @@ import {
   Typography,
 } from 'antd';
 import type { TabsProps } from 'antd';
+import type { Rule } from 'antd/es/form';
 import dayjs, { type Dayjs } from 'dayjs';
+import type {
+  CaseCategory,
+  CaseHearingRecord,
+  CaseChangeLog,
+  CaseStatus,
+  CaseTimelineRecord,
+  CaseTimeNodeRecord,
+  CaseTimeNodeType,
+  ContractFormType,
+  ContractQuoteType,
+  LitigationFeeType,
+  TrialStage,
+  AssignableStaffResponse,
+  TravelFeeType,
+  UserDepartment, UserRole
+} from '@easy-law/shared-types';
 import {
-  CASE_STATUS_LABEL_MAP as CASE_STATUS_LABELS,
-  type CaseHearingRecord,
-  type CaseChangeLog,
-  type CaseStatus,
-  type CaseTimelineRecord,
-  type TrialStage,
-  type AssignableStaffResponse
-} from '@/lib/cases-api';
+  CASE_TIME_NODE_LABEL_MAP,
+  CASE_TIME_NODE_ORDER_MAP,
+  getCaseTimeNodeDefinitions,
+  getCaseTimeNodeLabelMap,
+  getCaseTimeNodeOrderMap
+} from '@/lib/case-time-nodes';
 import styles from './modal.module.scss';
 import { useSessionStore } from '@/lib/stores/session-store';
-import type { UserRole } from '@/lib/users-api';
+import {
+  CASE_DEPARTMENT_CONFIG,
+  type BasicInfoFieldKey
+} from './department-config';
 
 const { TextArea } = Input;
 
@@ -46,6 +66,7 @@ type TabKey =
   | 'parties'
   | 'hearing'
   | 'staff'
+  | 'timeNodes'
   | 'followUp'
   | 'changeLog'
   | 'fees';
@@ -59,12 +80,20 @@ const TAB_LABEL_MAP: Record<TabKey, string> = {
   parties: '当事人信息',
   hearing: '庭审信息',
   staff: '相关人员',
+  timeNodes: '时间节点',
   followUp: '跟进备注',
   changeLog: '变更日志',
   fees: '费用明细'
 };
 
+const buildTabLabel = (key: TabKey): ReactNode => {
+  const label = TAB_LABEL_MAP[key];
+  return label;
+};
+
 const isTabKey = (key: string): key is TabKey => key in TAB_LABEL_MAP;
+
+const DEFAULT_VISIBLE_TABS = Object.keys(TAB_LABEL_MAP) as WorkInjuryCaseTabKey[];
 
 const CASE_TYPES = [
   { label: '工伤', value: 'work_injury' },
@@ -77,6 +106,78 @@ const CASE_LEVELS = [
   { label: 'B', value: 'B' },
   { label: 'C', value: 'C' }
 ] as const;
+
+const CASE_CATEGORY_LABEL_MAP: Record<CaseCategory, string> = {
+  work_injury: '工伤案件',
+  insurance: '保险案件'
+};
+
+const CASE_CATEGORY_OPTIONS: Array<{ label: string; value: CaseCategory }> = [
+  { label: CASE_CATEGORY_LABEL_MAP.work_injury, value: 'work_injury' },
+  { label: CASE_CATEGORY_LABEL_MAP.insurance, value: 'insurance' }
+];
+
+const INSURANCE_TYPE_OPTIONS = [
+  '医疗险',
+  '重疾险',
+  '意外险',
+  '雇主责任险',
+  '学平险',
+  '团体险',
+  '骑手险',
+  '财产险',
+  '其他'
+].map(label => ({ label, value: label }));
+
+const INSURANCE_MISREPRESENTATION_OPTIONS = [
+  '既往症',
+  '未达到合同约定',
+  '先天性疾病',
+  '等待期出险',
+  '其他'
+].map(label => ({ label, value: label }));
+
+const CONTRACT_QUOTE_TYPE_LABEL_MAP: Record<ContractQuoteType, string> = {
+  fixed: '固定报价',
+  risk: '风险代理',
+  other: '其他'
+};
+const CONTRACT_QUOTE_TYPE_OPTIONS: Array<{ label: string; value: ContractQuoteType }> = [
+  { label: CONTRACT_QUOTE_TYPE_LABEL_MAP.fixed, value: 'fixed' },
+  { label: CONTRACT_QUOTE_TYPE_LABEL_MAP.risk, value: 'risk' },
+  { label: CONTRACT_QUOTE_TYPE_LABEL_MAP.other, value: 'other' }
+];
+
+const LITIGATION_FEE_TYPE_LABEL_MAP: Record<LitigationFeeType, string> = {
+  advance: '律师垫付',
+  no_advance: '无需垫付',
+  reimbursed: '客户报销'
+};
+const LITIGATION_FEE_TYPE_OPTIONS: Array<{ label: string; value: LitigationFeeType }> = [
+  { label: LITIGATION_FEE_TYPE_LABEL_MAP.advance, value: 'advance' },
+  { label: LITIGATION_FEE_TYPE_LABEL_MAP.no_advance, value: 'no_advance' },
+  { label: LITIGATION_FEE_TYPE_LABEL_MAP.reimbursed, value: 'reimbursed' }
+];
+
+const TRAVEL_FEE_TYPE_LABEL_MAP: Record<TravelFeeType, string> = {
+  lawyer: '律师承担',
+  reimbursed: '客户报销',
+  no_advance: '无需垫付'
+};
+const TRAVEL_FEE_TYPE_OPTIONS: Array<{ label: string; value: TravelFeeType }> = [
+  { label: TRAVEL_FEE_TYPE_LABEL_MAP.lawyer, value: 'lawyer' },
+  { label: TRAVEL_FEE_TYPE_LABEL_MAP.reimbursed, value: 'reimbursed' },
+  { label: TRAVEL_FEE_TYPE_LABEL_MAP.no_advance, value: 'no_advance' }
+];
+
+const CONTRACT_FORM_LABEL_MAP: Record<ContractFormType, string> = {
+  electronic: '电子合同',
+  paper: '纸质合同'
+};
+const CONTRACT_FORM_OPTIONS: Array<{ label: string; value: ContractFormType }> = [
+  { label: CONTRACT_FORM_LABEL_MAP.electronic, value: 'electronic' },
+  { label: CONTRACT_FORM_LABEL_MAP.paper, value: 'paper' }
+];
 
 const ENTITY_TYPES = [
   { label: '个人', value: 'personal' },
@@ -95,12 +196,6 @@ const YES_NO_COOPERATION = [
 
 const CASE_CLOSED_OPTIONS = ['调解', '判决', '撤诉', '和解'] as const;
 const CASE_VOID_OPTIONS = ['退单', '跑单'] as const;
-
-const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
-  first_instance: '一审',
-  second_instance: '二审',
-  retrial: '再审'
-};
 
 const CASE_STATUS_OPTIONS: CaseStatusValue[] = ['open', 'closed', 'void'];
 
@@ -180,6 +275,7 @@ type CollectionRecord = {
 export interface AssignStaffFormValues {
   assignedLawyerId?: string | null;
   assignedAssistantId?: string | null;
+  assignedSaleId?: string | null;
 }
 
 export interface CaseStatusFormValues {
@@ -215,20 +311,13 @@ export interface FeeFormValues {
   handlingFee?: string | null;
 }
 
+type TimeNodeFormValues = Partial<Record<CaseTimeNodeType, Dayjs | null>>;
+
 const CASE_COLLECTION_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'super_admin',
   'admin',
   'administration'
 ]);
-
-const ROLE_LABEL_MAP: Record<UserRole, string> = {
-  super_admin: '超级管理员',
-  admin: '管理员',
-  administration: '行政',
-  lawyer: '律师',
-  assistant: '律助',
-  sale: '销售'
-};
 
 const CASE_TYPE_LABEL_MAP = CASE_TYPES.reduce<Record<CaseTypeValue, string>>((acc, item) => {
   acc[item.value] = item.label;
@@ -281,6 +370,30 @@ const formatNumber = (value?: number | null): string => {
   });
 };
 
+const formatNumberWithSuffix = (value?: number | null, suffix = ''): string => {
+  if (value === undefined || value === null) {
+    return '—';
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return '—';
+  }
+  return `${numeric.toLocaleString('zh-CN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  })}${suffix}`;
+};
+
+const formatStringList = (items?: string[] | null): string => {
+  if (!items || items.length === 0) {
+    return '—';
+  }
+  const filtered = items
+    .map(item => (typeof item === 'string' ? item.trim() : ''))
+    .filter(item => item.length > 0);
+  return filtered.length ? filtered.join('、') : '—';
+};
+
 const formatDate = (value?: Dayjs | string | null, formatPattern = 'YYYY-MM-DD'): string => {
   if (!value) {
     return '—';
@@ -299,6 +412,7 @@ const formatCurrency = (value?: number | null): string => {
 
 export interface WorkInjuryCaseFormValues {
   basicInfo?: {
+    caseCategory?: CaseCategory;
     caseType?: CaseTypeValue;
     caseLevel?: CaseLevelValue;
     provinceCity?: string;
@@ -308,6 +422,8 @@ export interface WorkInjuryCaseFormValues {
     dataSource?: string;
     hasContract?: boolean;
     hasSocialSecurity?: boolean;
+    contractDate?: Dayjs;
+    clueDate?: Dayjs;
     entryDate?: Dayjs;
     injuryLocation?: string;
     injurySeverity?: string;
@@ -320,6 +436,18 @@ export interface WorkInjuryCaseFormValues {
     customerCooperative?: boolean;
     witnessCooperative?: boolean;
     remark?: string;
+    contractQuoteType?: ContractQuoteType;
+    contractQuoteAmount?: number;
+    contractQuoteUpfront?: number;
+    contractQuoteRatio?: number;
+    contractQuoteOther?: string;
+    estimatedCollection?: number;
+    litigationFeeType?: LitigationFeeType;
+    travelFeeType?: TravelFeeType;
+    contractForm?: ContractFormType;
+    insuranceRiskLevel?: CaseLevelValue;
+    insuranceTypes?: string[];
+    insuranceMisrepresentations?: string[];
   };
   parties?: {
     claimants?: CaseParty[];
@@ -353,9 +481,432 @@ export interface WorkInjuryCaseFormValues {
     handlingFee?: string | null;
   };
   timeline?: CaseTimelineRecord[];
+  timeNodes?: CaseTimeNodeRecord[];
 }
 
+type BasicInfoValues = WorkInjuryCaseFormValues['basicInfo'];
+
+type BasicInfoFieldMeta =
+  | {
+      kind: 'field';
+      label: string;
+      colSpan?: number;
+      requiredMessage?: string;
+      extraRules?: Rule[];
+      labelOverrides?: Partial<Record<UserDepartment, string>>;
+      renderInput: (context: {
+        department: UserDepartment;
+        defaultCaseCategory: CaseCategory;
+        form: FormInstance<WorkInjuryCaseFormValues>;
+      }) => ReactNode;
+      renderDisplay: (info: BasicInfoValues | undefined, defaultCaseCategory: CaseCategory) => ReactNode;
+    }
+  | {
+      kind: 'divider';
+      dashed?: boolean;
+      label?: string;
+    };
+
+const INSURANCE_ONLY_FIELDS: ReadonlySet<BasicInfoFieldKey> = new Set<BasicInfoFieldKey>([
+  'clueDate',
+  'contractDate',
+  'contractForm',
+  'contractQuoteType',
+  'contractQuoteAmount',
+  'contractQuoteUpfront',
+  'contractQuoteRatio',
+  'contractQuoteOther',
+  'estimatedCollection',
+  'litigationFeeType',
+  'travelFeeType',
+  'insuranceTypes',
+  'insuranceMisrepresentations'
+]);
+
+const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
+  caseType: {
+    kind: 'field',
+    label: '案件类型',
+    requiredMessage: '请选择案件类型',
+    renderInput: () => <Select options={[...CASE_TYPES]} placeholder="请选择案件类型" />,
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CASE_TYPE_LABEL_MAP, info?.caseType ?? null)
+  },
+  caseLevel: {
+    kind: 'field',
+    label: '案件级别',
+    requiredMessage: '请选择案件级别',
+    labelOverrides: {
+      insurance: '风险等级'
+    },
+    renderInput: () => <Select options={[...CASE_LEVELS]} placeholder="请选择案件级别" />,
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CASE_LEVEL_LABEL_MAP, info?.caseLevel ?? null)
+  },
+  provinceCity: {
+    kind: 'field',
+    label: '省份/城市',
+    requiredMessage: '请输入案件省份/城市',
+    renderInput: () => <Input placeholder="请输入省份/城市" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.provinceCity)
+  },
+  targetAmount: {
+    kind: 'field',
+    label: '标的额',
+    requiredMessage: '请输入标的额',
+    labelOverrides: {
+      insurance: '案件标的'
+    },
+    renderInput: () => <Input style={{ width: '100%' }} placeholder="请输入标的额" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.targetAmount)
+  },
+  feeStandard: {
+    kind: 'field',
+    label: '收费标准',
+    renderInput: () => <Input placeholder="请输入收费标准" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.feeStandard)
+  },
+  agencyFeeEstimate: {
+    kind: 'field',
+    label: '代理费估值',
+    renderInput: () => <Input style={{ width: '100%' }} placeholder="请输入代理费估值" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.agencyFeeEstimate)
+  },
+  dataSource: {
+    kind: 'field',
+    label: '数据来源',
+    requiredMessage: '请输入数据来源',
+    renderInput: () => <Input placeholder="请输入数据来源" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.dataSource)
+  },
+  entryDate: {
+    kind: 'field',
+    label: '入职时间',
+    renderInput: () => <DatePicker style={{ width: '100%' }} placeholder="请选择入职时间" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatDate(info?.entryDate ?? null)
+  },
+  clueDate: {
+    kind: 'field',
+    label: '线索日期',
+    requiredMessage: '请选择线索日期',
+    renderInput: () => <DatePicker style={{ width: '100%' }} placeholder="请选择线索日期" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatDate(info?.clueDate ?? null)
+  },
+  contractDate: {
+    kind: 'field',
+    label: '合同日期',
+    requiredMessage: '请选择合同日期',
+    renderInput: () => <DatePicker style={{ width: '100%' }} placeholder="请选择合同日期" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatDate(info?.contractDate ?? null)
+  },
+  injuryLocation: {
+    kind: 'field',
+    label: '受伤地点',
+    renderInput: () => <Input placeholder="请输入受伤地点" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.injuryLocation)
+  },
+  injurySeverity: {
+    kind: 'field',
+    label: '受伤程度',
+    renderInput: () => <Input placeholder="请输入受伤程度" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.injurySeverity)
+  },
+  injuryCause: {
+    kind: 'field',
+    label: '受伤原因',
+    renderInput: () => <Input placeholder="请输入受伤原因" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.injuryCause)
+  },
+  workInjuryCertified: {
+    kind: 'field',
+    label: '工伤认定',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.workInjuryCertified ?? null, '有', '无')
+  },
+  appraisalLevel: {
+    kind: 'field',
+    label: '劳动能力等级鉴定/人损等级',
+    renderInput: () => <Input placeholder="请输入鉴定等级或填写无" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.appraisalLevel)
+  },
+  appraisalEstimate: {
+    kind: 'field',
+    label: '劳动能力/人损等级预估',
+    renderInput: () => <Input placeholder="请输入预估等级" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.appraisalEstimate)
+  },
+  monthlySalary: {
+    kind: 'field',
+    label: '当时月薪',
+    renderInput: () => <Input style={{ width: '100%' }} placeholder="请输入当时月薪" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.monthlySalary)
+  },
+  customerCooperative: {
+    kind: 'field',
+    label: '是否配合提交材料',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_COOPERATION]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.customerCooperative ?? null, '是', '否')
+  },
+  hasContract: {
+    kind: 'field',
+    label: '有无合同',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.hasContract ?? null, '有', '无')
+  },
+  hasSocialSecurity: {
+    kind: 'field',
+    label: '有无社保',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.hasSocialSecurity ?? null, '有', '无')
+  },
+  witnessCooperative: {
+    kind: 'field',
+    label: '证人是否配合出庭',
+    renderInput: () => (
+      <Radio.Group options={[...YES_NO_COOPERATION]} optionType="button" buttonStyle="solid" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatBoolean(info?.witnessCooperative ?? null, '是', '否')
+  },
+  caseCategory: {
+    kind: 'field',
+    label: '案件类别',
+    renderInput: () => (
+      <Select options={CASE_CATEGORY_OPTIONS} placeholder="请选择案件类别" disabled />
+    ),
+    renderDisplay: (info, defaultCaseCategory) => {
+      const category = (info?.caseCategory ?? defaultCaseCategory) as CaseCategory;
+      return CASE_CATEGORY_LABEL_MAP[category] ?? '—';
+    }
+  },
+  insuranceRiskLevel: {
+    kind: 'field',
+    label: '风险等级',
+    renderInput: () => (
+      <Select options={[...CASE_LEVELS]} placeholder="请选择风险等级" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CASE_LEVEL_LABEL_MAP, info?.insuranceRiskLevel ?? null)
+  },
+  contractForm: {
+    kind: 'field',
+    label: '合同形式',
+    requiredMessage: '请选择合同形式',
+    renderInput: () => (
+      <Select options={CONTRACT_FORM_OPTIONS} placeholder="请选择合同形式" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CONTRACT_FORM_LABEL_MAP, info?.contractForm ?? null)
+  },
+  contractQuoteType: {
+    kind: 'field',
+    label: '收费方式',
+    requiredMessage: '请选择收费方式',
+    renderInput: () => (
+      <Select options={CONTRACT_QUOTE_TYPE_OPTIONS} placeholder="请选择收费方式" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(CONTRACT_QUOTE_TYPE_LABEL_MAP, info?.contractQuoteType ?? null)
+  },
+  contractQuoteAmount: {
+    kind: 'field',
+    label: '收费金额（元）',
+    requiredMessage: '请输入收费金额',
+    renderInput: ({ form }) => {
+      const contractQuoteType = form.getFieldValue(['basicInfo', 'contractQuoteType']);
+      const isFixed = contractQuoteType === 'fixed';
+      if (!isFixed) {
+        return null;
+      }
+      return (
+        <InputNumber
+          style={{ width: '100%' }}
+          min={0}
+          precision={2}
+          placeholder="请输入收费金额"
+        />
+      );
+    },
+    renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.contractQuoteAmount ?? null)
+  },
+  contractQuoteUpfront: {
+    kind: 'field',
+    label: '前期收费（元）',
+    requiredMessage: '请输入前期收费金额',
+    renderInput: ({ form }) => {
+      const contractQuoteType = form.getFieldValue(['basicInfo', 'contractQuoteType']);
+      const isRisk = contractQuoteType === 'risk';
+      if (!isRisk) {
+        return null;
+      }
+      return <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入前期收费金额" />;
+    },
+    renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.contractQuoteUpfront ?? null)
+  },
+  contractQuoteRatio: {
+    kind: 'field',
+    label: '回款比例 (%)',
+    requiredMessage: '请输入回款比例',
+    renderInput: ({ form }) => {
+      const contractQuoteType = form.getFieldValue(['basicInfo', 'contractQuoteType']);
+      const isRisk = contractQuoteType === 'risk';
+      if (!isRisk) {
+        return null;
+      }
+      return <InputNumber
+        style={{ width: '100%' }}
+        min={0}
+        max={100}
+        precision={2}
+        placeholder="请输入回款比例"
+      />;
+    },
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatNumberWithSuffix(info?.contractQuoteRatio ?? null, '%')
+  },
+  contractQuoteOther: {
+    kind: 'field',
+    label: '收费说明',
+    requiredMessage: '请输入收费说明',
+    renderInput: ({ form }) => {
+      const contractQuoteType = form.getFieldValue(['basicInfo', 'contractQuoteType']);
+      const isOther = contractQuoteType === 'other';
+      if (!isOther) {
+        return null;
+      }
+      return <Input placeholder="请输入收费说明" />;
+    },
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.contractQuoteOther)
+  },
+  estimatedCollection: {
+    kind: 'field',
+    label: '预计回款',
+    requiredMessage: '请输入预计回款',
+    renderInput: () => (
+      <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入预计回款" />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.estimatedCollection ?? null)
+  },
+  litigationFeeType: {
+    kind: 'field',
+    label: '诉讼费承担',
+    labelOverrides: {
+      insurance: '诉讼费'
+    },
+    requiredMessage: '请选择诉讼费',
+    renderInput: () => (
+      <Select options={LITIGATION_FEE_TYPE_OPTIONS} placeholder="请选择诉讼费" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(LITIGATION_FEE_TYPE_LABEL_MAP, info?.litigationFeeType ?? null)
+  },
+  travelFeeType: {
+    kind: 'field',
+    label: '差旅费承担',
+    labelOverrides: {
+      insurance: '差旅费'
+    },
+    requiredMessage: '请选择差旅费',
+    renderInput: () => (
+      <Select options={TRAVEL_FEE_TYPE_OPTIONS} placeholder="请选择差旅费" allowClear />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatOptionLabel(TRAVEL_FEE_TYPE_LABEL_MAP, info?.travelFeeType ?? null)
+  },
+  insuranceTypes: {
+    kind: 'field',
+    label: '保险类型',
+    colSpan: 24,
+    requiredMessage: '请选择保险类型',
+    renderInput: () => <Checkbox.Group options={INSURANCE_TYPE_OPTIONS} />,
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatStringList(info?.insuranceTypes ?? null)
+  },
+  insuranceMisrepresentations: {
+    kind: 'field',
+    label: '未如实告知',
+    colSpan: 24,
+    requiredMessage: '请选择未如实告知类型',
+    renderInput: () => <Checkbox.Group options={INSURANCE_MISREPRESENTATION_OPTIONS} />,
+    renderDisplay: (info, _defaultCaseCategory) =>
+      formatStringList(info?.insuranceMisrepresentations ?? null)
+  },
+  existingEvidence: {
+    kind: 'field',
+    label: '已知证据',
+    colSpan: 24,
+    renderInput: () => <TextArea rows={3} placeholder="请描述已掌握的证据" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.existingEvidence)
+  },
+  remark: {
+    kind: 'field',
+    label: '备注',
+    colSpan: 24,
+    renderInput: () => <TextArea rows={3} placeholder="可补充其他情况" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.remark)
+  },
+  insuranceDivider: {
+    kind: 'divider',
+    dashed: true
+  }
+};
+
+interface BasicInfoVisibilityContext {
+  isInsuranceCase: boolean;
+  contractQuoteType?: ContractQuoteType | null;
+}
+
+const shouldRenderBasicInfoField = (
+  fieldKey: BasicInfoFieldKey,
+  context: BasicInfoVisibilityContext
+): boolean => {
+  const { isInsuranceCase, contractQuoteType } = context;
+
+  if (!isInsuranceCase && INSURANCE_ONLY_FIELDS.has(fieldKey)) {
+    return false;
+  }
+
+  if (!isInsuranceCase) {
+    return true;
+  }
+
+  switch (fieldKey) {
+    case 'contractQuoteAmount':
+      return contractQuoteType === 'fixed';
+    case 'contractQuoteUpfront':
+    case 'contractQuoteRatio':
+      return contractQuoteType === 'risk';
+    case 'contractQuoteOther':
+      return contractQuoteType === 'other';
+    default:
+      return true;
+  }
+};
+
+const resolveDescriptionSpan = (colSpan?: number): number => {
+  if (!colSpan || colSpan <= 8) {
+    return 1;
+  }
+  if (colSpan >= 24) {
+    return 3;
+  }
+  return 2;
+};
+
 interface WorkInjuryCaseModalProps {
+  department: UserDepartment;
   open: boolean;
   mode?: 'create' | 'view' | 'update';
   initialValues?: WorkInjuryCaseFormValues;
@@ -374,6 +925,8 @@ interface WorkInjuryCaseModalProps {
     values: WorkInjuryCaseFormValues['parties']
   ) => Promise<WorkInjuryCaseFormValues | void> | WorkInjuryCaseFormValues | void;
   confirmLoading?: boolean;
+  visibleTabs?: WorkInjuryCaseTabKey[];
+  editableTabs?: WorkInjuryCaseTabKey[];
   onSaveAssignment?: (
     values: AssignStaffFormValues
   ) => Promise<WorkInjuryCaseFormValues | void>;
@@ -384,13 +937,16 @@ interface WorkInjuryCaseModalProps {
     values: HearingFormValues
   ) => Promise<WorkInjuryCaseFormValues | void>;
   onAddFollowUp?: (
-    values: { occurredOn: Dayjs; note: string | null }
+    values: { occurredOn: Dayjs; note: string }
   ) => Promise<WorkInjuryCaseFormValues | void>;
   onAddCollection?: (
     values: { amount: number; receivedAt: Dayjs }
   ) => Promise<WorkInjuryCaseFormValues | void>;
   onUpdateFees?: (
     values: FeeFormValues
+  ) => Promise<WorkInjuryCaseFormValues | void>;
+  onSaveTimeNodes?: (
+    values: Array<{ nodeType: CaseTimeNodeType; occurredOn: Dayjs }>
   ) => Promise<WorkInjuryCaseFormValues | void>;
   onLoadAssignableStaff?: () => Promise<AssignableStaffResponse>;
   onLoadChangeLogs?: () => Promise<CaseChangeLog[]>;
@@ -401,19 +957,30 @@ interface WorkInjuryCaseModalProps {
   canAddCollections?: boolean;
   canUpdateFees?: boolean;
   canViewChangeLogs?: boolean;
+  canManageTimeNodes?: boolean;
 }
-const buildInitialValues = (): WorkInjuryCaseFormValues => {
+const buildInitialValues = (department: UserDepartment = 'work_injury'): WorkInjuryCaseFormValues => {
+  const defaultCategory: CaseCategory = department === 'insurance' ? 'insurance' : 'work_injury';
 
-  return {
-    basicInfo: {
+  const basicInfo: NonNullable<WorkInjuryCaseFormValues['basicInfo']> = {
+      caseCategory: defaultCategory,
       caseType: 'work_injury',
       caseLevel: 'A',
+      insuranceTypes: [],
+      insuranceMisrepresentations: []
       // hasContract: true,
       // hasSocialSecurity: false,
       // workInjuryCertified: false,
       // customerCooperative: true,
       // witnessCooperative: true
-    },
+  };
+
+  if (department === 'insurance') {
+    basicInfo.contractDate = dayjs();
+  }
+
+  return {
+    basicInfo,
     parties: {
       claimants: [{}],
       respondents: []
@@ -427,11 +994,13 @@ const buildInitialValues = (): WorkInjuryCaseFormValues => {
       salesCommission: null,
       handlingFee: null
     },
-    timeline: []
+    timeline: [],
+    timeNodes: []
   };
 };
 
 export default function WorkInjuryCaseModal({
+  department,
   open,
   mode = 'create',
   initialValues,
@@ -450,6 +1019,7 @@ export default function WorkInjuryCaseModal({
   onAddFollowUp,
   onAddCollection,
   onUpdateFees,
+  onSaveTimeNodes,
   onLoadAssignableStaff,
   onLoadChangeLogs,
   canEditAssignments = false,
@@ -458,8 +1028,34 @@ export default function WorkInjuryCaseModal({
   canAddFollowUps = false,
   canAddCollections = false,
   canUpdateFees = false,
-  canViewChangeLogs = false
+  canViewChangeLogs = false,
+  canManageTimeNodes = false,
+  visibleTabs,
+  editableTabs
 }: WorkInjuryCaseModalProps) {
+  const initialTabKey = (visibleTabs && visibleTabs.length ? visibleTabs[0] : DEFAULT_VISIBLE_TABS[0]) ?? DEFAULT_ACTIVE_TAB;
+  const resolvedVisibleTabs = useMemo<WorkInjuryCaseTabKey[]>(
+    () => (visibleTabs && visibleTabs.length ? visibleTabs : DEFAULT_VISIBLE_TABS),
+    [visibleTabs]
+  );
+  const visibleTabsSet = useMemo(() => new Set(resolvedVisibleTabs), [resolvedVisibleTabs]);
+  const resolvedEditableTabs = useMemo<WorkInjuryCaseTabKey[]>(
+    () =>
+      editableTabs && editableTabs.length
+        ? editableTabs.filter(tab => visibleTabsSet.has(tab))
+        : resolvedVisibleTabs,
+    [editableTabs, resolvedVisibleTabs, visibleTabsSet]
+  );
+  const editableTabsSet = useMemo(() => new Set(resolvedEditableTabs), [resolvedEditableTabs]);
+
+  const defaultCaseCategory: CaseCategory = department === 'insurance' ? 'insurance' : 'work_injury';
+  const departmentConfig = useMemo(() => CASE_DEPARTMENT_CONFIG[department], [department]);
+  const basicInfoLayout = departmentConfig.basicInfoLayout;
+  const requiredBasicInfoFields = departmentConfig.requiredBasicInfoFields;
+  const timeNodeDefinitions = useMemo(() => getCaseTimeNodeDefinitions(department), [department]);
+  const scopedTimeNodeLabelMap = useMemo(() => getCaseTimeNodeLabelMap(department), [department]);
+  const scopedTimeNodeOrderMap = useMemo(() => getCaseTimeNodeOrderMap(department), [department]);
+
   const sessionUser = useSessionStore(state => state.user);
   const { message } = App.useApp();
   const [form] = Form.useForm<WorkInjuryCaseFormValues>();
@@ -468,7 +1064,8 @@ export default function WorkInjuryCaseModal({
   const [followUpForm] = Form.useForm<FollowUpFormValues>();
   const [collectionForm] = Form.useForm<CollectionFormValues>();
   const [feeForm] = Form.useForm<FeeFormValues>();
-  const [activeTab, setActiveTab] = useState<TabKey>(DEFAULT_ACTIVE_TAB);
+  const [timeNodeForm] = Form.useForm<TimeNodeFormValues>();
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTabKey);
   const [dirtySections, setDirtySections] = useState<Set<string>>(new Set());
   const [assignableStaff, setAssignableStaff] = useState<AssignableStaffResponse | null>(null);
   const [assignableStaffLoading, setAssignableStaffLoading] = useState(false);
@@ -483,6 +1080,7 @@ export default function WorkInjuryCaseModal({
   const [followUpSaving, setFollowUpSaving] = useState(false);
   const [collectionSaving, setCollectionSaving] = useState(false);
   const [feeSaving, setFeeSaving] = useState(false);
+  const [timeNodeSaving, setTimeNodeSaving] = useState(false);
   const [changeLogs, setChangeLogs] = useState<CaseChangeLog[] | null>(null);
   const [changeLogsLoading, setChangeLogsLoading] = useState(false);
   const [changeLogsLoaded, setChangeLogsLoaded] = useState(false);
@@ -525,6 +1123,8 @@ export default function WorkInjuryCaseModal({
           return dirtySections.has('assignment');
         case 'hearing':
           return dirtySections.has('hearing');
+        case 'timeNodes':
+          return dirtySections.has('timeNodes');
         case 'followUp':
           return dirtySections.has('followUp');
         case 'fees':
@@ -539,14 +1139,58 @@ export default function WorkInjuryCaseModal({
 
   const isUpdateMode = mode === 'update';
   const isEditable = !isViewMode;
+  const isRestrictedEditor = sessionUser ? ['lawyer', 'assistant'].includes(sessionUser.role) : false;
+  const canEditBasicInfo =
+    isEditable && editableTabsSet.has('basic') && (!isRestrictedEditor || mode === 'create');
   const mainFormSaving = Boolean(confirmLoading);
 
   const baseInitialValues = useMemo(() => {
-    if (mode === 'create') {
-      return buildInitialValues();
+    const baseValues =
+      mode === 'create' ? buildInitialValues(department) : initialValues ?? buildInitialValues(department);
+
+    if (!sessionUser) {
+      return baseValues;
     }
-    return initialValues ?? buildInitialValues();
-  }, [mode, initialValues]);
+
+    const nextAdminInfo: NonNullable<WorkInjuryCaseFormValues['adminInfo']> = {
+      ...(baseValues.adminInfo ?? {})
+    };
+    let changed = false;
+
+    if (!nextAdminInfo.assignedSaleId && sessionUser.role === 'sale') {
+      nextAdminInfo.assignedSaleId = sessionUser.id;
+      nextAdminInfo.assignedSaleName = sessionUser.name ?? undefined;
+      changed = true;
+    }
+
+    if (!nextAdminInfo.assignedLawyer && sessionUser.role === 'lawyer') {
+      nextAdminInfo.assignedLawyer = sessionUser.id;
+      nextAdminInfo.assignedLawyerName = sessionUser.name ?? undefined;
+      changed = true;
+    }
+
+    if (sessionUser.role === 'assistant') {
+      if (!nextAdminInfo.assignedAssistant) {
+        nextAdminInfo.assignedAssistant = sessionUser.id;
+        nextAdminInfo.assignedAssistantName = sessionUser.name ?? undefined;
+        changed = true;
+      }
+      if (!nextAdminInfo.assignedLawyer && sessionUser.supervisor?.id) {
+        nextAdminInfo.assignedLawyer = sessionUser.supervisor.id;
+        nextAdminInfo.assignedLawyerName = sessionUser.supervisor.name ?? undefined;
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      return baseValues;
+    }
+
+    return {
+      ...baseValues,
+      adminInfo: nextAdminInfo
+    } satisfies WorkInjuryCaseFormValues;
+  }, [department, mode, initialValues, sessionUser]);
 
   const [cachedDisplayValues, setCachedDisplayValues] = useState<WorkInjuryCaseFormValues>(baseInitialValues);
 
@@ -586,27 +1230,76 @@ export default function WorkInjuryCaseModal({
     () => resolveDisabledTrialStages(hearingRecords),
     [hearingRecords]
   );
-  const lawyerOptions = useMemo(
-    () =>
-      (assignableStaff?.lawyers ?? []).map(member => ({
+  const assignedLawyerId = displayValues.adminInfo?.assignedLawyer ?? null;
+  const assignedLawyerName = displayValues.adminInfo?.assignedLawyerName ?? null;
+  const assignedAssistantId = displayValues.adminInfo?.assignedAssistant ?? null;
+  const assignedAssistantName = displayValues.adminInfo?.assignedAssistantName ?? null;
+  const assignedSaleId = displayValues.adminInfo?.assignedSaleId ?? null;
+  const assignedSaleName = displayValues.adminInfo?.assignedSaleName ?? null;
+
+  const lawyerOptions = useMemo(() => {
+    const optionMap = new Map<string, { value: string; label: string }>();
+    (assignableStaff?.lawyers ?? []).forEach(member => {
+      optionMap.set(member.id, {
         value: member.id,
         label: member.name ?? '未命名成员'
-      })),
-    [assignableStaff]
-  );
-  const assistantOptions = useMemo(
-    () =>
-      (assignableStaff?.assistants ?? []).map(member => ({
+      });
+    });
+
+    if (assignedLawyerId) {
+      const existingLabel = optionMap.get(assignedLawyerId)?.label;
+      optionMap.set(assignedLawyerId, {
+        value: assignedLawyerId,
+        label: assignedLawyerName ?? existingLabel ?? '已分配成员'
+      });
+    }
+
+    return Array.from(optionMap.values());
+  }, [assignableStaff?.lawyers, assignedLawyerId, assignedLawyerName]);
+
+  const assistantOptions = useMemo(() => {
+    const optionMap = new Map<string, { value: string; label: string }>();
+    (assignableStaff?.assistants ?? []).forEach(member => {
+      optionMap.set(member.id, {
         value: member.id,
         label: member.name ?? '未命名成员'
-      })),
-    [assignableStaff]
-  );
+      });
+    });
+
+    if (assignedAssistantId) {
+      const existingLabel = optionMap.get(assignedAssistantId)?.label;
+      optionMap.set(assignedAssistantId, {
+        value: assignedAssistantId,
+        label: assignedAssistantName ?? existingLabel ?? '已分配成员'
+      });
+    }
+
+    return Array.from(optionMap.values());
+  }, [assignableStaff?.assistants, assignedAssistantId, assignedAssistantName]);
+  const salesOptions = useMemo(() => {
+    const optionMap = new Map<string, { value: string; label: string }>();
+    (assignableStaff?.sales ?? []).forEach(member => {
+      optionMap.set(member.id, {
+        value: member.id,
+        label: member.name ?? '未命名成员'
+      });
+    });
+
+    if (assignedSaleId) {
+      const existingLabel = optionMap.get(assignedSaleId)?.label;
+      optionMap.set(assignedSaleId, {
+        value: assignedSaleId,
+        label: assignedSaleName ?? existingLabel ?? '已分配成员'
+      });
+    }
+
+    return Array.from(optionMap.values());
+  }, [assignableStaff?.sales, assignedSaleId, assignedSaleName]);
   const caseStatusSelectOptions = useMemo(
     () =>
       CASE_STATUS_OPTIONS.map(status => ({
         value: status,
-        label: CASE_STATUS_LABELS[status]
+        label: CASE_STATUS_LABEL_MAP[status]
       })),
     []
   );
@@ -620,13 +1313,32 @@ export default function WorkInjuryCaseModal({
     [disabledTrialStages]
   );
 
+  const buildTimeNodeFormValues = useCallback(
+    (nodes?: CaseTimeNodeRecord[]): TimeNodeFormValues => {
+      const values: TimeNodeFormValues = {};
+
+      timeNodeDefinitions.forEach((definition) => {
+        values[definition.type] = null;
+      });
+
+      (nodes ?? []).forEach((node) => {
+        const occurredOn = node.occurredOn ? dayjs(node.occurredOn) : null;
+        values[node.nodeType] = occurredOn;
+      });
+
+      return values;
+    },
+    [timeNodeDefinitions]
+  );
+
   const syncFormsFromValues = useCallback(
     (values: WorkInjuryCaseFormValues) => {
       form.setFieldsValue(values);
       const adminInfo = values.adminInfo ?? {};
       assignmentForm.setFieldsValue({
         assignedLawyerId: adminInfo.assignedLawyer ?? null,
-        assignedAssistantId: adminInfo.assignedAssistant ?? null
+        assignedAssistantId: adminInfo.assignedAssistant ?? null,
+        assignedSaleId: adminInfo.assignedSaleId ?? null
       });
       feeForm.setFieldsValue({
         salesCommission: adminInfo.salesCommission ?? null,
@@ -664,6 +1376,8 @@ export default function WorkInjuryCaseModal({
         receivedAt: dayjs()
       });
 
+      timeNodeForm.setFieldsValue(buildTimeNodeFormValues(values.timeNodes));
+
       clearDirty('assignment');
       clearDirty('hearing');
       clearDirty('followUp');
@@ -671,8 +1385,9 @@ export default function WorkInjuryCaseModal({
       clearDirty('fee');
       clearDirty('basic');
       clearDirty('parties');
+      clearDirty('timeNodes');
     },
-  [assignmentForm, clearDirty, collectionForm, feeForm, followUpForm, form, hearingForm]
+  [assignmentForm, buildTimeNodeFormValues, clearDirty, collectionForm, feeForm, followUpForm, form, hearingForm, timeNodeForm]
   );
 
   const applyUpdatedValues = useCallback(
@@ -930,6 +1645,14 @@ export default function WorkInjuryCaseModal({
 
   const handleCancel = useCallback(async () => {
     if (isEditable) {
+      if (dirtySections.size === 0) {
+        form.resetFields();
+        syncFormsFromValues(cachedDisplayValues);
+        resetDirty();
+        onCancel();
+        return;
+      }
+
       const canLeave = await confirmDiscardChanges(activeTab);
       if (canLeave) {
         form.resetFields();
@@ -947,16 +1670,16 @@ export default function WorkInjuryCaseModal({
       syncFormsFromValues(cachedDisplayValues);
       onCancel();
     }
-  }, [activeTab, cachedDisplayValues, confirmDiscardChanges, form, isEditable, onCancel, onRequestView, resetDirty, syncFormsFromValues]);
+  }, [activeTab, cachedDisplayValues, confirmDiscardChanges, dirtySections, form, isEditable, onCancel, onRequestView, resetDirty, syncFormsFromValues]);
 
   const handleBasicInfoReset = useCallback(() => {
-    if (!isEditable) {
+    if (!canEditBasicInfo) {
       return;
     }
     const nextBasicInfo = displayValues.basicInfo ?? {};
     form.setFieldsValue({ basicInfo: nextBasicInfo });
     clearDirty('basic');
-  }, [clearDirty, displayValues, form, isEditable]);
+  }, [canEditBasicInfo, clearDirty, displayValues, form]);
 
   const handlePartiesReset = useCallback(() => {
     if (!isEditable) {
@@ -982,7 +1705,8 @@ export default function WorkInjuryCaseModal({
     const adminInfo = displayValues.adminInfo ?? {};
     assignmentForm.setFieldsValue({
       assignedLawyerId: adminInfo.assignedLawyer ?? null,
-      assignedAssistantId: adminInfo.assignedAssistant ?? null
+      assignedAssistantId: adminInfo.assignedAssistant ?? null,
+      assignedSaleId: adminInfo.assignedSaleId ?? null
     });
     clearDirty('assignment');
   }, [assignmentForm, clearDirty, displayValues, isEditable]);
@@ -991,24 +1715,24 @@ export default function WorkInjuryCaseModal({
     if (!isEditable) {
       return;
     }
-    const latestHearing = hearingRecords.length ? hearingRecords[hearingRecords.length - 1] : null;
-    const defaultStage = availableTrialStages.length ? availableTrialStages[0] : null;
+
+    const currentValues = hearingForm.getFieldsValue() as HearingFormValues;
     const defaultTrialLawyerId =
       displayValues.lawyerInfo?.trialLawyerId ?? displayValues.adminInfo?.assignedLawyer ?? null;
 
     hearingForm.setFieldsValue({
-      trialLawyerId: defaultTrialLawyerId,
+      trialLawyerId: currentValues.trialLawyerId ?? defaultTrialLawyerId ?? null,
       hearingTime: null,
-      hearingLocation: latestHearing?.hearingLocation ?? null,
-      tribunal: latestHearing?.tribunal ?? null,
-      judge: latestHearing?.judge ?? null,
+      hearingLocation: null,
+      tribunal: null,
+      judge: null,
       caseNumber: null,
-      contactPhone: latestHearing?.contactPhone ?? null,
-      trialStage: defaultStage,
+      contactPhone: null,
+      trialStage: currentValues.trialStage ?? null,
       hearingResult: null
     });
     clearDirty('hearing');
-  }, [availableTrialStages, clearDirty, displayValues, hearingForm, hearingRecords, isEditable]);
+  }, [clearDirty, displayValues, hearingForm, isEditable]);
 
   const handleFollowUpReset = useCallback(() => {
     if (!isEditable) {
@@ -1021,8 +1745,58 @@ export default function WorkInjuryCaseModal({
     clearDirty('followUp');
   }, [clearDirty, followUpForm, isEditable]);
 
+  const handleTimeNodeReset = useCallback(() => {
+    timeNodeForm.setFieldsValue(buildTimeNodeFormValues(displayValues.timeNodes));
+    clearDirty('timeNodes');
+  }, [buildTimeNodeFormValues, clearDirty, displayValues.timeNodes, timeNodeForm]);
+
+  const handleTimeNodeSave = useCallback(async () => {
+    if (!onSaveTimeNodes || !canManageTimeNodes) {
+      return;
+    }
+
+    const formValues = timeNodeForm.getFieldsValue() as TimeNodeFormValues;
+    const payload = timeNodeDefinitions.reduce<Array<{ nodeType: CaseTimeNodeType; occurredOn: Dayjs }>>(
+      (acc, definition) => {
+        const value = formValues[definition.type];
+        if (value) {
+          acc.push({ nodeType: definition.type, occurredOn: value });
+        }
+        return acc;
+      },
+      []
+    );
+
+    if (payload.length === 0) {
+      message.error('请至少填写一个时间节点');
+      return;
+    }
+
+    setTimeNodeSaving(true);
+    try {
+      const updated = await onSaveTimeNodes(payload);
+      if (updated !== undefined) {
+        applyUpdatedValues(updated);
+        message.success('时间节点已更新');
+      }
+      clearDirty('timeNodes');
+    } catch (error) {
+      message.error('保存时间节点失败，请稍后重试');
+    } finally {
+      setTimeNodeSaving(false);
+    }
+  }, [
+    applyUpdatedValues,
+    canManageTimeNodes,
+    clearDirty,
+    message,
+    onSaveTimeNodes,
+    timeNodeDefinitions,
+    timeNodeForm
+  ]);
+
   const handleBasicInfoSave = useCallback(async () => {
-    if (!isEditable) {
+    if (!canEditBasicInfo) {
       return;
     }
     try {
@@ -1068,9 +1842,9 @@ export default function WorkInjuryCaseModal({
     }
   }, [
     applyUpdatedValues,
+    canEditBasicInfo,
     clearDirty,
     form,
-    isEditable,
     isUpdateMode,
     message,
     mode,
@@ -1136,12 +1910,7 @@ export default function WorkInjuryCaseModal({
     onSubmit
   ]);
 
-  const canShowEditButton = Boolean(
-    allowEdit &&
-      onRequestEdit &&
-      sessionUser &&
-      !['lawyer', 'assistant'].includes(sessionUser.role)
-  );
+  const canShowEditButton = Boolean(allowEdit && onRequestEdit && sessionUser);
 
   const canShowCollectionSection = Boolean(
     sessionUser &&
@@ -1184,13 +1953,20 @@ export default function WorkInjuryCaseModal({
 
   useEffect(() => {
     if (!open) {
-      setActiveTab(DEFAULT_ACTIVE_TAB);
+      setActiveTab(initialTabKey);
       return;
     }
-    const targetTab =
-      initialActiveTab && isTabKey(initialActiveTab) ? initialActiveTab : DEFAULT_ACTIVE_TAB;
+    const targetTab = (() => {
+      if (initialActiveTab && isTabKey(initialActiveTab) && visibleTabsSet.has(initialActiveTab)) {
+        return initialActiveTab;
+      }
+      if (visibleTabsSet.has(DEFAULT_ACTIVE_TAB)) {
+        return DEFAULT_ACTIVE_TAB;
+      }
+      return resolvedVisibleTabs[0] ?? initialTabKey;
+    })();
     setActiveTab(targetTab);
-  }, [open, initialActiveTab]);
+  }, [open, initialActiveTab, initialTabKey, resolvedVisibleTabs, visibleTabsSet]);
 
   useEffect(() => {
     if (!open) {
@@ -1222,7 +1998,8 @@ export default function WorkInjuryCaseModal({
     try {
       const payload: AssignStaffFormValues = {
         assignedLawyerId: values.assignedLawyerId ?? null,
-        assignedAssistantId: values.assignedAssistantId ?? null
+        assignedAssistantId: values.assignedAssistantId ?? null,
+        assignedSaleId: values.assignedSaleId ?? null
       };
       const updated = await onSaveAssignment(payload);
       if (updated !== undefined) {
@@ -1292,7 +2069,7 @@ export default function WorkInjuryCaseModal({
     try {
       const updated = await onAddFollowUp({
         occurredOn: values.occurredOn,
-        note: values.note ?? null
+        note: values.note ?? ''
       });
       if (updated !== undefined) {
         applyUpdatedValues(updated);
@@ -1371,9 +2148,9 @@ export default function WorkInjuryCaseModal({
     </Button>,
     ...(canShowEditButton
       ? [
-          <Button key="edit" type="primary" onClick={onRequestEdit}>
-            编辑案件
-          </Button>
+        <Button key="edit" type="primary" onClick={onRequestEdit}>
+          编辑案件
+        </Button>
         ]
       : [])
   ];
@@ -1472,19 +2249,19 @@ export default function WorkInjuryCaseModal({
               </Col>
               <Col span={8}>
                 <Form.Item 
-                {...restField}
-                 name={[name, 'phone']} 
-                 label="电话"
-                 rules={[{required: field === 'claimants', message: '请输入联系电话'}]}
+                  {...restField}
+                  name={[name, 'phone']} 
+                  label="电话"
+                  rules={[{required: field === 'claimants', message: '请输入联系电话'}]}
                  >
                   <Input placeholder="请输入联系电话" />
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item 
-                {...restField} 
-                name={[name, 'address']} 
-                label="地址"
+                  {...restField} 
+                  name={[name, 'address']} 
+                  label="地址"
                 >
                   <Input placeholder="请输入地址" />
                 </Form.Item>
@@ -1522,156 +2299,127 @@ export default function WorkInjuryCaseModal({
     </Form.List>
   );
 
-  const basicInfoPane = (
-    <>
-      <Row gutter={16}>
-        <Col span={8}>
-          <Form.Item
-            label="案件类型"
-            name={['basicInfo', 'caseType']}
-            rules={[{ required: true, message: '请选择案件类型' }]}
-          >
-            <Select options={[...CASE_TYPES]} placeholder="请选择案件类型" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="案件级别"
-            name={['basicInfo', 'caseLevel']}
-            rules={[{ required: true, message: '请选择案件级别' }]}
-          >
-            <Select options={[...CASE_LEVELS]} placeholder="请选择案件级别" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="案件省份/城市"
-            name={['basicInfo', 'provinceCity']}
-            rules={[{ required: true, message: '请输入案件省份/城市' }]}
-          >
-            <Input placeholder="请输入省份/城市" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="标的额"
-            name={['basicInfo', 'targetAmount']}
-          >
-            <Input style={{ width: '100%' }} placeholder="请输入标的额" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="收费标准" name={['basicInfo', 'feeStandard']}>
-            <Input placeholder="请输入收费标准" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="代理费估值" name={['basicInfo', 'agencyFeeEstimate']}>
-            <Input style={{ width: '100%' }} placeholder="请输入代理费估值" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="数据来源"
-            name={['basicInfo', 'dataSource']}
-            rules={[{ required: true, message: '请输入数据来源' }]}
-          >
-            <Input placeholder="请输入数据来源" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="入职时间" name={['basicInfo', 'entryDate']}>
-            <DatePicker style={{ width: '100%' }} placeholder="请选择入职时间" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="受伤地点" name={['basicInfo', 'injuryLocation']}>
-            <Input placeholder="请输入受伤地点" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="受伤程度" name={['basicInfo', 'injurySeverity']}>
-            <Input placeholder="请输入受伤程度" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="受伤原因" name={['basicInfo', 'injuryCause']}>
-            <Input placeholder="请输入受伤原因" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="工伤认定"
-            name={['basicInfo', 'workInjuryCertified']}
-            rules={[{ required: false, message: '请选择工伤认定情况' }]}
-          >
-            <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="劳动能力等级鉴定/人损等级" name={['basicInfo', 'appraisalLevel']}>
-            <Input placeholder="请输入鉴定等级或填写无" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="劳动能力/人损等级预估" name={['basicInfo', 'appraisalEstimate']}>
-            <Input placeholder="请输入预估等级" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item label="当时月薪" name={['basicInfo', 'monthlySalary']}>
-            <Input style={{ width: '100%' }} placeholder="请输入当时月薪" />
-          </Form.Item>
-        </Col>
-        <Col span={6}>
-          <Form.Item
-            label="是否配合提交材料"
-            name={['basicInfo', 'customerCooperative']}
-            rules={[{ required: false, message: '请选择是否能配合提交材料' }]}
-          >
-            <Radio.Group options={[...YES_NO_COOPERATION]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={5}>
-          <Form.Item
-            label="有无合同"
-            name={['basicInfo', 'hasContract']}
-            rules={[{ required: false, message: '请选择是否有合同' }]}
-          >
-            <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={5}>
-          <Form.Item
-            label="有无社保"
-            name={['basicInfo', 'hasSocialSecurity']}
-            rules={[{ required: false, message: '请选择是否有社保' }]}
-          >
-            <Radio.Group options={[...YES_NO_RADIO]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={8}>
-          <Form.Item
-            label="证人是否配合出庭"
-            name={['basicInfo', 'witnessCooperative']}
-            rules={[{ required: false, message: '请选择证人是否能配合出庭' }]}
-          >
-            <Radio.Group options={[...YES_NO_COOPERATION]} optionType="button" buttonStyle="solid" />
-          </Form.Item>
-        </Col>
-        <Col span={24}>
-          <Form.Item label="已知证据" name={['basicInfo', 'existingEvidence']}>
-            <TextArea rows={3} placeholder="请描述已掌握的证据" />
-          </Form.Item>
-        </Col>
-        <Col span={24}>
-          <Form.Item label="备注" name={['basicInfo', 'remark']}>
-            <TextArea rows={3} placeholder="可补充其他情况" />
-          </Form.Item>
-        </Col>
-      </Row>
-    </>
+  const watchedCaseCategory = Form.useWatch<CaseCategory | undefined>(['basicInfo', 'caseCategory'], form);
+  const watchedContractQuoteType = Form.useWatch<ContractQuoteType | undefined>(
+    ['basicInfo', 'contractQuoteType'],
+    form
   );
+  const isInsuranceCase =
+    (watchedCaseCategory ?? displayValues.basicInfo?.caseCategory ?? defaultCaseCategory) === 'insurance';
+
+  useEffect(() => {
+    const basicValues = (form.getFieldValue('basicInfo') ?? {}) as BasicInfoValues;
+    const updates: Partial<BasicInfoValues> = {};
+
+    if (!isInsuranceCase) {
+      INSURANCE_ONLY_FIELDS.forEach(fieldKey => {
+        const currentValue = (basicValues as Record<string, unknown>)[fieldKey];
+        if (currentValue == null) {
+          return;
+        }
+        if (fieldKey === 'insuranceTypes' || fieldKey === 'insuranceMisrepresentations') {
+          if ((currentValue as unknown[]).length > 0) {
+            (updates as Record<string, unknown>)[fieldKey] = [];
+          }
+        } else {
+          (updates as Record<string, unknown>)[fieldKey] = null;
+        }
+      });
+    } else {
+      const quoteType = watchedContractQuoteType ?? null;
+
+      if (quoteType !== 'fixed' && basicValues?.contractQuoteAmount != null) {
+        updates.contractQuoteAmount = undefined;
+      }
+      if (quoteType !== 'risk') {
+        if (basicValues?.contractQuoteUpfront != null) {
+          updates.contractQuoteUpfront = undefined;
+        }
+        if (basicValues?.contractQuoteRatio != null) {
+          updates.contractQuoteRatio = undefined;
+        }
+      }
+      if (quoteType !== 'other' && basicValues?.contractQuoteOther) {
+        updates.contractQuoteOther = undefined;
+      }
+    }
+
+    if (Object.keys(updates).length) {
+      form.setFieldsValue({
+        basicInfo: {
+          ...basicValues,
+          ...updates
+        }
+      });
+    }
+  }, [form, isInsuranceCase, watchedContractQuoteType]);
+
+  const basicInfoElements: ReactNode[] = [];
+
+  basicInfoLayout.forEach((row, rowIndex) => {
+    const fieldColumns: ReactNode[] = [];
+
+    row.forEach((fieldKey, columnIndex) => {
+      if (!fieldKey) {
+        return;
+      }
+      if (
+        !shouldRenderBasicInfoField(fieldKey, {
+          isInsuranceCase,
+          contractQuoteType: watchedContractQuoteType ?? null
+        })
+      ) {
+        return;
+      }
+      const meta = BASIC_INFO_FIELD_META[fieldKey];
+      const elementKey = `${fieldKey}-${rowIndex}-${columnIndex}`;
+
+      if (meta.kind === 'divider') {
+        basicInfoElements.push(
+          <Divider key={`basic-divider-${elementKey}`} dashed={meta.dashed} style={{ margin: '16px 0' }}>
+            {meta.label}
+          </Divider>
+        );
+        return;
+      }
+
+      const label = meta.labelOverrides?.[department] ?? meta.label;
+      const rules: Rule[] = [];
+      if (requiredBasicInfoFields.has(fieldKey)) {
+        if (meta.requiredMessage) {
+          rules.push({ required: true, message: meta.requiredMessage });
+        }
+      }
+      if (meta.extraRules) {
+        rules.push(...meta.extraRules);
+      }
+
+      const formItem = meta.renderInput({ department, defaultCaseCategory, form });
+
+      if (formItem != null) {
+        fieldColumns.push(
+          <Col span={meta.colSpan ?? 8} key={`basic-col-${elementKey}`}>
+            <Form.Item
+              label={label}
+              name={['basicInfo', fieldKey]}
+              rules={rules}>
+              {formItem}
+            </Form.Item>
+          </Col>
+        );
+      }
+    });
+
+    if (fieldColumns.length) {
+      basicInfoElements.push(
+        <Row gutter={16} key={`basic-row-${rowIndex}`}>
+          {fieldColumns}
+        </Row>
+      );
+    }
+  });
+
+  const basicInfoPane = <>{basicInfoElements}</>;
 
   const personnelPane = (
     <>
@@ -1696,7 +2444,24 @@ export default function WorkInjuryCaseModal({
             onValuesChange={() => markDirty('assignment')}
           >
             <Row gutter={16}>
-              <Col span={12}>
+              <Col span={8}>
+                <Form.Item
+                  label="销售人员"
+                  name="assignedSaleId"
+                  rules={[{ required: true, message: '请选择销售人员' }]}
+                >
+                  <Select
+                    placeholder="请选择销售人员"
+                    options={salesOptions}
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    loading={assignableStaffLoading}
+                    disabled={!canEditAssignments}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
                 <Form.Item
                   label="承办律师"
                   name="assignedLawyerId"
@@ -1713,7 +2478,7 @@ export default function WorkInjuryCaseModal({
                   />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col span={8}>
                 <Form.Item label="律师助理" name="assignedAssistantId">
                   <Select
                     placeholder="请选择律师助理"
@@ -1727,31 +2492,25 @@ export default function WorkInjuryCaseModal({
                 </Form.Item>
               </Col>
             </Row>
-            {onLoadAssignableStaff ? (
-              <Space size="middle" wrap style={{ marginTop: 16 }}>
-                <Button
-                  type="link"
-                  onClick={() => void ensureAssignableStaff(true)}
-                  disabled={assignableStaffLoading}
-                >
-                  刷新可分配成员
-                </Button>
-              </Space>
-            ) : null}
           </Form>
         </Spin>
       ) : (
-        <Typography.Text type="secondary" className={styles.emptyHint}>
-          暂无权限调整人员分配
-        </Typography.Text>
+        <>
+          <Form form={assignmentForm} component={false} />
+          <Typography.Text type="secondary" className={styles.emptyHint}>
+            暂无权限调整人员分配
+          </Typography.Text>
+        </>
       )}
     </div>
   );
 
   const canAddMoreHearings = availableTrialStages.length > 0;
+  const canShowHearingForm = Boolean(onAddHearing && canAddHearings);
+
   const hearingEditPane = (
     <div className={styles.sectionList}>
-      {onAddHearing ? (
+      {canShowHearingForm ? (
         <>
           <Typography.Title level={5}>新增庭审记录</Typography.Title>
           {!canAddMoreHearings ? (
@@ -1838,14 +2597,47 @@ export default function WorkInjuryCaseModal({
               </Col>
             </Row>
           </Form>
+          <Divider dashed />
         </>
       ) : (
-        <Typography.Text type="secondary" className={styles.emptyHint}>
-          暂无权限新增庭审记录
-        </Typography.Text>
+        <Form form={hearingForm} component={false} />
       )}
-      <Divider dashed />
       {renderHearingDisplay(displayValues)}
+    </div>
+  );
+
+  const timeNodePane = (
+    <div className={styles.sectionList}>
+      {isEditable && canManageTimeNodes ? (
+        <>
+          <Typography.Title level={5}>维护时间节点</Typography.Title>
+          <Form
+            form={timeNodeForm}
+            layout="vertical"
+            component={false}
+            onValuesChange={() => markDirty('timeNodes')}
+          >
+            <Row gutter={16}>
+              {timeNodeDefinitions.map((definition) => (
+                <Col span={12} key={definition.type}>
+                  <Form.Item label={definition.label} name={definition.type}>
+                    <DatePicker
+                      style={{ width: '100%' }}
+                      placeholder="请选择日期"
+                      allowClear
+                      format="YYYY-MM-DD"
+                    />
+                  </Form.Item>
+                </Col>
+              ))}
+            </Row>
+          </Form>
+          <Divider dashed />
+        </>
+      ) : (
+        <Form form={timeNodeForm} component={false} />
+      )}
+      {renderTimeNodeDisplay(displayValues)}
     </div>
   );
 
@@ -1853,48 +2645,51 @@ export default function WorkInjuryCaseModal({
     <div className={styles.sectionList}>
       {isEditable ? (
         <>
-        {
-          onAddFollowUp ? (
-        <>
-          <Typography.Title level={5}>新增跟进备注</Typography.Title>
-          <Form
-            form={followUpForm}
-            layout="vertical"
-            component={false}
-            disabled={!canAddFollowUps}
-            onValuesChange={() => markDirty('followUp')}
-          >
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item
-                  label="发生日期"
-                  name="occurredOn"
-                  rules={[{ required: true, message: '请选择发生日期' }]}
-                >
-                  <DatePicker style={{ width: '100%' }} placeholder="请选择发生日期" />
-                </Form.Item>
-              </Col>
-              <Col span={24}>
-                <Form.Item
-                  label="备注"
-                  name="note"
-                  rules={[{ required: true, message: '请填写跟进备注' }]}
-                >
-                  <TextArea rows={4} maxLength={500} showCount placeholder="请填写跟进备注" />
-                </Form.Item>
-              </Col>
-            </Row>
-          </Form>
+          {onAddFollowUp ? (
+            <>
+              <Typography.Title level={5}>新增跟进备注</Typography.Title>
+              <Form
+                form={followUpForm}
+                layout="vertical"
+                component={false}
+                disabled={!canAddFollowUps}
+                onValuesChange={() => markDirty('followUp')}
+              >
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      label="发生日期"
+                      name="occurredOn"
+                      rules={[{ required: true, message: '请选择发生日期' }]}
+                    >
+                      <DatePicker style={{ width: '100%' }} placeholder="请选择发生日期" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={24}>
+                    <Form.Item
+                      label="备注"
+                      name="note"
+                      rules={[{ required: true, message: '请填写跟进备注' }]}
+                    >
+                      <TextArea rows={4} maxLength={500} showCount placeholder="请填写跟进备注" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </Form>
+            </>
+          ) : (
+            <>
+              <Form form={followUpForm} component={false} />
+              <Typography.Text type="secondary" className={styles.emptyHint}>
+                暂无权限新增跟进备注
+              </Typography.Text>
+            </>
+          )}
+          <Divider dashed />
         </>
       ) : (
-        <Typography.Text type="secondary" className={styles.emptyHint}>
-          暂无权限新增跟进备注
-        </Typography.Text>
-      )
-        }
-      <Divider dashed />
-        </>
-      ) : null}
+        <Form form={followUpForm} component={false} />
+      )}
       {renderFollowUpDisplay(displayValues)}
     </div>
   );
@@ -1902,31 +2697,80 @@ export default function WorkInjuryCaseModal({
 
   const renderBasicInfoDisplay = (values: WorkInjuryCaseFormValues) => {
     const info = values.basicInfo ?? {};
-    return (
-      <Descriptions bordered size="small" column={2} className={styles.descriptions}>
-        <Descriptions.Item label="案件类型">{formatOptionLabel(CASE_TYPE_LABEL_MAP, info.caseType ?? null)}</Descriptions.Item>
-        <Descriptions.Item label="案件级别">{formatOptionLabel(CASE_LEVEL_LABEL_MAP, info.caseLevel ?? null)}</Descriptions.Item>
-        <Descriptions.Item label="省份/城市">{formatText(info.provinceCity)}</Descriptions.Item>
-        <Descriptions.Item label="标的额">{formatText(info.targetAmount)}</Descriptions.Item>
-        <Descriptions.Item label="收费标准">{formatText(info.feeStandard)}</Descriptions.Item>
-        <Descriptions.Item label="代理费估值">{formatText(info.agencyFeeEstimate)}</Descriptions.Item>
-        <Descriptions.Item label="数据来源">{formatText(info.dataSource)}</Descriptions.Item>
-        <Descriptions.Item label="入职时间">{formatDate(info.entryDate ?? null)}</Descriptions.Item>
-        <Descriptions.Item label="受伤地点">{formatText(info.injuryLocation)}</Descriptions.Item>
-        <Descriptions.Item label="受伤程度">{formatText(info.injurySeverity)}</Descriptions.Item>
-        <Descriptions.Item label="受伤原因" span={3}>{formatText(info.injuryCause)}</Descriptions.Item>
-        <Descriptions.Item label="工伤认定">{formatBoolean(info.workInjuryCertified ?? null, '有', '无')}</Descriptions.Item>
-        <Descriptions.Item label="劳动能力等级鉴定/人损等级">{formatText(info.appraisalLevel)}</Descriptions.Item>
-        <Descriptions.Item label="劳动能力/人损等级预估">{formatText(info.appraisalEstimate)}</Descriptions.Item>
-        <Descriptions.Item label="当时月薪">{formatText(info.monthlySalary)}</Descriptions.Item>
-        <Descriptions.Item label="是否配合提交材料">{formatBoolean(info.customerCooperative ?? null, '是', '否')}</Descriptions.Item>
-        <Descriptions.Item label="有无合同">{formatBoolean(info.hasContract ?? null, '有', '无')}</Descriptions.Item>
-        <Descriptions.Item label="有无社保">{formatBoolean(info.hasSocialSecurity ?? null, '有', '无')}</Descriptions.Item>
-        <Descriptions.Item label="证人是否配合出庭">{formatBoolean(info.witnessCooperative ?? null, '是', '否')}</Descriptions.Item>
-        <Descriptions.Item label="已知证据" span={3}>{formatText(info.existingEvidence)}</Descriptions.Item>
-        <Descriptions.Item label="备注" span={3}>{formatText(info.remark)}</Descriptions.Item>
-      </Descriptions>
-    );
+    const caseCategory = (info.caseCategory ?? defaultCaseCategory) as CaseCategory;
+    const isInsuranceCase = caseCategory === 'insurance';
+  const contractQuoteType = (info.contractQuoteType ?? null) as ContractQuoteType | null;
+    const sections: ReactNode[] = [];
+    let currentItems: ReactNode[] = [];
+    const commitItems = () => {
+      if (!currentItems.length) {
+        return;
+      }
+      sections.push(
+        <Descriptions
+          key={`basic-desc-${sections.length}`}
+          bordered
+          size="small"
+          column={3}
+          className={styles.descriptions}
+        >
+          {currentItems}
+        </Descriptions>
+      );
+      currentItems = [];
+    };
+
+    basicInfoLayout.forEach((row, rowIndex) => {
+      row.forEach((fieldKey, columnIndex) => {
+        if (!fieldKey) {
+          return;
+        }
+        if (
+          !shouldRenderBasicInfoField(fieldKey, {
+            isInsuranceCase,
+            contractQuoteType
+          })
+        ) {
+          return;
+        }
+        const meta = BASIC_INFO_FIELD_META[fieldKey];
+        const elementKey = `${fieldKey}-${rowIndex}-${columnIndex}`;
+
+        if (meta.kind === 'divider') {
+          commitItems();
+          sections.push(
+            <Divider key={`basic-display-divider-${elementKey}`} dashed={meta.dashed} style={{ margin: '16px 0' }}>
+              {meta.label}
+            </Divider>
+          );
+          return;
+        }
+
+        const itemLabel = meta.labelOverrides?.[department] ?? meta.label;
+
+        currentItems.push(
+          <Descriptions.Item
+            key={`basic-display-${elementKey}`}
+            label={itemLabel}
+            span={resolveDescriptionSpan(meta.colSpan)}
+          >
+            {meta.renderDisplay(info, defaultCaseCategory)}
+          </Descriptions.Item>
+        );
+      });
+    });
+
+    commitItems();
+
+    if (!sections.length) {
+      return (
+        <Typography.Text type="secondary" className={styles.emptyHint}>
+          暂无基本信息
+        </Typography.Text>
+      );
+    }
+
+    return <div className={styles.sectionList}>{sections}</div>;
   };
 
   const renderPartyDisplay = (values: WorkInjuryCaseFormValues) => {
@@ -2076,6 +2920,50 @@ export default function WorkInjuryCaseModal({
     );
   }
 
+  function renderTimeNodeDisplay(values: WorkInjuryCaseFormValues) {
+    const nodes = values.timeNodes ?? [];
+
+    if (!nodes.length) {
+      return (
+        <Typography.Text type="secondary" className={styles.emptyHint}>
+          暂无时间节点记录
+        </Typography.Text>
+      );
+    }
+
+    const sortedNodes = [...nodes].sort((a, b) => {
+      const orderA =
+        scopedTimeNodeOrderMap[a.nodeType] ??
+        CASE_TIME_NODE_ORDER_MAP[a.nodeType] ??
+        Number.MAX_SAFE_INTEGER;
+      const orderB =
+        scopedTimeNodeOrderMap[b.nodeType] ??
+        CASE_TIME_NODE_ORDER_MAP[b.nodeType] ??
+        Number.MAX_SAFE_INTEGER;
+      if (orderA === orderB) {
+        const timeA = a.occurredOn ? dayjs(a.occurredOn).valueOf() : Number.MAX_SAFE_INTEGER;
+        const timeB = b.occurredOn ? dayjs(b.occurredOn).valueOf() : Number.MAX_SAFE_INTEGER;
+        return timeA - timeB;
+      }
+      return orderA - orderB;
+    });
+
+    const items = sortedNodes.map(node => ({
+      key: `${node.nodeType}-${node.id}`,
+      color: 'blue',
+      children: (
+        <div>
+          <Typography.Text strong>
+            {scopedTimeNodeLabelMap[node.nodeType] ?? CASE_TIME_NODE_LABEL_MAP[node.nodeType] ?? node.nodeType}
+          </Typography.Text>
+          <div>{formatDate(node.occurredOn ?? null)}</div>
+        </div>
+      )
+    }));
+
+    return <Timeline items={items} />;
+  }
+
   const renderAssignmentDisplay = (values: WorkInjuryCaseFormValues) => {
     const adminInfo = values.adminInfo ?? {};
     const collections = adminInfo.collections ?? [];
@@ -2102,22 +2990,22 @@ export default function WorkInjuryCaseModal({
           <Descriptions.Item label="承办律师">{formatText(assignedLawyerDisplay)}</Descriptions.Item>
           <Descriptions.Item label="律师助理">{formatText(assignedAssistantDisplay)}</Descriptions.Item>
           <Descriptions.Item label="销售人员">{formatText(salesDisplay)}</Descriptions.Item>
-          <Descriptions.Item label="案件状态">{formatOptionLabel(CASE_STATUS_LABELS, adminInfo.caseStatus ?? null)}</Descriptions.Item>
+          <Descriptions.Item label="案件状态">{formatOptionLabel(CASE_STATUS_LABEL_MAP, adminInfo.caseStatus ?? null)}</Descriptions.Item>
           <Descriptions.Item label="结案原因">{formatText(adminInfo.closedReason)}</Descriptions.Item>
           <Descriptions.Item label="退单原因">{formatText(adminInfo.voidReason)}</Descriptions.Item>
         </Descriptions>
         {
           canShowCollectionSection ? 
-          <>
-          <Divider dashed>回款记录</Divider>
-        {collectionItems.length ? (
-          <Timeline items={collectionItems} />
+            <>
+              <Divider dashed>回款记录</Divider>
+              {collectionItems.length ? (
+                <Timeline items={collectionItems} />
         ) : (
           <Typography.Text type="secondary" className={styles.emptyHint}>
             暂无回款记录
           </Typography.Text>
         )}
-          </> : null
+            </> : null
         }
       </div>
     );
@@ -2330,7 +3218,9 @@ export default function WorkInjuryCaseModal({
           </Form>
           <Divider dashed />
         </>
-      ) : null}
+      ) : (
+        <Form form={collectionForm} component={false} />
+      )}
       <Typography.Title level={5}>费用信息</Typography.Title>
       {onUpdateFees ? (
         <Form
@@ -2367,64 +3257,93 @@ export default function WorkInjuryCaseModal({
           </Space>
         </Form>
       ) : (
-        <Typography.Text type="secondary" className={styles.emptyHint}>
-          暂无权限修改费用信息
-        </Typography.Text>
+        <>
+          <Form form={feeForm} component={false} />
+          <Typography.Text type="secondary" className={styles.emptyHint}>
+            暂无权限修改费用信息
+          </Typography.Text>
+        </>
       )}
       {renderFeeDisplay(displayValues)}
     </div>
   );
 
 
+  const canViewHearingTab = visibleTabsSet.has('hearing') && sessionUser?.role !== 'sale';
+  const canViewStaffTab =
+    visibleTabsSet.has('staff') && sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant';
+  const canViewFeesTab =
+    visibleTabsSet.has('fees') && sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant';
+
+  const shouldRenderAssignmentHiddenForm = !isEditable || !canViewStaffTab;
+  const shouldRenderHearingHiddenForm = !isEditable || !canViewHearingTab;
+  const shouldRenderFeesHiddenForm = !isEditable || !canViewFeesTab;
+
   type TabItem = NonNullable<TabsProps['items']>[number];
 
   const tabItems: TabItem[] = (() => {
-    const items: TabItem[] = [
-      {
-        key: 'basic',
-        label: TAB_LABEL_MAP.basic,
-        children: isEditable ? basicInfoPane : renderBasicInfoDisplay(displayValues)
-      },
-      {
-        key: 'parties',
-        label: TAB_LABEL_MAP.parties,
-        children: isEditable ? personnelPane : renderPartyDisplay(displayValues)
-      }
-    ];
+    const items: TabItem[] = [];
 
-    if (sessionUser?.role !== 'sale') {
+    if (visibleTabsSet.has('basic')) {
+      items.push({
+        key: 'basic',
+        label: buildTabLabel('basic'),
+        children: canEditBasicInfo ? basicInfoPane : renderBasicInfoDisplay(displayValues)
+      });
+    }
+
+    if (visibleTabsSet.has('parties')) {
+      items.push({
+        key: 'parties',
+        label: buildTabLabel('parties'),
+        children: isEditable ? personnelPane : renderPartyDisplay(displayValues)
+      });
+    }
+
+    if (canViewHearingTab) {
       items.push({
         key: 'hearing',
-        label: TAB_LABEL_MAP.hearing,
+        label: buildTabLabel('hearing'),
         children: isEditable ? hearingEditPane : renderHearingDisplay(displayValues)
       });
     }
 
-    if (sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant') {
+    if (canViewStaffTab) {
       items.push({
         key: 'staff',
-        label: TAB_LABEL_MAP.staff,
+        label: buildTabLabel('staff'),
         children: isEditable ? staffEditPane : renderAssignmentDisplay(displayValues)
       });
     }
 
-    items.push(
-      {
-        key: 'followUp',
-        label: TAB_LABEL_MAP.followUp,
-        children: followUpEditPane
-      },
-      {
-        key: 'changeLog',
-        label: TAB_LABEL_MAP.changeLog,
-        children: isEditable ? changeLogEditPane : renderChangeLogDisplay(changeLogs, changeLogsLoading)
-      }
-    );
+    if (visibleTabsSet.has('timeNodes')) {
+      items.push({
+        key: 'timeNodes',
+        label: buildTabLabel('timeNodes'),
+        children: timeNodePane
+      });
+    }
 
-    if (sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant') {
+    if (visibleTabsSet.has('followUp')) {
+      items.push({
+        key: 'followUp',
+        label: buildTabLabel('followUp'),
+        children: followUpEditPane
+      });
+    }
+
+    if (visibleTabsSet.has('changeLog')) {
+      items.push({
+        key: 'changeLog',
+        label: buildTabLabel('changeLog'),
+        children: isEditable ? changeLogEditPane : renderChangeLogDisplay(changeLogs, changeLogsLoading)
+      });
+    }
+
+    if (canViewFeesTab) {
       items.push({
         key: 'fees',
-        label: TAB_LABEL_MAP.fees,
+        label: buildTabLabel('fees'),
         children: isEditable ? feesEditPane : renderFeeDisplay(displayValues)
       });
     }
@@ -2433,7 +3352,7 @@ export default function WorkInjuryCaseModal({
   })();
 
   const handleTabChange = (key: string) => {
-    if (!isTabKey(key)) {
+    if (!isTabKey(key) || !visibleTabsSet.has(key)) {
       return;
     }
     setActiveTab(key);
@@ -2453,7 +3372,7 @@ export default function WorkInjuryCaseModal({
         </Button>
       ];
 
-      if (activeTab === 'basic' && (onSubmit || onSaveBasicInfo)) {
+      if (activeTab === 'basic' && canEditBasicInfo && (onSubmit || onSaveBasicInfo)) {
         const basicDirty = hasTabChanges('basic');
         const basicSavingState = mode === 'create' ? mainFormSaving : basicInfoSaving;
         buttons.push(
@@ -2469,14 +3388,14 @@ export default function WorkInjuryCaseModal({
             type="primary"
             onClick={() => void handleBasicInfoSave()}
             loading={basicSavingState}
-            disabled={!isEditable || !basicDirty}
+            disabled={!canEditBasicInfo || !basicDirty}
           >
             保存基本信息
           </Button>
         );
       }
 
-      if (activeTab === 'parties' && (onSubmit || onSaveParties)) {
+      if (activeTab === 'parties' && editableTabsSet.has('parties') && (onSubmit || onSaveParties)) {
         const partiesDirty = hasTabChanges('parties');
         const partiesSavingState = mode === 'create' ? mainFormSaving : partiesSaving;
         buttons.push(
@@ -2499,7 +3418,7 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'staff' && onSaveAssignment) {
+      if (activeTab === 'staff' && editableTabsSet.has('staff') && onSaveAssignment) {
         buttons.push(
           <Button
             key="assignment-reset"
@@ -2520,7 +3439,7 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'hearing' && onAddHearing) {
+      if (activeTab === 'hearing' && editableTabsSet.has('hearing') && onAddHearing && canAddHearings) {
         buttons.push(
           <Button
             key="hearing-reset"
@@ -2541,7 +3460,29 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'followUp' && onAddFollowUp) {
+      if (activeTab === 'timeNodes' && editableTabsSet.has('timeNodes') && onSaveTimeNodes && canManageTimeNodes) {
+        const timeNodesDirty = hasTabChanges('timeNodes');
+        buttons.push(
+          <Button
+            key="timeNodes-reset"
+            onClick={handleTimeNodeReset}
+            disabled={timeNodeSaving || !timeNodesDirty}
+          >
+            重置
+          </Button>,
+          <Button
+            key="timeNodes-save"
+            type="primary"
+            onClick={() => void handleTimeNodeSave()}
+            loading={timeNodeSaving}
+            disabled={!canManageTimeNodes || !timeNodesDirty}
+          >
+            保存时间节点
+          </Button>
+        );
+      }
+
+      if (activeTab === 'followUp' && editableTabsSet.has('followUp') && onAddFollowUp) {
         buttons.push(
           <Button key="followUp-reset" onClick={handleFollowUpReset} disabled={followUpSaving}>
             重置
@@ -2564,6 +3505,7 @@ export default function WorkInjuryCaseModal({
       activeTab,
       assignmentSaving,
       basicInfoSaving,
+      canEditBasicInfo,
       canAddFollowUps,
       canAddHearings,
       canAddMoreHearings,
@@ -2581,23 +3523,29 @@ export default function WorkInjuryCaseModal({
       handleHearingSave,
       handlePartiesReset,
       handlePartiesSave,
+      handleTimeNodeReset,
+      handleTimeNodeSave,
       hasTabChanges,
       hearingSaving,
       isEditable,
       mainFormSaving,
       mode,
+      onSaveTimeNodes,
       onAddFollowUp,
       onAddHearing,
       onSaveAssignment,
       onSaveBasicInfo,
       onSaveParties,
       onSubmit,
-      partiesSaving
+      partiesSaving,
+      timeNodeSaving,
+      canManageTimeNodes,
+      editableTabsSet
     ]
   );
 
   const modalTitleText = mode === 'create' ? '新增案件' : mode === 'update' ? '编辑案件' : '案件详情';
-  const statusLabel = CASE_STATUS_LABELS[pendingStatus] ?? pendingStatus;
+  const statusLabel = CASE_STATUS_LABEL_MAP[pendingStatus] ?? pendingStatus;
   const canModifyStatus = mode === 'create' ? isEditable : isEditable && canUpdateStatus;
   const statusControl = canModifyStatus ? (
     <Select<CaseStatusValue>
@@ -2629,7 +3577,7 @@ export default function WorkInjuryCaseModal({
       title={mode === 'create' ? modalTitleText : modalTitle}
       width={1000}
       maskClosable={false}
-      destroyOnClose
+      destroyOnHidden
       onCancel={handleCancel}
       footer={
         isEditable ? editableFooter : viewFooter
@@ -2643,18 +3591,28 @@ export default function WorkInjuryCaseModal({
         }
       }}
     >
-      <Form form={form} layout="vertical" className={styles.form} onValuesChange={handleValuesChange}>
-        <div className={styles.viewContainer}>
-          <Tabs
-            activeKey={activeTab}
-            onChange={handleTabChange}
-            tabPosition="left"
-            items={tabItems}
-            className={styles.viewTabs}
-            destroyInactiveTabPane={false}
-          />
-        </div>
-      </Form>
+      <>
+        <Form form={form} layout="vertical" className={styles.form} onValuesChange={handleValuesChange}>
+          <div className={styles.viewContainer}>
+            <Tabs
+              activeKey={activeTab}
+              onChange={handleTabChange}
+              tabPosition="left"
+              items={tabItems}
+              className={styles.viewTabs}
+              destroyOnHidden={false}
+            />
+          </div>
+        </Form>
+        {shouldRenderAssignmentHiddenForm ? <Form form={assignmentForm} component={false} /> : null}
+        {shouldRenderHearingHiddenForm ? <Form form={hearingForm} component={false} /> : null}
+        {shouldRenderFeesHiddenForm ? (
+          <>
+            <Form form={collectionForm} component={false} />
+            <Form form={feeForm} component={false} />
+          </>
+        ) : null}
+      </>
     </Modal>
   );
 }

@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { Button, Descriptions, Input, Modal, Select, Space, Typography, message } from 'antd';
+import { App, Button, Descriptions, Input, Modal, Select, Space, Typography } from 'antd';
 import { EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
-import type { UserRole, UserDepartment } from '@/lib/users-api';
+import type { UserRole, UserDepartment } from '@easy-law/shared-types';
+import { DEPARTMENT_LABEL_MAP } from '@easy-law/shared-types';
 
 export const DEFAULT_INITIAL_PASSWORD = 'a@000123';
 
@@ -90,15 +91,10 @@ const GENDER_LABEL_MAP: Record<'male' | 'female', string> = {
   female: '女'
 };
 
-const DEPARTMENT_OPTIONS: DepartmentOption[] = [
-  { label: '工伤部门', value: 'work_injury' },
-  { label: '保险部门', value: 'insurance' }
-];
-
-const DEPARTMENT_LABEL_MAP: Record<UserDepartment, string> = {
-  work_injury: '工伤部门',
-  insurance: '保险部门'
-};
+const DEPARTMENT_OPTIONS: DepartmentOption[] = Object.entries(DEPARTMENT_LABEL_MAP).map(([value, label]) => ({
+  value: value as UserDepartment,
+  label
+}));
 
 export default function TeamMemberModal({
   open,
@@ -116,6 +112,7 @@ export default function TeamMemberModal({
   onModeChange,
   confirmLoading
 }: TeamMemberModalProps) {
+  const { message } = App.useApp();
   const effectiveDepartmentOptions = (departmentOptions && departmentOptions.length > 0
     ? departmentOptions
     : DEPARTMENT_OPTIONS);
@@ -365,12 +362,12 @@ export default function TeamMemberModal({
   const footer = mode === 'view'
     ? viewFooter
     : [
-        <Button key="cancel" onClick={onCancel}>
-          取消
-        </Button>,
-        <Button key="submit" type="primary" loading={confirmLoading} onClick={handleSubmit}>
-          {mode === 'create' ? '创建' : '保存'}
-        </Button>
+      <Button key="cancel" onClick={onCancel}>
+        取消
+      </Button>,
+      <Button key="submit" type="primary" loading={confirmLoading} onClick={handleSubmit}>
+        {mode === 'create' ? '创建' : '保存'}
+      </Button>
       ];
 
   return (
@@ -382,6 +379,7 @@ export default function TeamMemberModal({
       maskClosable={false}
       destroyOnHidden
       width={560}
+      className="scrollable-modal"
     >
       <Space direction="vertical" size={24} style={{ width: '100%' }}>
         <Descriptions column={1} bordered>

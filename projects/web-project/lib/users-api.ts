@@ -1,9 +1,6 @@
 import { ApiError } from './api-client';
 import { authClient } from './auth-client';
-
-export type UserRole = 'super_admin' | 'admin' | 'administration' | 'lawyer' | 'assistant' | 'sale';
-export type UserDepartment = 'work_injury' | 'insurance';
-
+import type { UserDepartment, UserRole } from '@easy-law/shared-types';
 export interface UserSupervisorInfo {
   id: string;
   name: string | null;
@@ -55,7 +52,7 @@ const USER_ROLES: readonly UserRole[] = ['super_admin', 'admin', 'administration
 const USER_DEPARTMENTS: readonly UserDepartment[] = ['work_injury', 'insurance'];
 const USER_GENDERS = ['male', 'female'] as const;
 
-type BetterAuthResponse<TData> = {
+export type BetterAuthResponse<TData> = {
   data: TData | null;
   error: {
     status: number;
@@ -64,7 +61,7 @@ type BetterAuthResponse<TData> = {
   } | null;
 };
 
-function ensureAuthSuccess<TData>(result: BetterAuthResponse<TData>, fallbackMessage: string): TData {
+export function ensureAuthSuccess<TData>(result: BetterAuthResponse<TData>, fallbackMessage: string): TData {
   if (result.error) {
     const { status, message, statusText } = result.error;
     throw new ApiError(message ?? statusText ?? fallbackMessage, status ?? 500, result.error);
@@ -132,7 +129,7 @@ function normalizeSupervisor(value: unknown): UserSupervisorInfo | null {
   return null;
 }
 
-function mapUserPayload(raw: unknown): UserResponse | null {
+export function mapUserPayload(raw: unknown): UserResponse | null {
   if (typeof raw !== 'object' || raw === null) {
     return null;
   }
@@ -198,25 +195,76 @@ function mapUserPayload(raw: unknown): UserResponse | null {
   };
 }
 
+function isSystemCreatedUser(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) {
+    return false;
+  }
+
+  const container = raw as Record<string, unknown>;
+  const base = (container.user as Record<string, unknown> | undefined) ?? container;
+
+  if (typeof base !== 'object' || base === null) {
+    return false;
+  }
+
+  const baseData =
+    'data' in base && typeof (base as { data?: unknown }).data === 'object' && (base as { data?: unknown }).data !== null
+      ? ((base as { data: Record<string, unknown> }).data)
+      : undefined;
+  const containerData =
+    'data' in container && typeof (container as { data?: unknown }).data === 'object' && (container as { data?: unknown }).data !== null
+      ? ((container as { data: Record<string, unknown> }).data)
+      : undefined;
+  const mergedData = {
+    ...(containerData ?? {}),
+    ...(baseData ?? {})
+  } as Record<string, unknown>;
+
+  const baseCreatorId =
+    'creatorId' in base && typeof (base as { creatorId?: unknown }).creatorId === 'string'
+      ? ((base as { creatorId: string }).creatorId)
+      : null;
+  const containerCreatorId =
+    'creatorId' in container && typeof (container as { creatorId?: unknown }).creatorId === 'string'
+      ? ((container as { creatorId: string }).creatorId)
+      : null;
+  const mergedCreatorId =
+    typeof mergedData.creatorId === 'string'
+      ? (mergedData.creatorId as string)
+      : null;
+
+  const creatorIdSource = baseCreatorId ?? containerCreatorId ?? mergedCreatorId;
+  return typeof creatorIdSource === 'string' && creatorIdSource.trim().toLowerCase() === 'system';
+}
+
 function mapListPayload(data: unknown): UserResponse[] {
   if (Array.isArray(data)) {
-    return data.map((item) => mapUserPayload(item)).filter(Boolean) as UserResponse[];
+    return data
+      .filter((item) => !isSystemCreatedUser(item))
+      .map((item) => mapUserPayload(item))
+      .filter(Boolean) as UserResponse[];
   }
 
   if (typeof data === 'object' && data !== null) {
     const value = data as Record<string, unknown>;
     if (Array.isArray(value.users)) {
-      return value.users.map((item) => mapUserPayload(item)).filter(Boolean) as UserResponse[];
+      return value.users
+        .filter((item) => !isSystemCreatedUser(item))
+        .map((item) => mapUserPayload(item))
+        .filter(Boolean) as UserResponse[];
     }
     if (Array.isArray(value.accounts)) {
-      return value.accounts.map((item) => mapUserPayload(item)).filter(Boolean) as UserResponse[];
+      return value.accounts
+        .filter((item) => !isSystemCreatedUser(item))
+        .map((item) => mapUserPayload(item))
+        .filter(Boolean) as UserResponse[];
     }
   }
 
   return [];
 }
 
-function mapSingularPayload(data: unknown, errorMessage: string): UserResponse {
+export function mapSingularPayload(data: unknown, errorMessage: string): UserResponse {
   const mapped = mapUserPayload(data);
   if (!mapped) {
     throw new ApiError(errorMessage, 500, data);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { Button, Card, Form, Input, Popconfirm, Result, Select, Space, Table, Tag, message } from 'antd';
+import { App, Button, Card, Form, Input, Popconfirm, Result, Select, Space, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined } from '@ant-design/icons';
 
@@ -16,10 +16,8 @@ import {
   createUser,
   deleteUser,
   updateUser,
-  type UserDepartment,
-  type UserRole
 } from '@/lib/users-api';
-import { useSessionStore } from '@/lib/stores/session-store';
+import { useCurrentUser } from '@/lib/stores/session-store';
 import {
   DEFAULT_TEAM_PAGINATION,
   mapUserToTeamMember,
@@ -27,8 +25,9 @@ import {
   type TeamFilters,
   type TeamMember
 } from '@/lib/stores/team-store';
-
+import { type UserRole, ROLE_LABEL_MAP, ROLE_COLOR_MAP, DEPARTMENT_LABEL_MAP, DEPARTMENT_COLOR_MAP } from '@easy-law/shared-types';
 import { useDashboardHeaderAction } from '../header-context';
+import styles from './styles.module.scss';
 
 type TeamMemberTreeNode = TeamMember & { children?: TeamMemberTreeNode[] };
 
@@ -39,33 +38,6 @@ type ModalState =
   | { open: true; mode: 'create'; record?: undefined }
   | { open: true; mode: 'view' | 'edit'; record: TeamMember };
 
-const ROLE_LABEL_MAP: Record<UserRole, string> = {
-  super_admin: '超级管理员',
-  admin: '管理员',
-  sale: '销售',
-  lawyer: '律师',
-  assistant: '律助',
-  administration: '行政'
-};
-
-const ROLE_COLOR_MAP: Record<UserRole, string> = {
-  super_admin: 'volcano',
-  admin: 'geekblue',
-  sale: 'purple',
-  lawyer: 'green',
-  assistant: 'blue',
-  administration: 'orange'
-};
-
-const DEPARTMENT_LABEL_MAP: Record<UserDepartment, string> = {
-  work_injury: '工伤部门',
-  insurance: '保险部门'
-};
-
-const DEPARTMENT_COLOR_MAP: Record<UserDepartment, string> = {
-  work_injury: 'geekblue',
-  insurance: 'gold'
-};
 
 const ROLE_OPTIONS = (Object.entries(ROLE_LABEL_MAP) as Array<[UserRole, string]>).map(([value, label]) => ({
   value,
@@ -89,15 +61,13 @@ const ESTIMATED_ROW_HEIGHT = 56;
 const RESERVED_VERTICAL_SPACE = 360;
 
 export default function TeamManagementPage() {
+  const { message } = App.useApp();
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [submitting, setSubmitting] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
   const [filterForm] = Form.useForm<Filters>();
 
-  const currentUser = useSessionStore((state) => state.user);
-  const currentUserInitialized = useSessionStore((state) => state.initialized);
-  const currentUserLoading = useSessionStore((state) => state.loading);
-  const refreshSession = useSessionStore((state) => state.refresh);
+  const currentUser = useCurrentUser();
 
   const members = useTeamStore((state) => state.members);
   const teamLoading = useTeamStore((state) => state.loading);
@@ -112,12 +82,6 @@ export default function TeamManagementPage() {
   const removeTeamMember = useTeamStore((state) => state.removeMember);
 
   useEffect(() => {
-    if (!currentUserInitialized && !currentUserLoading) {
-      void refreshSession();
-    }
-  }, [refreshSession, currentUserInitialized, currentUserLoading]);
-
-  useEffect(() => {
     if (teamInitialized) {
       return;
     }
@@ -125,7 +89,7 @@ export default function TeamManagementPage() {
       const errorMessage = error instanceof ApiError ? error.message : '获取成员列表失败，请稍后重试';
       message.error(errorMessage);
     });
-  }, [loadTeamMembers, teamInitialized]);
+  }, [loadTeamMembers, message, teamInitialized]);
 
   useEffect(() => {
     filterForm.setFieldsValue({
@@ -348,7 +312,7 @@ export default function TeamManagementPage() {
       return;
     }
     setModalState({ open: true, mode: 'create' });
-  }, [creatableRoleOptions.length, hasTeamAccess]);
+  }, [creatableRoleOptions.length, hasTeamAccess, message]);
 
   const headerAction = useMemo(() => {
     if (!hasTeamAccess) {
@@ -520,7 +484,6 @@ export default function TeamManagementPage() {
           upsertTeamMember(nextMember);
           message.success('成员信息已更新');
         } else {
-          
           const created = await createUser({
             ...payload,
             creatorId: currentUser.id
@@ -537,7 +500,7 @@ export default function TeamManagementPage() {
         setSubmitting(false);
       }
     },
-  [canManageMember, closeModal, currentUser, hasTeamAccess, modalState, upsertTeamMember]
+    [canManageMember, closeModal, currentUser, hasTeamAccess, message, modalState, upsertTeamMember]
   );
 
   const handleDeleteMember = useCallback(
@@ -553,8 +516,8 @@ export default function TeamManagementPage() {
 
       setDeletingIds((prev) => ({ ...prev, [id]: true }));
       try {
-  await deleteUser(id);
-  removeTeamMember(id);
+        await deleteUser(id);
+        removeTeamMember(id);
         if (modalState.open && modalState.mode !== 'create' && modalState.record?.id === id) {
           closeModal();
         }
@@ -570,7 +533,7 @@ export default function TeamManagementPage() {
         });
       }
     },
-  [canManageMember, closeModal, members, modalState, removeTeamMember]
+    [canManageMember, closeModal, members, message, modalState, removeTeamMember]
   );
 
   const columns = useMemo<ColumnsType<TeamMember>>(() => {
@@ -676,7 +639,7 @@ export default function TeamManagementPage() {
       ? canManageMember(modalState.record)
       : true;
 
-  if (!currentUserLoading && !hasTeamAccess) {
+  if (!hasTeamAccess) {
     return <Result status="403" title="暂无权限" subTitle="您无权访问团队管理，请联系管理员。" />;
   }
 
@@ -719,15 +682,16 @@ export default function TeamManagementPage() {
           dataSource={treeMembers}
           pagination={{
             ...pagination,
+            className: styles.pagination,
             showTotal: (_, range) => `共 ${totalMemberCount} 人，当前显示第 ${range[0]}-${range[1]} 条`,
             onChange: handlePaginationChange,
             onShowSizeChange: handlePageSizeChange
           }}
-              expandable={{
+          expandable={{
                 defaultExpandAllRows: true,
                 expandIconColumnIndex: 0,
               }}
-          loading={teamLoading || currentUserLoading}
+          loading={teamLoading}
         />
       </Card>
 

@@ -9,6 +9,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid
 } from 'drizzle-orm/pg-core';
 
@@ -27,17 +28,39 @@ export const participantRoleEnum = pgEnum('case_participant_role', ['claimant', 
 export const participantEntityEnum = pgEnum('case_participant_entity', ['personal', 'organization']);
 export const caseStatusEnum = pgEnum('case_status', ['open', 'closed', 'void']);
 export const trialStageEnum = pgEnum('case_trial_stage', ['first_instance', 'second_instance', 'retrial']);
+export const caseTimeNodeTypeEnum = pgEnum('case_time_node_type', [
+  'apply_employment_confirmation',
+  'labor_arbitration_decision',
+  'submit_injury_certification',
+  'receive_injury_certification',
+  'submit_disability_assessment',
+  'receive_disability_assessment',
+  'apply_insurance_arbitration',
+  'insurance_arbitration_decision',
+  'file_lawsuit',
+  'lawsuit_review_approved',
+  'final_judgement'
+]);
+
+export const caseCategoryEnum = pgEnum('case_category', ['work_injury', 'insurance']);
+export const contractQuoteTypeEnum = pgEnum('contract_quote_type', ['fixed', 'risk', 'other']);
+export const litigationFeeTypeEnum = pgEnum('litigation_fee_type', ['advance', 'no_advance', 'reimbursed']);
+export const travelFeeTypeEnum = pgEnum('travel_fee_type', ['lawyer', 'reimbursed', 'no_advance']);
+export const contractFormEnum = pgEnum('contract_form_type', ['electronic', 'paper']);
 
 export const cases = pgTable('case_record', {
   id: uuid('id').primaryKey().defaultRandom(),
   caseType: caseTypeEnum('case_type').notNull(), // 案件类型
   caseLevel: caseLevelEnum('case_level').notNull(), // 案件级别
+  caseCategory: caseCategoryEnum('case_category').notNull().default('work_injury'), // 案件类别
   provinceCity: text('province_city'), // 省份/城市
   targetAmount: text('target_amount'), // 标的额
   feeStandard: text('fee_standard'), // 收费标准
   agencyFeeEstimate: text('agency_fee_estimate'), // 预估代理费
   dataSource: text('data_source'), // 数据来源
   hasContract: boolean('has_contract'), // 是否有合同
+  contractDate: date('contract_date').default(sql`CURRENT_DATE`), // 合同日期
+  clueDate: date('clue_date'), // 线索日期
   hasSocialSecurity: boolean('has_social_security'), // 是否有社保
   entryDate: date('entry_date'), // 入职时间
   injuryLocation: text('injury_location'), // 受伤地点
@@ -51,6 +74,20 @@ export const cases = pgTable('case_record', {
   customerCooperative: boolean('customer_cooperative'), // 是否配合提交材料
   witnessCooperative: boolean('witness_cooperative'), // 证人是否配合出庭
   remark: text('remark'), // 备注
+  contractQuoteType: contractQuoteTypeEnum('contract_quote_type'), // 合同报价方式
+  contractQuoteAmount: numeric('contract_quote_amount', { precision: 14, scale: 2 }), // 固定收费金额
+  contractQuoteUpfront: numeric('contract_quote_upfront', { precision: 14, scale: 2 }), // 风险收费前期费用
+  contractQuoteRatio: numeric('contract_quote_ratio', { precision: 5, scale: 2 }), // 风险收费比例
+  contractQuoteOther: text('contract_quote_other'), // 其他报价说明
+  estimatedCollection: numeric('estimated_collection', { precision: 14, scale: 2 }), // 预计回款
+  litigationFeeType: litigationFeeTypeEnum('litigation_fee_type'), // 诉讼费承担方式
+  travelFeeType: travelFeeTypeEnum('travel_fee_type'), // 差旅费承担方式
+  contractForm: contractFormEnum('contract_form'), // 合同形式
+  insuranceRiskLevel: caseLevelEnum('insurance_risk_level'), // 保险案件风险等级
+  insuranceTypes: jsonb('insurance_types').$type<string[] | null>().default(sql`'[]'::jsonb`), // 保险类型
+  insuranceMisrepresentations: jsonb('insurance_misrepresentations')
+    .$type<string[] | null>()
+    .default(sql`'[]'::jsonb`), // 未如实告知情况
   department: departmentEnum('department'), // 部门
   assignedSaleId: text('assigned_sale_id').references(() => users.id), // 跟进销售
   assignedLawyerId: text('assigned_lawyer_id').references(() => users.id), // 跟进律师
@@ -62,6 +99,7 @@ export const cases = pgTable('case_record', {
   updaterId: text('updater_id').references(() => users.id), // 更新人
   salesCommission: text('sales_commission'), // 销售提成
   handlingFee: text('handling_fee'), // 办案费用
+  version: integer('version').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
@@ -122,6 +160,23 @@ export const caseTimeline = pgTable('case_timeline', {
   updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
 
+export const caseTimeNodes = pgTable(
+  'case_time_node',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    caseId: uuid('case_id')
+      .notNull()
+      .references(() => cases.id, { onDelete: 'cascade' }),
+    nodeType: caseTimeNodeTypeEnum('node_type').notNull(),
+    occurredOn: date('occurred_on').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull()
+  },
+  table => ({
+    caseTimeNodeUnique: uniqueIndex('case_time_node_case_type_ui').on(table.caseId, table.nodeType)
+  })
+);
+
 export const caseChangeLogs = pgTable('case_change_log', {
   id: uuid('id').primaryKey().defaultRandom(),
   caseId: uuid('case_id')
@@ -137,6 +192,26 @@ export const caseChangeLogs = pgTable('case_change_log', {
     .default(sql`'[]'::jsonb`),
   createdAt: timestamp('created_at').defaultNow().notNull()
 });
+
+export const caseTablePreferences = pgTable(
+  'case_table_preference',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tableKey: text('table_key').notNull(),
+    visibleColumns: jsonb('visible_columns').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull()
+  },
+  (table) => ({
+    userTablePreferenceUnique: uniqueIndex('case_table_preference_user_key_ui').on(
+      table.userId,
+      table.tableKey
+    )
+  })
+);
 
 export const casesRelations = relations(cases, ({ many, one }) => ({
   creator: one(users, {
@@ -162,6 +237,7 @@ export const casesRelations = relations(cases, ({ many, one }) => ({
   hearings: many(caseHearings),
   participants: many(caseParticipants),
   collections: many(caseCollections),
+  timeNodes: many(caseTimeNodes),
   timeline: many(caseTimeline),
   changeLogs: many(caseChangeLogs)
 }));
@@ -188,6 +264,13 @@ export const caseTimelineRelations = relations(caseTimeline, ({ one }) => ({
   follower: one(users, {
     fields: [caseTimeline.followerId],
     references: [users.id]
+  })
+}));
+
+export const caseTimeNodeRelations = relations(caseTimeNodes, ({ one }) => ({
+  case: one(cases, {
+    fields: [caseTimeNodes.caseId],
+    references: [cases.id]
   })
 }));
 

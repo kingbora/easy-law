@@ -166,8 +166,8 @@ verify_nginx_config() {
 log "开始智能部署流程..."
 
 # 检查镜像文件
-if [ ! -f "$APP_DIR/app-image.tar" ]; then
-    log "错误: 未找到Docker镜像文件 app-image.tar"
+if [ ! -f "$APP_DIR/app-image.tar.gz" ]; then
+    log "错误: 未找到Docker镜像文件 app-image.tar.gz"
     exit 1
 fi
 
@@ -176,6 +176,7 @@ setup_environment
 
 # 加载新镜像
 log "加载Docker镜像..."
+gunzip -c "$APP_DIR/app-image.tar.gz"
 docker load -i "$APP_DIR/app-image.tar"
 
 # 获取当前和下一个端口
@@ -218,7 +219,8 @@ if ! docker run -d --name "$CONTAINER_NAME" \
     -v $APP_DIR/shared/data:/app/data \
     -e NODE_ENV=production \
     -e DATABASE_URL="$DATABASE_URL" \
-    -e CROSS_ORIGIN="https://yourdomain.com" \
+    -e QINIU_ACCESS_KEY="$QINIU_ACCESS_KEY" \
+    -e QINIU_SECRET_KEY="$QINIU_SECRET_KEY" \
     lawyer-app:latest; then
     log "✗ 应用服务启动失败"
     docker logs "$CONTAINER_NAME" 2>/dev/null || true

@@ -6,12 +6,15 @@ import { auth } from '../src/auth';
 import { db, sql } from '../src/db/client';
 import { users } from '../src/db/schema';
 
-const EMAIL = 'super@qq.com';
-const PASSWORD = 'a@000123';
-const NAME = 'super';
+const EMAIL = process.env.SUPER_ROLE_EMAIL;
+const PASSWORD = process.env.SUPER_ROLE_PASSWORD;
+const NAME = process.env.SUPER_ROLE_NICKNAME;
 
 async function main() {
   try {
+    if (!EMAIL || !PASSWORD || !NAME) {
+      throw new Error('请在环境变量中设置 SUPER_ROLE_EMAIL、SUPER_ROLE_PASSWORD 和 SUPER_ROLE_NICKNAME');
+    }
     const existingUser = await db.select().from(users).where(eq(users.email, EMAIL)).limit(1);
 
     if (existingUser.length === 0) {

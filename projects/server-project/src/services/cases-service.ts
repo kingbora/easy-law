@@ -1,26 +1,73 @@
-import { and, count, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import {
+  type AssignableStaffMember as SharedAssignableStaffMember,
+  type AssignableStaffResponse as SharedAssignableStaffResponse,
+  type CaseCategory as SharedCaseCategory,
+  type CaseChangeDetail as SharedCaseChangeDetail,
+  type CaseChangeLog as SharedCaseChangeLog,
+  type CaseCollectionInput as SharedCaseCollectionInput,
+  type CaseCollectionRecord as SharedCaseCollectionRecord,
+  type CaseHearingInput as SharedCaseHearingInput,
+  type CaseHearingRecord as SharedCaseHearingRecord,
+  type CaseParticipant as SharedCaseParticipant,
+  type CaseParticipantEntity as SharedCaseParticipantEntity,
+  type CaseParticipantInput as SharedCaseParticipantInput,
+  type CaseParticipantsInput as SharedCaseParticipantsInput,
+  type CasePayload as SharedCasePayload,
+  type CaseRecord as SharedCaseRecord,
+  type CaseStatus as SharedCaseStatus,
+  type CaseTableColumnKey as SharedCaseTableColumnKey,
+  type CaseTablePreference as SharedCaseTablePreference,
+  type CaseTimeNodeInput as SharedCaseTimeNodeInput,
+  type CaseTimeNodeRecord as SharedCaseTimeNodeRecord,
+  type CaseTimeNodeType as SharedCaseTimeNodeType,
+  type CaseTimelineInput as SharedCaseTimelineInput,
+  type CaseTimelineRecord as SharedCaseTimelineRecord,
+  type CaseUpdateConflictDetails as SharedCaseUpdateConflictDetails,
+  type CaseUpdateConflictField as SharedCaseUpdateConflictField,
+  type CaseUpdateConflictType as SharedCaseUpdateConflictType,
+  type CaseUpdateMeta as SharedCaseUpdateMeta,
+  type CaseUpdateRequest as SharedCaseUpdateRequest,
+  type CaseLevel as SharedCaseLevel,
+  type CaseType as SharedCaseType,
+  type ContractFormType as SharedContractFormType,
+  type ContractQuoteType as SharedContractQuoteType,
+  type LitigationFeeType as SharedLitigationFeeType,
+  type ListCasesOptions as SharedListCasesOptions,
+  type PaginationMeta as SharedPaginationMeta,
+  type TrialStage as SharedTrialStage,
+  type TravelFeeType as SharedTravelFeeType,
+  type UserDepartment as SharedUserDepartment,
+  type UserRole as SharedUserRole,
+  TRIAL_STAGE_LABEL_MAP
+} from '@easy-law/shared-types';
+import { and, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import { db } from '../db/client';
 import { departmentEnum, users } from '../db/schema/auth-schema';
-import type {
-  caseLevelEnum,
-  caseTypeEnum,
-  participantEntityEnum,
-  participantRoleEnum,
-} from '../db/schema/case-schema';
 import {
   caseChangeLogs,
   caseCollections,
   caseParticipants,
   cases,
   caseHearings,
+  caseTablePreferences,
+  caseTimeNodeTypeEnum,
+  caseTimeNodes,
   caseTimeline,
   caseStatusEnum,
+  caseCategoryEnum,
+  contractQuoteTypeEnum,
+  litigationFeeTypeEnum,
+  travelFeeTypeEnum,
+  contractFormEnum,
   trialStageEnum,
-  type CaseChangeDetail
+  participantEntityEnum,
 } from '../db/schema/case-schema';
 import type { SessionUser } from '../utils/auth-session';
 import { BadRequestError } from '../utils/http-errors';
+
+import { syncCaseHearingEvents } from './calendar-events-service';
 
 export class AuthorizationError extends Error {
   status: number;
@@ -37,7 +84,7 @@ type CaseAction = 'list' | 'create' | 'update' | 'delete';
 const CASE_PERMISSIONS: Record<string, Set<CaseAction>> = {
   super_admin: new Set(['list', 'create', 'update', 'delete']),
   admin: new Set(['list', 'create', 'update']),
-  administration: new Set(['list', 'update']),
+  administration: new Set(['list', 'create', 'update']),
   lawyer: new Set(['list', 'create', 'update', 'delete']),
   assistant: new Set(['list', 'create', 'update']),
   sale: new Set(['list', 'create', 'update'])
@@ -49,68 +96,231 @@ const CASE_COLLECTION_ALLOWED_ROLES = new Set<SessionUser['role']>([
   'administration'
 ]);
 
-export type CaseType = (typeof caseTypeEnum.enumValues)[number];
-export type CaseLevel = (typeof caseLevelEnum.enumValues)[number];
-export type CaseStatus = (typeof caseStatusEnum.enumValues)[number];
-export type ParticipantRole = (typeof participantRoleEnum.enumValues)[number];
-export type ParticipantEntity = (typeof participantEntityEnum.enumValues)[number];
-export type TrialStage = (typeof trialStageEnum.enumValues)[number];
+const WORK_INJURY_CASE_TABLE_KEY = 'work_injury_cases';
+const INSURANCE_CASE_TABLE_KEY = 'insurance_cases';
 
-export interface CaseParticipantInput {
-  entityType?: ParticipantEntity | null;
-  name?: string | null;
-  idNumber?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  isDishonest?: boolean | null;
-  sortOrder?: number | null;
+const CASE_TABLE_ALLOWED_KEYS = new Set<string>([
+  WORK_INJURY_CASE_TABLE_KEY,
+  INSURANCE_CASE_TABLE_KEY
+]);
+
+const CASE_TABLE_ALLOWED_COLUMNS = [
+  'caseNumber',
+  'caseStatus',
+  'caseType',
+  'caseLevel',
+  'claimantNames',
+  'provinceCity',
+  'assignedLawyerName',
+  'assignedAssistantName',
+  'assignedSaleName',
+  'entryDate',
+  'createdAt',
+  'updatedAt'
+] as const;
+
+const CASE_TABLE_COLUMN_SET = new Set<string>(CASE_TABLE_ALLOWED_COLUMNS);
+
+const DEFAULT_CASE_TABLE_COLUMNS: SharedCaseTableColumnKey[] = [
+  'caseNumber',
+  'caseStatus',
+  'caseType',
+  'caseLevel',
+  'claimantNames',
+  'provinceCity',
+  'assignedLawyerName',
+  'assignedAssistantName'
+];
+
+function resolveCaseTableKey(tableKey?: string): string {
+  if (tableKey && CASE_TABLE_ALLOWED_KEYS.has(tableKey)) {
+    return tableKey;
+  }
+  return WORK_INJURY_CASE_TABLE_KEY;
 }
 
-export interface CaseParticipantsInput {
-  claimants?: CaseParticipantInput[];
-  respondents?: CaseParticipantInput[];
+function sanitizeVisibleColumns(
+  columns: unknown,
+  fallback: CaseTableColumnKey[] = DEFAULT_CASE_TABLE_COLUMNS
+): CaseTableColumnKey[] {
+  if (!Array.isArray(columns)) {
+    return [...fallback];
+  }
+
+  const result: CaseTableColumnKey[] = [];
+
+  for (const value of columns) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    if (!CASE_TABLE_COLUMN_SET.has(value)) {
+      continue;
+    }
+
+    if (result.includes(value as CaseTableColumnKey)) {
+      continue;
+    }
+
+    result.push(value as CaseTableColumnKey);
+  }
+
+  return result.length > 0 ? result : [...fallback];
 }
 
-export interface CaseCollectionInput {
-  id?: string;
-  amount?: string | number | null;
-  receivedAt?: string | Date | null;
-}
+const BASIC_INFO_FIELD_KEYS = [
+  'caseType',
+  'caseLevel',
+  'provinceCity',
+  'targetAmount',
+  'feeStandard',
+  'agencyFeeEstimate',
+  'dataSource',
+  'hasContract',
+  'contractDate',
+  'clueDate',
+  'hasSocialSecurity',
+  'entryDate',
+  'injuryLocation',
+  'injurySeverity',
+  'injuryCause',
+  'workInjuryCertified',
+  'monthlySalary',
+  'appraisalLevel',
+  'appraisalEstimate',
+  'existingEvidence',
+  'customerCooperative',
+  'witnessCooperative',
+  'remark',
+  'contractQuoteType',
+  'contractQuoteAmount',
+  'contractQuoteUpfront',
+  'contractQuoteRatio',
+  'contractQuoteOther',
+  'estimatedCollection',
+  'litigationFeeType',
+  'travelFeeType',
+  'contractForm',
+  'insuranceRiskLevel',
+  'insuranceTypes',
+  'insuranceMisrepresentations',
+  'caseCategory'
+] as const;
+
+export type CaseType = SharedCaseType;
+export type CaseLevel = SharedCaseLevel;
+export type CaseStatus = SharedCaseStatus;
+export type CaseCategory = SharedCaseCategory;
+export type ContractQuoteType = SharedContractQuoteType;
+export type LitigationFeeType = SharedLitigationFeeType;
+export type TravelFeeType = SharedTravelFeeType;
+export type ContractFormType = SharedContractFormType;
+export type CaseTimeNodeType = SharedCaseTimeNodeType;
+export type TrialStage = SharedTrialStage;
+export type ParticipantEntity = SharedCaseParticipantEntity;
+export type CaseParticipantInput = SharedCaseParticipantInput;
+export type CaseParticipantsInput = SharedCaseParticipantsInput;
+export type CaseCollectionInput = SharedCaseCollectionInput;
+export type CaseTimelineInput = SharedCaseTimelineInput;
+export type CaseTimeNodeInput = SharedCaseTimeNodeInput;
+export type CaseHearingInput = SharedCaseHearingInput;
+export type CasePayload = SharedCasePayload;
+export type CaseUpdateMeta = SharedCaseUpdateMeta;
+export type CaseUpdateRequest = SharedCaseUpdateRequest;
+export type CaseUpdateConflictField = SharedCaseUpdateConflictField;
+export type CaseUpdateConflictDetails = SharedCaseUpdateConflictDetails;
+export type CaseUpdateConflictType = SharedCaseUpdateConflictType;
+export type CaseParticipantDTO = SharedCaseParticipant;
+export type CaseCollectionDTO = SharedCaseCollectionRecord;
+export type CaseTimelineDTO = SharedCaseTimelineRecord;
+export type CaseTimeNodeDTO = SharedCaseTimeNodeRecord;
+export type CaseHearingDTO = SharedCaseHearingRecord;
+export type CaseChangeDetail = SharedCaseChangeDetail;
+export type CaseChangeLogDTO = SharedCaseChangeLog;
+export type CaseDTO = SharedCaseRecord;
+export type PaginationMeta = SharedPaginationMeta;
+export type ListCasesOptions = SharedListCasesOptions;
+export type CaseTableColumnKey = SharedCaseTableColumnKey;
+export type CaseTablePreferenceDTO = SharedCaseTablePreference;
+export type AssignableStaffMemberDTO = SharedAssignableStaffMember;
+export type AssignableStaffDTO = SharedAssignableStaffResponse;
 
 export type CreateCaseCollectionInput = Pick<CaseCollectionInput, 'amount' | 'receivedAt'>;
-
-export interface CaseTimelineInput {
-  id?: string;
-  occurredOn: string | Date;
-  note: string;
-  followerId?: string | null;
-}
-
-export interface CaseHearingInput {
-  trialLawyerId?: string | null;
-  hearingTime?: string | Date | null;
-  hearingLocation?: string | null;
-  tribunal?: string | null;
-  judge?: string | null;
-  caseNumber?: string | null;
-  contactPhone?: string | null;
-  trialStage?: TrialStage | null;
-  hearingResult?: string | null;
-}
 
 export interface CaseHearingUpsertInput extends Omit<CaseHearingInput, 'trialStage'> {
   trialStage: TrialStage;
 }
 
+
+export interface CaseClientDTO {
+  id: string;
+  name: string;
+  entityType: ParticipantEntity | null;
+  phone: string | null;
+  idNumber: string | null;
+  caseId: string;
+  caseType: CaseType;
+  caseLevel: CaseLevel;
+  caseStatus: CaseStatus | null;
+  department: SharedUserDepartment | null;
+  assignedSaleName: string | null;
+  assignedLawyerName: string | null;
+  assignedAssistantName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CaseClientDetailDTO extends CaseClientDTO {
+  address: string | null;
+  isDishonest: boolean;
+}
+
+export interface CaseClientListOptions {
+  page?: number;
+  pageSize?: number;
+  department?: SharedUserDepartment | null;
+  search?: string;
+}
+
+export interface UpdateCaseClientInput {
+  name?: string;
+  entityType?: ParticipantEntity | null;
+  phone?: string | null;
+  idNumber?: string | null;
+  address?: string | null;
+  isDishonest?: boolean | null;
+}
+
+type UserRecord = typeof users.$inferSelect;
+type CaseRow = typeof cases.$inferSelect;
+type CaseParticipantRow = typeof caseParticipants.$inferSelect;
+type CaseCollectionRow = typeof caseCollections.$inferSelect;
+type CaseTimelineRow = typeof caseTimeline.$inferSelect;
+type CaseTimeNodeRow = typeof caseTimeNodes.$inferSelect;
+type CaseHearingRow = typeof caseHearings.$inferSelect;
+
+type ParticipantRole = CaseParticipantRow['role'];
+
+type CaseTimelineRowWithFollower = CaseTimelineRow & {
+  follower?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
+};
+
+type CaseHearingRowWithRelations = CaseHearingRow & {
+  trialLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
+};
+
 export interface CaseInput {
   caseType: CaseType;
   caseLevel: CaseLevel;
+  caseCategory?: CaseCategory;
   provinceCity?: string | null;
   targetAmount?: string | number | null;
   feeStandard?: string | null;
   agencyFeeEstimate?: string | number | null;
   dataSource?: string | null;
   hasContract?: boolean | null;
+  contractDate?: string | Date | null;
+  clueDate?: string | Date | null;
   hasSocialSecurity?: boolean | null;
   entryDate?: string | Date | null;
   injuryLocation?: string | null;
@@ -124,6 +334,18 @@ export interface CaseInput {
   customerCooperative?: boolean | null;
   witnessCooperative?: boolean | null;
   remark?: string | null;
+  contractQuoteType?: ContractQuoteType | null;
+  contractQuoteAmount?: string | number | null;
+  contractQuoteUpfront?: string | number | null;
+  contractQuoteRatio?: string | number | null;
+  contractQuoteOther?: string | null;
+  estimatedCollection?: string | number | null;
+  litigationFeeType?: LitigationFeeType | null;
+  travelFeeType?: TravelFeeType | null;
+  contractForm?: ContractFormType | null;
+  insuranceRiskLevel?: CaseLevel | null;
+  insuranceTypes?: string[] | null;
+  insuranceMisrepresentations?: string[] | null;
   department?: (typeof cases.$inferInsert)['department'];
   assignedSaleId?: string | null;
   assignedLawyerId?: string | null;
@@ -139,154 +361,266 @@ export interface CaseInput {
   hearings?: CaseHearingInput[] | null;
 }
 
-export interface CaseListFilters {
-  department?: (typeof cases.$inferSelect)['department'];
-  assignedSaleId?: string;
-  assignedLawyerId?: string;
-  caseType?: CaseType;
-  caseLevel?: CaseLevel;
-  caseStatus?: CaseStatus;
-  search?: string;
-}
-
-export interface ListCasesOptions extends CaseListFilters {
-  page?: number;
-  pageSize?: number;
-  orderBy?: 'createdAt' | 'updatedAt';
-  orderDirection?: 'asc' | 'desc';
-}
-
-export interface PaginationMeta {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-}
-
-export interface CaseParticipantDTO {
-  id: string;
-  entityType: ParticipantEntity | null;
-  name: string;
-  idNumber: string | null;
-  phone: string | null;
-  address: string | null;
-  isDishonest: boolean;
-  sortOrder: number | null;
-}
-
-export interface CaseCollectionDTO {
-  id: string;
-  amount: string;
-  receivedAt: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseTimelineDTO {
-  id: string;
-  occurredOn: string;
-  createdAt: string;
-  updatedAt: string;
-  note: string;
-  followerId: string | null;
-  followerName: string | null;
-}
-
-export interface CaseHearingDTO {
-  id: string;
-  trialLawyerId: string | null;
-  trialLawyerName: string | null;
-  hearingTime: string | null;
-  hearingLocation: string | null;
-  tribunal: string | null;
-  judge: string | null;
-  caseNumber: string | null;
-  contactPhone: string | null;
-  trialStage: TrialStage | null;
-  hearingResult: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseDTO {
-  id: string;
-  caseType: CaseType;
-  caseLevel: CaseLevel;
-  provinceCity: string | null;
-  targetAmount: string | null;
-  feeStandard: string | null;
-  agencyFeeEstimate: string | null;
-  dataSource: string | null;
-  hasContract: boolean | null;
-  hasSocialSecurity: boolean | null;
-  entryDate: string | null;
-  injuryLocation: string | null;
-  injurySeverity: string | null;
-  injuryCause: string | null;
-  workInjuryCertified: boolean | null;
-  monthlySalary: string | null;
-  appraisalLevel: string | null;
-  appraisalEstimate: string | null;
-  existingEvidence: string | null;
-  customerCooperative: boolean | null;
-  witnessCooperative: boolean | null;
-  remark: string | null;
-  department: (typeof cases.$inferSelect)['department'];
-  assignedSaleId: string | null;
-  assignedSaleName: string | null;
-  assignedLawyerId: string | null;
-  assignedLawyerName: string | null;
-  assignedAssistantId: string | null;
-  assignedAssistantName: string | null;
-  caseStatus: CaseStatus | null;
-  closedReason: string | null;
-  voidReason: string | null;
-  salesCommission: string | null;
-  handlingFee: string | null;
-  createdAt: string;
-  updatedAt: string;
-  participants: {
-    claimants: CaseParticipantDTO[];
-    respondents: CaseParticipantDTO[];
-  };
-  collections: CaseCollectionDTO[];
-  timeline: CaseTimelineDTO[];
-  hearings: CaseHearingDTO[];
-}
-
-export interface CaseChangeLogDTO {
-  id: string;
-  action: string;
-  description: string | null;
-  changes: CaseChangeDetail[] | null;
-  actorId: string | null;
-  actorName: string | null;
-  actorRole: string | null;
-  createdAt: string;
-}
-
-type CaseRecord = typeof cases.$inferSelect;
-type CaseParticipantRecord = typeof caseParticipants.$inferSelect;
-type CaseCollectionRecord = typeof caseCollections.$inferSelect;
-type CaseTimelineRecord = typeof caseTimeline.$inferSelect;
-type CaseHearingRecord = typeof caseHearings.$inferSelect;
-type CaseHearingRecordWithRelations = CaseHearingRecord & {
-  trialLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
-};
-type UserRecord = typeof users.$inferSelect;
-
-type CaseTimelineRecordWithFollower = CaseTimelineRecord & {
-  follower?: UserRecord | null;
+export type CaseUpdateInput = CaseInput | {
+  payload: CaseInput;
+  meta?: CaseUpdateMeta | null;
 };
 
-type CaseWithRelations = CaseRecord & {
-  participants?: CaseParticipantRecord[];
-  collections?: CaseCollectionRecord[];
-  timeline?: CaseTimelineRecordWithFollower[];
-  hearings?: CaseHearingRecordWithRelations[];
+interface NormalizedCaseUpdateMeta {
+  baseVersion: number | null;
+  baseSnapshot: Record<string, unknown>;
+  dirtyFields: string[];
+  resolveMode: 'merge' | null;
+}
+
+interface NormalizedCaseUpdateInput {
+  payload: CaseInput;
+  meta: NormalizedCaseUpdateMeta;
+}
+
+export async function updateCase(id: string, input: CaseUpdateInput, user: SessionUser) {
+  ensureCasePermission(user, 'update');
+
+  const normalizedInput = normalizeCaseUpdateInput(input);
+  const { payload, meta } = normalizedInput;
+
+  const accessContext = await buildCaseAccessContext(user);
+
+  const existing = await db.query.cases.findFirst({
+    where: eq(cases.id, id)
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, existing)) {
+    throw new AuthorizationError();
+  }
+
+  const analysis = evaluateCaseUpdateConflict(existing, normalizedInput);
+
+  if (meta.resolveMode === 'merge') {
+    if (analysis.status === 'hard') {
+      const message = '案件已被其他人更新，请刷新后重试';
+      const details = await buildConflictDetailsForCase(id, user, existing, analysis, meta, 'hard', message);
+      throw new CaseUpdateConflictError(message, details);
+    }
+  } else if (analysis.status !== 'ok') {
+    const message =
+      analysis.status === 'hard'
+        ? '案件已被其他人更新，请刷新后重试'
+        : '检测到其他人更新了案件，可选择合并或取消';
+    const details = await buildConflictDetailsForCase(
+      id,
+      user,
+      existing,
+      analysis,
+      meta,
+      analysis.status === 'hard' ? 'hard' : 'mergeable',
+      message
+    );
+    throw new CaseUpdateConflictError(message, details);
+  }
+
+  return db.transaction(async (tx) => {
+    const current = await tx.query.cases.findFirst({
+      where: eq(cases.id, id)
+    });
+
+    if (!current) {
+      return null;
+    }
+
+    if (!canAccessCase(accessContext, current)) {
+      throw new AuthorizationError();
+    }
+
+    const caseValues = buildCaseValues(payload);
+    caseValues.updaterId = user.id;
+    caseValues.updatedAt = new Date();
+    caseValues.version = (current.version ?? 0) + 1;
+
+    if (user.role === 'lawyer' || user.role === 'assistant') {
+      BASIC_INFO_FIELD_KEYS.forEach((field) => {
+        if (field in caseValues) {
+          (caseValues as Record<string, unknown>)[field] = current[field as keyof typeof current];
+        }
+      });
+    }
+
+    if (payload.department === undefined) {
+      if (current.department) {
+        caseValues.department = current.department;
+      } else if ((user.role === 'admin' || user.role === 'administration' || isSuperAdmin(user)) && user.department) {
+        caseValues.department = user.department as (typeof cases.$inferInsert)['department'];
+      }
+    }
+
+    if (payload.assignedSaleId === undefined) {
+      if (current.assignedSaleId) {
+        caseValues.assignedSaleId = current.assignedSaleId;
+      } else if (user.role === 'admin' || user.role === 'administration' || isSuperAdmin(user)) {
+        caseValues.assignedSaleId = user.id;
+      }
+    }
+
+    const [updatedCase] = await tx
+      .update(cases)
+      .set(caseValues)
+      .where(and(eq(cases.id, id), eq(cases.version, current.version ?? 0)))
+      .returning();
+
+    if (!updatedCase) {
+      const latest = await tx.query.cases.findFirst({
+        where: eq(cases.id, id)
+      });
+
+      const snapshot = latest ?? current;
+      const latestAnalysis = evaluateCaseUpdateConflict(snapshot, normalizedInput);
+      const resolvedStatus = latestAnalysis.status === 'ok' ? 'hard' : latestAnalysis.status;
+      const message =
+        resolvedStatus === 'mergeable'
+          ? '检测到其他人更新了案件，可选择合并或取消'
+          : '案件已被其他人更新，请刷新后重试';
+      const details = await buildConflictDetailsForCase(
+        id,
+        user,
+        snapshot,
+        latestAnalysis,
+        meta,
+        resolvedStatus === 'mergeable' ? 'mergeable' : 'hard',
+        message
+      );
+      throw new CaseUpdateConflictError(message, details);
+    }
+
+    const changeDetails = buildChangeDetails(current, updatedCase);
+    const shouldLog =
+      changeDetails.length > 0 ||
+      Boolean(payload.timeline || payload.hearings !== undefined || payload.participants || payload.collections);
+
+    if (shouldLog) {
+      const actor = extractActorContext(user);
+      await tx.insert(caseChangeLogs).values({
+        caseId: id,
+        action: 'update',
+        description: buildChangeDescription(changeDetails, payload),
+        changes: changeDetails.length > 0 ? changeDetails : null,
+        actorId: actor.actorId,
+        actorName: actor.actorName,
+        actorRole: actor.actorRole
+      });
+    }
+
+    if (payload.participants) {
+      await tx.delete(caseParticipants).where(eq(caseParticipants.caseId, id));
+      const participantValues = flattenParticipantsInput(payload.participants, id);
+      if (participantValues.length > 0) {
+        await tx.insert(caseParticipants).values(participantValues);
+      }
+    }
+
+    if (payload.collections) {
+      await tx.delete(caseCollections).where(eq(caseCollections.caseId, id));
+      const collectionValues = normalizeCollectionsInput(payload.collections, id);
+      if (collectionValues.length > 0) {
+        await tx.insert(caseCollections).values(collectionValues);
+      }
+    }
+
+    if (payload.timeline) {
+      await tx.delete(caseTimeline).where(eq(caseTimeline.caseId, id));
+      const timelineValues = normalizeTimelineInput(payload.timeline, id);
+      if (timelineValues.length > 0) {
+        await tx.insert(caseTimeline).values(timelineValues);
+      }
+    }
+
+    if (payload.hearings !== undefined) {
+      if (user.role === 'administration') {
+        throw new AuthorizationError('行政角色无权编辑庭审信息');
+      }
+      await tx.delete(caseHearings).where(eq(caseHearings.caseId, id));
+      const processedHearings = await applyDefaultTrialLawyerList(payload.hearings, user);
+      const hearingValues = normalizeHearingInputs(processedHearings, id);
+      if (hearingValues.length > 0) {
+        await tx.insert(caseHearings).values(hearingValues);
+      }
+    }
+
+    await syncCaseHearingEvents(tx, id);
+
+    const fullRecord = await tx.query.cases.findFirst({
+      where: eq(cases.id, id),
+      with: {
+        assignedSale: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        assignedLawyer: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        assignedAssistant: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        updater: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        participants: true,
+        collections: true,
+        timeline: {
+          with: {
+            follower: true
+          }
+        },
+        hearings: {
+          with: {
+            trialLawyer: {
+              columns: {
+                id: true,
+                name: true,
+                role: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!fullRecord) {
+      return null;
+    }
+
+    return mapCaseRecord(fullRecord as CaseWithRelations);
+  });
+}
+
+type CaseWithRelations = CaseRow & {
+  participants?: CaseParticipantRow[];
+  collections?: CaseCollectionRow[];
+  timeNodes?: CaseTimeNodeRow[];
+  timeline?: CaseTimelineRowWithFollower[];
+  hearings?: CaseHearingRowWithRelations[];
   assignedSale?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedLawyer?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
   assignedAssistant?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
+  updater?: Pick<UserRecord, 'id' | 'name' | 'role'> | null;
 };
 
 type CaseChangeLogRecord = typeof caseChangeLogs.$inferSelect & {
@@ -316,10 +650,10 @@ function combineOr(conditions: SQL<unknown>[]): SQL<unknown> | undefined {
 }
 
 type CaseAccessProjection = Pick<
-  CaseRecord,
-  'id' | 'department' | 'assignedSaleId' | 'assignedLawyerId' | 'assignedAssistantId'
+  typeof cases.$inferSelect,
+  'id' | 'department' | 'assignedSaleId' | 'assignedLawyerId' | 'assignedAssistantId' | 'creatorId'
 > & {
-  hearings?: Array<Pick<CaseHearingRecord, 'trialLawyerId'>>;
+  hearings?: Array<Pick<typeof caseHearings.$inferSelect, 'trialLawyerId'>>;
 };
 
 interface CaseAccessContext {
@@ -328,6 +662,7 @@ interface CaseAccessContext {
   assignedSaleIds: Set<string>;
   assignedLawyerIds: Set<string>;
   assignedAssistantIds: Set<string>;
+  creatorIds: Set<string>;
   hearingTrialLawyerIds: Set<string>;
   hearingCaseIds: Set<string>;
 }
@@ -340,6 +675,7 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
       assignedSaleIds: new Set(),
       assignedLawyerIds: new Set(),
       assignedAssistantIds: new Set(),
+      creatorIds: new Set(),
       hearingTrialLawyerIds: new Set(),
       hearingCaseIds: new Set()
     } satisfies CaseAccessContext;
@@ -351,44 +687,23 @@ async function buildCaseAccessContext(user: SessionUser): Promise<CaseAccessCont
     assignedSaleIds: new Set([user.id]),
     assignedLawyerIds: new Set([user.id]),
     assignedAssistantIds: new Set([user.id]),
+    creatorIds: new Set([user.id]),
     hearingTrialLawyerIds: new Set([user.id]),
     hearingCaseIds: new Set()
   };
 
-  if ((user.role === 'admin' || user.role === 'administration') && user.department) {
+  if (user.role === 'admin' && user.department) {
     context.departments.add(user.department as (typeof departmentEnum.enumValues)[number]);
   }
 
-  if (user.role === 'lawyer') {
-    const assistants = await db.query.users.findMany({
-      columns: {
-        id: true,
-        role: true
-      },
-      where: eq(users.supervisorId, user.id)
-    });
-
-    assistants
-      .filter((member) => member.role === 'assistant')
-      .forEach((assistant) => {
-        context.assignedAssistantIds.add(assistant.id);
-        context.assignedSaleIds.add(assistant.id);
-      });
-  }
-
-  if (user.role === 'assistant' && user.supervisorId) {
-    const supervisor = await db.query.users.findFirst({
-      columns: {
-        id: true,
-        role: true
-      },
-      where: eq(users.id, user.supervisorId)
-    });
-
-    if (supervisor?.role === 'lawyer') {
-      context.assignedLawyerIds.add(supervisor.id);
-      context.hearingTrialLawyerIds.add(supervisor.id);
-      context.assignedSaleIds.add(supervisor.id);
+  if (user.role === 'administration') {
+    const supervisorId = user.supervisorId ?? (await fetchSupervisorIdForUser(user.id));
+    if (supervisorId) {
+      context.assignedSaleIds.add(supervisorId);
+      context.assignedLawyerIds.add(supervisorId);
+      context.assignedAssistantIds.add(supervisorId);
+      context.creatorIds.add(supervisorId);
+      context.hearingTrialLawyerIds.add(supervisorId);
     }
   }
 
@@ -417,7 +732,8 @@ function buildColumnCondition(
     | typeof cases.id
     | typeof cases.assignedSaleId
     | typeof cases.assignedLawyerId
-    | typeof cases.assignedAssistantId,
+    | typeof cases.assignedAssistantId
+    | typeof cases.creatorId,
   ids: Set<string>
 ): SQL<unknown> | undefined {
   const values = Array.from(ids).filter((value) => Boolean(value && value.trim().length > 0));
@@ -456,6 +772,11 @@ function buildAccessWhere(context: CaseAccessContext): SQL<unknown> | undefined 
     orConditions.push(assistantCondition);
   }
 
+  const creatorCondition = buildColumnCondition(cases.creatorId, context.creatorIds);
+  if (creatorCondition) {
+    orConditions.push(creatorCondition);
+  }
+
   const hearingCaseCondition = buildColumnCondition(cases.id, context.hearingCaseIds);
   if (hearingCaseCondition) {
     orConditions.push(hearingCaseCondition);
@@ -486,6 +807,10 @@ function canAccessCase(context: CaseAccessContext, record: CaseAccessProjection)
   }
 
   if (record.assignedAssistantId && context.assignedAssistantIds.has(record.assignedAssistantId)) {
+    return true;
+  }
+
+  if (record.creatorId && context.creatorIds.has(record.creatorId)) {
     return true;
   }
 
@@ -646,11 +971,38 @@ function normalizeTextInput(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
-  first_instance: '一审',
-  second_instance: '二审',
-  retrial: '再审'
-};
+const CASE_TIME_NODE_DEFINITIONS: ReadonlyArray<{ type: CaseTimeNodeType; label: string }> = [
+  { type: 'apply_employment_confirmation', label: '申请确认劳动关系' },
+  { type: 'labor_arbitration_decision', label: '确认劳动裁决时间' },
+  { type: 'submit_injury_certification', label: '提交工伤认定申请' },
+  { type: 'receive_injury_certification', label: '收到工伤认定书' },
+  { type: 'submit_disability_assessment', label: '提交劳动能力等级鉴定' },
+  { type: 'receive_disability_assessment', label: '收到鉴定书' },
+  { type: 'apply_insurance_arbitration', label: '申请工伤保险待遇仲裁' },
+  { type: 'insurance_arbitration_decision', label: '工伤保险待遇裁决时间' },
+  { type: 'file_lawsuit', label: '起诉立案' },
+  { type: 'lawsuit_review_approved', label: '立案审核通过' },
+  { type: 'final_judgement', label: '裁决时间' }
+];
+
+const CASE_TIME_NODE_SEQUENCE: CaseTimeNodeType[] = CASE_TIME_NODE_DEFINITIONS.map(
+  definition => definition.type
+);
+
+const CASE_TIME_NODE_LABEL_MAP = CASE_TIME_NODE_DEFINITIONS.reduce<Record<CaseTimeNodeType, string>>(
+  (acc, definition) => {
+    acc[definition.type] = definition.label;
+    return acc;
+  },
+  {} as Record<CaseTimeNodeType, string>
+);
+
+const CASE_TIME_NODE_EDIT_ALLOWED_ROLES = new Set<SessionUser['role']>([
+  'super_admin',
+  'admin',
+  'lawyer',
+  'assistant'
+]);
 
 function normalizeTrialStageInput(value: TrialStage | string | null | undefined): TrialStage | null {
   if (!value) {
@@ -667,8 +1019,27 @@ function normalizeTrialStageInput(value: TrialStage | string | null | undefined)
     : null;
 }
 
+function normalizeTimeNodeTypeInput(
+  value: CaseTimeNodeType | string | null | undefined
+): CaseTimeNodeType | null {
+  if (!value) {
+    return null;
+  }
+
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+
+  return (caseTimeNodeTypeEnum.enumValues as readonly CaseTimeNodeType[]).includes(
+    direct as CaseTimeNodeType
+  )
+    ? (direct as CaseTimeNodeType)
+    : null;
+}
+
 const CASE_STATUS_LABEL_MAP: Record<CaseStatus, string> = {
-  open: '未结案',
+  open: '跟进中',
   closed: '已结案',
   void: '废单'
 };
@@ -688,6 +1059,98 @@ function normalizeCaseStatusInput(value: CaseStatus | string | null | undefined)
     : null;
 }
 
+function normalizeCaseCategoryInput(
+  value: CaseCategory | string | null | undefined
+): CaseCategory | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (caseCategoryEnum.enumValues as readonly CaseCategory[]).includes(direct as CaseCategory)
+    ? (direct as CaseCategory)
+    : null;
+}
+
+function normalizeContractQuoteTypeInput(
+  value: ContractQuoteType | string | null | undefined
+): ContractQuoteType | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (contractQuoteTypeEnum.enumValues as readonly ContractQuoteType[]).includes(
+    direct as ContractQuoteType
+  )
+    ? (direct as ContractQuoteType)
+    : null;
+}
+
+function normalizeLitigationFeeTypeInput(
+  value: LitigationFeeType | string | null | undefined
+): LitigationFeeType | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (litigationFeeTypeEnum.enumValues as readonly LitigationFeeType[]).includes(
+    direct as LitigationFeeType
+  )
+    ? (direct as LitigationFeeType)
+    : null;
+}
+
+function normalizeTravelFeeTypeInput(
+  value: TravelFeeType | string | null | undefined
+): TravelFeeType | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (travelFeeTypeEnum.enumValues as readonly TravelFeeType[]).includes(direct as TravelFeeType)
+    ? (direct as TravelFeeType)
+    : null;
+}
+
+function normalizeContractFormInput(
+  value: ContractFormType | string | null | undefined
+): ContractFormType | null {
+  if (!value) {
+    return null;
+  }
+  const direct = (typeof value === 'string' ? value : String(value)).trim();
+  if (!direct) {
+    return null;
+  }
+  return (contractFormEnum.enumValues as readonly ContractFormType[]).includes(direct as ContractFormType)
+    ? (direct as ContractFormType)
+    : null;
+}
+
+function normalizeStringArrayInput(value: unknown): string[] | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const cleaned = value
+    .map((item) => (typeof item === 'string' ? item.trim() : String(item ?? '')))
+    .filter((item) => item.length > 0);
+  return cleaned;
+}
+
 function formatValueForLog(value: unknown): string | null {
   if (value === null || value === undefined) {
     return null;
@@ -697,6 +1160,15 @@ function formatValueForLog(value: unknown): string | null {
   }
   if (typeof value === 'boolean') {
     return value ? '是' : '否';
+  }
+  if (Array.isArray(value)) {
+    const formatted = value
+      .map((item) => (typeof item === 'string' ? item.trim() : String(item ?? '')))
+      .filter((item) => item.length > 0);
+    if (formatted.length === 0) {
+      return null;
+    }
+    return formatted.join('、');
   }
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value.toString() : null;
@@ -731,6 +1203,8 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   | 'agencyFeeEstimate'
   | 'dataSource'
   | 'hasContract'
+  | 'contractDate'
+  | 'clueDate'
   | 'hasSocialSecurity'
   | 'entryDate'
   | 'injuryLocation'
@@ -744,6 +1218,19 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   | 'customerCooperative'
   | 'witnessCooperative'
   | 'remark'
+  | 'contractQuoteType'
+  | 'contractQuoteAmount'
+  | 'contractQuoteUpfront'
+  | 'contractQuoteRatio'
+  | 'contractQuoteOther'
+  | 'estimatedCollection'
+  | 'litigationFeeType'
+  | 'travelFeeType'
+  | 'contractForm'
+  | 'insuranceRiskLevel'
+  | 'insuranceTypes'
+  | 'insuranceMisrepresentations'
+  | 'caseCategory'
   | 'department'
   | 'assignedSaleId'
   | 'assignedLawyerId'
@@ -763,6 +1250,8 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   agencyFeeEstimate: '预估服务费',
   dataSource: '数据来源',
   hasContract: '合同签订',
+  contractDate: '合同日期',
+  clueDate: '线索日期',
   hasSocialSecurity: '社保情况',
   entryDate: '进件日期',
   injuryLocation: '受伤地点',
@@ -776,6 +1265,19 @@ const CHANGE_FIELD_LABEL_MAP: Record<
   customerCooperative: '客户配合度',
   witnessCooperative: '证人配合度',
   remark: '备注',
+  contractQuoteType: '合同报价方式',
+  contractQuoteAmount: '合同固定报价',
+  contractQuoteUpfront: '风险前期收费',
+  contractQuoteRatio: '风险回款比例',
+  contractQuoteOther: '其他报价说明',
+  estimatedCollection: '预计回款',
+  litigationFeeType: '诉讼费承担',
+  travelFeeType: '差旅费承担',
+  contractForm: '合同形式',
+  insuranceRiskLevel: '风险等级',
+  insuranceTypes: '保险类型',
+  insuranceMisrepresentations: '未如实告知',
+  caseCategory: '案件类别',
   department: '所属部门',
   assignedSaleId: '跟进人',
   assignedLawyerId: '签约律师',
@@ -788,6 +1290,219 @@ const CHANGE_FIELD_LABEL_MAP: Record<
 };
 
 type ChangeFieldKey = keyof typeof CHANGE_FIELD_LABEL_MAP;
+
+const MERGE_SAFE_FIELDS: ReadonlySet<ChangeFieldKey> = new Set(
+  Object.keys(CHANGE_FIELD_LABEL_MAP) as ChangeFieldKey[]
+);
+
+const COMPLEX_UPDATE_FIELDS: ReadonlySet<string> = new Set([
+  'participants',
+  'collections',
+  'timeline',
+  'hearings',
+  'timeNodes'
+]);
+
+function normalizeCaseUpdateMeta(meta?: CaseUpdateMeta | null): NormalizedCaseUpdateMeta {
+  const baseVersionValue = typeof meta?.baseVersion === 'number' ? meta?.baseVersion : null;
+  const baseSnapshotValue = meta?.baseSnapshot && typeof meta.baseSnapshot === 'object' ? meta.baseSnapshot : {};
+  const dirtyFieldList = Array.isArray(meta?.dirtyFields)
+    ? (meta!.dirtyFields as unknown[]).filter((item): item is string => typeof item === 'string')
+    : Object.keys(baseSnapshotValue);
+
+  const uniqueDirtyFields = Array.from(new Set(dirtyFieldList));
+
+  return {
+    baseVersion: baseVersionValue,
+    baseSnapshot: baseSnapshotValue,
+    dirtyFields: uniqueDirtyFields,
+    resolveMode: meta?.resolveMode === 'merge' ? 'merge' : null
+  } satisfies NormalizedCaseUpdateMeta;
+}
+
+function normalizeCaseUpdateInput(raw: CaseUpdateInput): NormalizedCaseUpdateInput {
+  if (raw && typeof raw === 'object' && 'payload' in raw && raw.payload) {
+    return {
+      payload: raw.payload,
+      meta: normalizeCaseUpdateMeta(raw.meta)
+    } satisfies NormalizedCaseUpdateInput;
+  }
+
+  return {
+    payload: raw as CaseInput,
+    meta: normalizeCaseUpdateMeta()
+  } satisfies NormalizedCaseUpdateInput;
+}
+
+function normalizeComparableValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+interface CaseUpdateConflictAnalysisResult {
+  status: 'ok' | CaseUpdateConflictType;
+  remoteChanges: CaseUpdateConflictField[];
+  clientChanges: CaseUpdateConflictField[];
+  conflictingFields: ChangeFieldKey[];
+}
+
+function evaluateCaseUpdateConflict(
+  existing: typeof cases.$inferSelect,
+  normalized: NormalizedCaseUpdateInput
+): CaseUpdateConflictAnalysisResult {
+  const { meta, payload } = normalized;
+
+  if (meta.baseVersion === null || meta.baseVersion === existing.version) {
+    return {
+      status: 'ok',
+      remoteChanges: [],
+      clientChanges: [],
+      conflictingFields: []
+    } satisfies CaseUpdateConflictAnalysisResult;
+  }
+
+  const payloadKeys = Object.keys(payload);
+  const hasComplexField = payloadKeys.some((key) => COMPLEX_UPDATE_FIELDS.has(key));
+  if (hasComplexField) {
+    return {
+      status: 'hard',
+      remoteChanges: [],
+      clientChanges: [],
+      conflictingFields: []
+    } satisfies CaseUpdateConflictAnalysisResult;
+  }
+
+  const fieldsToInspect = new Set<ChangeFieldKey>();
+  meta.dirtyFields.forEach((fieldName) => {
+    if (MERGE_SAFE_FIELDS.has(fieldName as ChangeFieldKey)) {
+      fieldsToInspect.add(fieldName as ChangeFieldKey);
+    }
+  });
+  Object.keys(meta.baseSnapshot).forEach((fieldName) => {
+    if (MERGE_SAFE_FIELDS.has(fieldName as ChangeFieldKey)) {
+      fieldsToInspect.add(fieldName as ChangeFieldKey);
+    }
+  });
+
+  const remoteChanges: CaseUpdateConflictField[] = [];
+  const clientChanges: CaseUpdateConflictField[] = [];
+  const conflictingFieldSet = new Set<ChangeFieldKey>();
+  const payloadRecord = payload as unknown as Partial<Record<ChangeFieldKey, unknown>>;
+
+  fieldsToInspect.forEach((field) => {
+    const hasBase = Object.prototype.hasOwnProperty.call(meta.baseSnapshot, field);
+    const baseValue = hasBase ? meta.baseSnapshot[field] : (existing as Record<string, unknown>)[field];
+    const currentValue = (existing as Record<string, unknown>)[field];
+    const clientHasValue = Object.prototype.hasOwnProperty.call(payload, field);
+    const clientValue = clientHasValue ? payloadRecord[field] : undefined;
+
+    const baseComparable = normalizeComparableValue(baseValue);
+    const currentComparable = normalizeComparableValue(currentValue);
+    const clientComparable = clientHasValue ? normalizeComparableValue(clientValue) : baseComparable;
+
+    const remoteChanged = hasBase ? baseComparable !== currentComparable : false;
+    const clientChanged = clientHasValue ? baseComparable !== clientComparable : false;
+
+    if (remoteChanged) {
+      remoteChanges.push({
+        field,
+        label: CHANGE_FIELD_LABEL_MAP[field],
+        baseValue: formatValueForLog(baseValue),
+        remoteValue: formatValueForLog(currentValue)
+      });
+    }
+
+    if (clientChanged) {
+      clientChanges.push({
+        field,
+        label: CHANGE_FIELD_LABEL_MAP[field],
+        baseValue: formatValueForLog(baseValue),
+        clientValue: formatValueForLog(clientValue)
+      });
+    }
+
+    if (remoteChanged && clientChanged) {
+      conflictingFieldSet.add(field);
+    }
+
+    if (!hasBase && clientChanged) {
+      conflictingFieldSet.add(field);
+    }
+  });
+
+  if (conflictingFieldSet.size > 0) {
+    return {
+      status: 'hard',
+      remoteChanges,
+      clientChanges,
+      conflictingFields: Array.from(conflictingFieldSet)
+    } satisfies CaseUpdateConflictAnalysisResult;
+  }
+
+  if (remoteChanges.length === 0) {
+    return {
+      status: 'ok',
+      remoteChanges: [],
+      clientChanges,
+      conflictingFields: []
+    } satisfies CaseUpdateConflictAnalysisResult;
+  }
+
+  return {
+    status: 'mergeable',
+    remoteChanges,
+    clientChanges,
+    conflictingFields: []
+  } satisfies CaseUpdateConflictAnalysisResult;
+}
+
+async function buildConflictDetailsForCase(
+  caseId: string,
+  user: SessionUser,
+  existing: typeof cases.$inferSelect,
+  analysis: CaseUpdateConflictAnalysisResult,
+  meta: NormalizedCaseUpdateMeta,
+  type: CaseUpdateConflictType,
+  message: string
+): Promise<CaseUpdateConflictDetails> {
+  const latestDto = await getCaseById(caseId, user);
+  const latestVersion = latestDto?.version ?? existing.version ?? 0;
+  const updatedAtText = latestDto?.updatedAt ?? formatTimestamp(existing.updatedAt) ?? new Date().toISOString();
+
+  return {
+    type,
+    message,
+    caseId,
+    baseVersion: meta.baseVersion ?? null,
+    latestVersion,
+    remoteChanges: analysis.remoteChanges,
+    clientChanges: analysis.clientChanges,
+    conflictingFields: analysis.conflictingFields,
+    updatedAt: updatedAtText,
+    updatedById: latestDto?.updaterId ?? existing.updaterId ?? null,
+    updatedByName: latestDto?.updaterName ?? null,
+    updatedByRole: latestDto?.updaterRole ?? null
+  } satisfies CaseUpdateConflictDetails;
+}
+
+export class CaseUpdateConflictError extends Error {
+  status = 409;
+  details: CaseUpdateConflictDetails;
+
+  constructor(message: string, details: CaseUpdateConflictDetails) {
+    super(message);
+    this.name = 'CaseUpdateConflictError';
+    this.details = details;
+  }
+}
 
 function buildChangeDetails(
   previous: typeof cases.$inferSelect,
@@ -853,6 +1568,10 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
     caseLevel: input.caseLevel
   };
 
+  if (input.caseCategory !== undefined) {
+    const normalizedCategory = normalizeCaseCategoryInput(input.caseCategory) ?? 'work_injury';
+    values.caseCategory = normalizedCategory;
+  }
   if (input.provinceCity !== undefined) {
     values.provinceCity = input.provinceCity ?? null;
   }
@@ -870,6 +1589,12 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
   }
   if (input.hasContract !== undefined) {
     values.hasContract = input.hasContract ?? null;
+  }
+  if (input.contractDate !== undefined) {
+    values.contractDate = normalizeDateInput(input.contractDate);
+  }
+  if (input.clueDate !== undefined) {
+    values.clueDate = normalizeDateInput(input.clueDate);
   }
   if (input.hasSocialSecurity !== undefined) {
     values.hasSocialSecurity = input.hasSocialSecurity ?? null;
@@ -909,6 +1634,44 @@ function buildCaseValues(input: CaseInput): typeof cases.$inferInsert {
   }
   if (input.remark !== undefined) {
     values.remark = input.remark ?? null;
+  }
+  if (input.contractQuoteType !== undefined) {
+    values.contractQuoteType = normalizeContractQuoteTypeInput(input.contractQuoteType);
+  }
+  if (input.contractQuoteAmount !== undefined) {
+    values.contractQuoteAmount = normalizeNumericInput(input.contractQuoteAmount);
+  }
+  if (input.contractQuoteUpfront !== undefined) {
+    values.contractQuoteUpfront = normalizeNumericInput(input.contractQuoteUpfront);
+  }
+  if (input.contractQuoteRatio !== undefined) {
+    values.contractQuoteRatio = normalizeNumericInput(input.contractQuoteRatio);
+  }
+  if (input.contractQuoteOther !== undefined) {
+    values.contractQuoteOther = normalizeTextInput(input.contractQuoteOther);
+  }
+  if (input.estimatedCollection !== undefined) {
+    values.estimatedCollection = normalizeNumericInput(input.estimatedCollection);
+  }
+  if (input.litigationFeeType !== undefined) {
+    values.litigationFeeType = normalizeLitigationFeeTypeInput(input.litigationFeeType);
+  }
+  if (input.travelFeeType !== undefined) {
+    values.travelFeeType = normalizeTravelFeeTypeInput(input.travelFeeType);
+  }
+  if (input.contractForm !== undefined) {
+    values.contractForm = normalizeContractFormInput(input.contractForm);
+  }
+  if (input.insuranceRiskLevel !== undefined) {
+    values.insuranceRiskLevel = input.insuranceRiskLevel ?? null;
+  }
+  if (input.insuranceTypes !== undefined) {
+    values.insuranceTypes = normalizeStringArrayInput(input.insuranceTypes) ?? [];
+  }
+  if (input.insuranceMisrepresentations !== undefined) {
+    values.insuranceMisrepresentations = normalizeStringArrayInput(
+      input.insuranceMisrepresentations
+    ) ?? [];
   }
   if (input.department !== undefined) {
     values.department = input.department ?? null;
@@ -1017,7 +1780,7 @@ function formatNumeric(value: string | number | null | undefined): string | null
   return typeof value === 'string' ? value : value.toString();
 }
 
-function mapParticipant(record: CaseParticipantRecord): CaseParticipantDTO {
+function mapParticipant(record: CaseParticipantRow): CaseParticipantDTO {
   return {
     id: record.id,
     entityType: record.entityType,
@@ -1030,7 +1793,7 @@ function mapParticipant(record: CaseParticipantRecord): CaseParticipantDTO {
   };
 }
 
-function mapCollection(record: CaseCollectionRecord): CaseCollectionDTO {
+function mapCollection(record: CaseCollectionRow): CaseCollectionDTO {
   return {
     id: record.id,
     amount: formatNumeric(record.amount) ?? '0',
@@ -1040,7 +1803,7 @@ function mapCollection(record: CaseCollectionRecord): CaseCollectionDTO {
   };
 }
 
-function mapTimeline(record: CaseTimelineRecordWithFollower): CaseTimelineDTO {
+function mapTimeline(record: CaseTimelineRowWithFollower): CaseTimelineDTO {
   return {
     id: record.id,
     occurredOn: formatDateOnly(record.occurredOn) ?? formatDateOnly(new Date())!,
@@ -1052,7 +1815,17 @@ function mapTimeline(record: CaseTimelineRecordWithFollower): CaseTimelineDTO {
   };
 }
 
-function mapHearing(record?: CaseHearingRecordWithRelations | null): CaseHearingDTO | null {
+function mapTimeNode(record: CaseTimeNodeRow): CaseTimeNodeDTO {
+  return {
+    id: record.id,
+    nodeType: record.nodeType as CaseTimeNodeType,
+    occurredOn: formatDateOnly(record.occurredOn) ?? formatDateOnly(new Date())!,
+    createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
+    updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString()
+  } satisfies CaseTimeNodeDTO;
+}
+
+function mapHearing(record?: CaseHearingRowWithRelations | null): CaseHearingDTO | null {
   if (!record) {
     return null;
   }
@@ -1072,6 +1845,94 @@ function mapHearing(record?: CaseHearingRecordWithRelations | null): CaseHearing
     createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
     updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString()
   } satisfies CaseHearingDTO;
+}
+
+type CaseClientQueryRecord = {
+  id: string;
+  name: string | null;
+  entityType: ParticipantEntity | null;
+  phone: string | null;
+  idNumber: string | null;
+  caseId: string;
+  caseType: CaseType;
+  caseLevel: CaseLevel;
+  caseStatus: CaseStatus | null;
+  department: (typeof cases.$inferSelect)['department'];
+  assignedSaleName: string | null;
+  assignedLawyerName: string | null;
+  assignedAssistantName: string | null;
+  createdAt: string | Date | null;
+  updatedAt: string | Date | null;
+};
+
+type CaseClientDetailQueryRecord = CaseClientQueryRecord & {
+  address: string | null;
+  isDishonest: boolean | null;
+};
+
+function mapCaseClientRecord(record: CaseClientQueryRecord): CaseClientDTO {
+  return {
+    id: record.id,
+    name: record.name?.trim() && record.name.trim().length > 0 ? record.name.trim() : '未填写姓名',
+    entityType: record.entityType ?? null,
+    phone: record.phone ?? null,
+    idNumber: record.idNumber ?? null,
+    caseId: record.caseId,
+    caseType: record.caseType,
+    caseLevel: record.caseLevel,
+    caseStatus: record.caseStatus ?? null,
+    department: record.department,
+    assignedSaleName: record.assignedSaleName ?? null,
+    assignedLawyerName: record.assignedLawyerName ?? null,
+    assignedAssistantName: record.assignedAssistantName ?? null,
+    createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
+    updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString()
+  } satisfies CaseClientDTO;
+}
+
+function mapCaseClientDetailRecord(record: CaseClientDetailQueryRecord): CaseClientDetailDTO {
+  const base = mapCaseClientRecord(record);
+  return {
+    ...base,
+    address: record.address ?? null,
+    isDishonest: Boolean(record.isDishonest)
+  } satisfies CaseClientDetailDTO;
+}
+
+async function loadCaseClientDetail(id: string): Promise<CaseClientDetailQueryRecord | null> {
+  const assignedSaleUser = alias(users, 'case_client_detail_assigned_sale');
+  const assignedLawyerUser = alias(users, 'case_client_detail_assigned_lawyer');
+  const assignedAssistantUser = alias(users, 'case_client_detail_assigned_assistant');
+
+  const [record] = await db
+    .select({
+      id: caseParticipants.id,
+      name: caseParticipants.name,
+      entityType: caseParticipants.entityType,
+      phone: caseParticipants.phone,
+      idNumber: caseParticipants.idNumber,
+      caseId: caseParticipants.caseId,
+      caseType: cases.caseType,
+      caseLevel: cases.caseLevel,
+      caseStatus: cases.caseStatus,
+      department: cases.department,
+      assignedSaleName: assignedSaleUser.name,
+      assignedLawyerName: assignedLawyerUser.name,
+      assignedAssistantName: assignedAssistantUser.name,
+      createdAt: cases.createdAt,
+      updatedAt: cases.updatedAt,
+      address: caseParticipants.address,
+      isDishonest: caseParticipants.isDishonest
+    })
+    .from(caseParticipants)
+    .innerJoin(cases, eq(caseParticipants.caseId, cases.id))
+    .leftJoin(assignedSaleUser, eq(cases.assignedSaleId, assignedSaleUser.id))
+    .leftJoin(assignedLawyerUser, eq(cases.assignedLawyerId, assignedLawyerUser.id))
+    .leftJoin(assignedAssistantUser, eq(cases.assignedAssistantId, assignedAssistantUser.id))
+    .where(and(eq(caseParticipants.id, id), eq(caseParticipants.role, 'claimant')))
+    .limit(1);
+
+  return (record as CaseClientDetailQueryRecord | undefined) ?? null;
 }
 
 function mapCaseRecord(record: CaseWithRelations): CaseDTO {
@@ -1105,6 +1966,13 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     })
     .map(mapTimeline);
 
+  const timeNodes = [...(record.timeNodes ?? [])]
+    .sort((a, b) =>
+      CASE_TIME_NODE_SEQUENCE.indexOf(a.nodeType as CaseTimeNodeType) -
+      CASE_TIME_NODE_SEQUENCE.indexOf(b.nodeType as CaseTimeNodeType)
+    )
+    .map(mapTimeNode);
+
   const hearings = [...(record.hearings ?? [])]
     .sort((a, b) => {
       const aTime = a.hearingTime ? new Date(a.hearingTime).getTime() : Number.MAX_SAFE_INTEGER;
@@ -1123,12 +1991,15 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     id: record.id,
     caseType: record.caseType,
     caseLevel: record.caseLevel,
+    caseCategory: record.caseCategory as CaseCategory,
     provinceCity: record.provinceCity ?? null,
     targetAmount: formatNumeric(record.targetAmount),
     feeStandard: record.feeStandard ?? null,
     agencyFeeEstimate: formatNumeric(record.agencyFeeEstimate),
     dataSource: record.dataSource ?? null,
     hasContract: record.hasContract ?? null,
+    contractDate: formatDateOnly(record.contractDate),
+    clueDate: formatDateOnly(record.clueDate),
     hasSocialSecurity: record.hasSocialSecurity ?? null,
     entryDate: formatDateOnly(record.entryDate),
     injuryLocation: record.injuryLocation ?? null,
@@ -1142,6 +2013,20 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     customerCooperative: record.customerCooperative ?? null,
     witnessCooperative: record.witnessCooperative ?? null,
     remark: record.remark ?? null,
+    contractQuoteType: (record.contractQuoteType ?? null) as ContractQuoteType | null,
+    contractQuoteAmount: formatNumeric(record.contractQuoteAmount),
+    contractQuoteUpfront: formatNumeric(record.contractQuoteUpfront),
+    contractQuoteRatio: formatNumeric(record.contractQuoteRatio),
+    contractQuoteOther: record.contractQuoteOther ?? null,
+    estimatedCollection: formatNumeric(record.estimatedCollection),
+    litigationFeeType: (record.litigationFeeType ?? null) as LitigationFeeType | null,
+    travelFeeType: (record.travelFeeType ?? null) as TravelFeeType | null,
+    contractForm: (record.contractForm ?? null) as ContractFormType | null,
+    insuranceRiskLevel: (record.insuranceRiskLevel ?? null) as CaseLevel | null,
+    insuranceTypes: Array.isArray(record.insuranceTypes) ? record.insuranceTypes : [],
+    insuranceMisrepresentations: Array.isArray(record.insuranceMisrepresentations)
+      ? record.insuranceMisrepresentations
+      : [],
     department: record.department ?? null,
     assignedSaleId: record.assignedSaleId ?? null,
     assignedSaleName: record.assignedSale?.name ?? null,
@@ -1154,6 +2039,10 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
     voidReason: record.voidReason ?? null,
     salesCommission: formatNumeric(record.salesCommission),
     handlingFee: formatNumeric(record.handlingFee),
+  version: record.version ?? 0,
+  updaterId: record.updaterId ?? null,
+  updaterName: record.updater?.name ?? null,
+  updaterRole: record.updater?.role ?? null,
     createdAt: formatTimestamp(record.createdAt) ?? new Date().toISOString(),
     updatedAt: formatTimestamp(record.updatedAt) ?? new Date().toISOString(),
     participants: {
@@ -1161,6 +2050,7 @@ function mapCaseRecord(record: CaseWithRelations): CaseDTO {
       respondents
     },
     collections,
+    timeNodes,
     timeline,
     hearings
   };
@@ -1179,11 +2069,16 @@ function mapCaseChangeLog(record: CaseChangeLogRecord): CaseChangeLogDTO {
   } satisfies CaseChangeLogDTO;
 }
 
-function buildWhereClause(options: CaseListFilters): SQL<unknown> | undefined {
+function buildWhereClause(options: ListCasesOptions): SQL<unknown> | undefined {
   const conditions: SQL<unknown>[] = [];
 
   if (options.department) {
     conditions.push(eq(cases.department, options.department));
+  }
+  const rawCaseId = options.caseId;
+  const trimmedCaseId = typeof rawCaseId === 'string' ? rawCaseId.trim() : '';
+  if (trimmedCaseId) {
+    conditions.push(eq(cases.id, trimmedCaseId));
   }
   if (options.assignedSaleId) {
     conditions.push(eq(cases.assignedSaleId, options.assignedSaleId));
@@ -1202,6 +2097,22 @@ function buildWhereClause(options: CaseListFilters): SQL<unknown> | undefined {
     if (normalizedStatus) {
       conditions.push(eq(cases.caseStatus, normalizedStatus));
     }
+  }
+
+  const rawCaseNumber = options.caseNumber;
+  const trimmedCaseNumber = typeof rawCaseNumber === 'string' ? rawCaseNumber.trim() : '';
+  if (trimmedCaseNumber) {
+    const caseNumberTerm = `%${trimmedCaseNumber}%`;
+    conditions.push(
+      sql<unknown>`
+        EXISTS (
+          SELECT 1
+          FROM ${caseHearings}
+          WHERE ${caseHearings.caseId} = ${cases.id}
+            AND ${caseHearings.caseNumber} ILIKE ${caseNumberTerm}
+        )
+      `
+    );
   }
 
   const trimmedSearch = options.search?.trim();
@@ -1361,8 +2272,16 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
           role: true
         }
       },
+      updater: {
+        columns: {
+          id: true,
+          name: true,
+          role: true
+        }
+      },
       participants: true,
       collections: true,
+      timeNodes: true,
       timeline: {
         with: {
           follower: true
@@ -1409,6 +2328,313 @@ export async function listCases(options: ListCasesOptions = {}, user: SessionUse
   };
 }
 
+export async function listCaseClients(options: CaseClientListOptions = {}, user: SessionUser) {
+  ensureCasePermission(user, 'list');
+
+  const page = Math.max(options.page ?? DEFAULT_PAGE, 1);
+  const pageSize = Math.min(Math.max(options.pageSize ?? DEFAULT_PAGE_SIZE, 1), 100);
+  const offset = (page - 1) * pageSize;
+
+  const accessContext = await buildCaseAccessContext(user);
+  const accessWhere = buildAccessWhere(accessContext);
+
+  const filterConditions: SQL<unknown>[] = [eq(caseParticipants.role, 'claimant')];
+
+  if (options.department) {
+    filterConditions.push(eq(cases.department, options.department));
+  }
+
+  const trimmedSearch = options.search?.trim();
+  if (trimmedSearch) {
+    const keyword = `%${trimmedSearch}%`;
+    filterConditions.push(
+      sql<unknown>`
+        (
+          ${caseParticipants.name} ILIKE ${keyword}
+          OR ${caseParticipants.phone} ILIKE ${keyword}
+          OR ${caseParticipants.idNumber} ILIKE ${keyword}
+        )
+      `
+    );
+  }
+
+  const filterWhere = filterConditions.length
+    ? filterConditions.length === 1
+      ? filterConditions[0]
+      : and(...filterConditions)
+    : undefined;
+
+  const whereClause = mergeWhere(filterWhere, accessWhere);
+
+  const assignedSaleUser = alias(users, 'case_client_assigned_sale');
+  const assignedLawyerUser = alias(users, 'case_client_assigned_lawyer');
+  const assignedAssistantUser = alias(users, 'case_client_assigned_assistant');
+
+  const baseListQuery = db
+    .select({
+      id: caseParticipants.id,
+      name: caseParticipants.name,
+      entityType: caseParticipants.entityType,
+      phone: caseParticipants.phone,
+      idNumber: caseParticipants.idNumber,
+      caseId: cases.id,
+      caseType: cases.caseType,
+      caseLevel: cases.caseLevel,
+      caseStatus: cases.caseStatus,
+      department: cases.department,
+      assignedSaleName: assignedSaleUser.name,
+      assignedLawyerName: assignedLawyerUser.name,
+      assignedAssistantName: assignedAssistantUser.name,
+      createdAt: cases.createdAt,
+      updatedAt: cases.updatedAt
+    })
+    .from(caseParticipants)
+    .innerJoin(cases, eq(caseParticipants.caseId, cases.id))
+    .leftJoin(assignedSaleUser, eq(cases.assignedSaleId, assignedSaleUser.id))
+    .leftJoin(assignedLawyerUser, eq(cases.assignedLawyerId, assignedLawyerUser.id))
+    .leftJoin(assignedAssistantUser, eq(cases.assignedAssistantId, assignedAssistantUser.id));
+
+  const recordsQuery = whereClause ? baseListQuery.where(whereClause) : baseListQuery;
+
+  const records = await recordsQuery
+    .orderBy(desc(cases.updatedAt))
+    .limit(pageSize)
+    .offset(offset);
+
+  const baseTotalQuery = db
+    .select({ value: count() })
+    .from(caseParticipants)
+    .innerJoin(cases, eq(caseParticipants.caseId, cases.id));
+
+  const totalQuery = whereClause ? baseTotalQuery.where(whereClause) : baseTotalQuery;
+
+  const totalResult = await totalQuery;
+  const total = Number(totalResult?.[0]?.value ?? 0);
+  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
+
+  return {
+    data: records.map((record) => mapCaseClientRecord(record as CaseClientQueryRecord)),
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages
+    } satisfies PaginationMeta
+  };
+}
+
+export async function getCaseClientById(id: string, user: SessionUser): Promise<CaseClientDetailDTO | null> {
+  ensureCasePermission(user, 'list');
+
+  const trimmedId = id?.trim();
+  if (!trimmedId) {
+    throw new BadRequestError('客户ID不能为空');
+  }
+
+  const detailRecord = await loadCaseClientDetail(trimmedId);
+  if (!detailRecord) {
+    return null;
+  }
+
+  const accessContext = await buildCaseAccessContext(user);
+  const projection = await db.query.cases.findFirst({
+    where: eq(cases.id, detailRecord.caseId),
+    columns: {
+      id: true,
+      department: true,
+      assignedSaleId: true,
+      assignedLawyerId: true,
+      assignedAssistantId: true,
+      creatorId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
+    }
+  });
+
+  if (!projection) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, projection)) {
+    throw new AuthorizationError();
+  }
+
+  return mapCaseClientDetailRecord(detailRecord);
+}
+
+export async function updateCaseClient(
+  id: string,
+  input: UpdateCaseClientInput,
+  user: SessionUser
+): Promise<CaseClientDetailDTO | null> {
+  ensureCasePermission(user, 'update');
+
+  const trimmedId = id?.trim();
+  if (!trimmedId) {
+    throw new BadRequestError('客户ID不能为空');
+  }
+
+  const existingDetail = await loadCaseClientDetail(trimmedId);
+  if (!existingDetail) {
+    return null;
+  }
+
+  const accessContext = await buildCaseAccessContext(user);
+  const projection = await db.query.cases.findFirst({
+    where: eq(cases.id, existingDetail.caseId),
+    columns: {
+      id: true,
+      department: true,
+      assignedSaleId: true,
+      assignedLawyerId: true,
+      assignedAssistantId: true,
+      creatorId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
+    }
+  });
+
+  if (!projection) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, projection)) {
+    throw new AuthorizationError();
+  }
+
+  const updateValues: Partial<typeof caseParticipants.$inferInsert> = {};
+
+  if (input.name !== undefined) {
+    const trimmedName = input.name?.trim();
+    if (!trimmedName) {
+      throw new BadRequestError('客户名称不能为空');
+    }
+    updateValues.name = trimmedName;
+  }
+
+  if (input.entityType !== undefined) {
+    if (input.entityType === null) {
+      updateValues.entityType = null;
+    } else if ((participantEntityEnum.enumValues as readonly string[]).includes(input.entityType)) {
+      updateValues.entityType = input.entityType;
+    } else {
+      throw new BadRequestError('请选择有效的客户类型');
+    }
+  }
+
+  if (input.phone !== undefined) {
+    const trimmedPhone = input.phone?.trim();
+    updateValues.phone = trimmedPhone && trimmedPhone.length > 0 ? trimmedPhone : null;
+  }
+
+  if (input.idNumber !== undefined) {
+    const trimmedIdNumber = input.idNumber?.trim();
+    updateValues.idNumber = trimmedIdNumber && trimmedIdNumber.length > 0 ? trimmedIdNumber : null;
+  }
+
+  if (input.address !== undefined) {
+    const trimmedAddress = input.address?.trim();
+    updateValues.address = trimmedAddress && trimmedAddress.length > 0 ? trimmedAddress : null;
+  }
+
+  if (input.isDishonest !== undefined && input.isDishonest !== null) {
+    updateValues.isDishonest = Boolean(input.isDishonest);
+  } else if (input.isDishonest === null) {
+    updateValues.isDishonest = false;
+  }
+
+  if (Object.keys(updateValues).length === 0) {
+    return mapCaseClientDetailRecord(existingDetail);
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(caseParticipants)
+      .set(updateValues)
+      .where(eq(caseParticipants.id, trimmedId));
+
+    await tx
+      .update(cases)
+      .set({
+        updatedAt: new Date(),
+        updaterId: user.id ?? null
+      })
+      .where(eq(cases.id, existingDetail.caseId));
+  });
+
+  const refreshed = await loadCaseClientDetail(trimmedId);
+  return refreshed ? mapCaseClientDetailRecord(refreshed) : null;
+}
+
+export async function getCaseTablePreferences(
+  tableKey: string | undefined,
+  user: SessionUser
+): Promise<CaseTablePreferenceDTO> {
+  ensureCasePermission(user, 'list');
+
+  if (!user.id) {
+    throw new AuthorizationError('当前账号无效，请重新登录', 401);
+  }
+
+  const resolvedKey = resolveCaseTableKey(tableKey);
+
+  const existing = await db.query.caseTablePreferences.findFirst({
+    where: and(eq(caseTablePreferences.userId, user.id), eq(caseTablePreferences.tableKey, resolvedKey))
+  });
+
+  const visibleColumns = sanitizeVisibleColumns(existing?.visibleColumns ?? DEFAULT_CASE_TABLE_COLUMNS);
+
+  return {
+    tableKey: resolvedKey,
+    visibleColumns
+  } satisfies CaseTablePreferenceDTO;
+}
+
+export async function updateCaseTablePreferences(
+  tableKey: string | undefined,
+  columns: unknown,
+  user: SessionUser
+): Promise<CaseTablePreferenceDTO> {
+  ensureCasePermission(user, 'list');
+
+  if (!user.id) {
+    throw new AuthorizationError('当前账号无效，请重新登录', 401);
+  }
+
+  const resolvedKey = resolveCaseTableKey(tableKey);
+  const visibleColumns = sanitizeVisibleColumns(columns);
+
+  await db
+    .insert(caseTablePreferences)
+    .values({
+      userId: user.id,
+      tableKey: resolvedKey,
+      visibleColumns
+    })
+    .onConflictDoUpdate({
+      target: [caseTablePreferences.userId, caseTablePreferences.tableKey],
+      set: {
+        visibleColumns,
+        updatedAt: sql`now()`
+      }
+    });
+
+  return {
+    tableKey: resolvedKey,
+    visibleColumns
+  } satisfies CaseTablePreferenceDTO;
+}
+
 export async function getCaseById(id: string, user: SessionUser) {
   ensureCasePermission(user, 'list');
 
@@ -1440,8 +2666,16 @@ export async function getCaseById(id: string, user: SessionUser) {
           role: true
         }
       },
+      updater: {
+        columns: {
+          id: true,
+          name: true,
+          role: true
+        }
+      },
       participants: true,
       collections: true,
+      timeNodes: true,
       timeline: {
         with: {
           follower: true
@@ -1487,8 +2721,41 @@ export async function createCase(input: CaseInput, user: SessionUser) {
       caseValues.department = user.department as (typeof cases.$inferInsert)['department'];
     }
 
-    if (!caseValues.assignedSaleId) {
+    const resolvedDepartment = caseValues.department ?? user.department ?? null;
+    if (!caseValues.caseCategory) {
+      caseValues.caseCategory = resolvedDepartment === 'insurance' ? 'insurance' : 'work_injury';
+    }
+
+    if (resolvedDepartment === 'insurance' && caseValues.caseCategory !== 'insurance') {
+      caseValues.caseCategory = 'insurance';
+    }
+
+    if (!caseValues.assignedSaleId && user.role === 'sale') {
       caseValues.assignedSaleId = user.id;
+    }
+
+    if (!caseValues.assignedLawyerId && user.role === 'lawyer') {
+      caseValues.assignedLawyerId = user.id;
+    }
+
+    if (user.role === 'assistant') {
+      if (!caseValues.assignedAssistantId) {
+        caseValues.assignedAssistantId = user.id;
+      }
+
+      if (!caseValues.assignedLawyerId && user.supervisorId) {
+        const supervisor = await tx.query.users.findFirst({
+          where: eq(users.id, user.supervisorId),
+          columns: {
+            id: true,
+            role: true
+          }
+        });
+
+        if (supervisor && supervisor.role === 'lawyer') {
+          caseValues.assignedLawyerId = supervisor.id;
+        }
+      }
     }
 
     const [created] = await tx.insert(cases).values(caseValues).returning();
@@ -1518,6 +2785,8 @@ export async function createCase(input: CaseInput, user: SessionUser) {
     if (hearingValues.length > 0) {
       await tx.insert(caseHearings).values(hearingValues);
     }
+
+    await syncCaseHearingEvents(tx, caseId);
 
     const actor = extractActorContext(user);
     await tx.insert(caseChangeLogs).values({
@@ -1554,6 +2823,13 @@ export async function createCase(input: CaseInput, user: SessionUser) {
             role: true
           }
         },
+        updater: {
+          columns: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
         participants: true,
         collections: true,
         timeline: {
@@ -1583,158 +2859,6 @@ export async function createCase(input: CaseInput, user: SessionUser) {
   });
 }
 
-export async function updateCase(id: string, input: CaseInput, user: SessionUser) {
-  ensureCasePermission(user, 'update');
-
-  const accessContext = await buildCaseAccessContext(user);
-
-  const existing = await db.query.cases.findFirst({
-    where: eq(cases.id, id)
-  });
-
-  if (!existing) {
-    return null;
-  }
-
-  if (!canAccessCase(accessContext, existing)) {
-    throw new AuthorizationError();
-  }
-
-  return db.transaction(async (tx) => {
-    const caseValues = buildCaseValues(input);
-    caseValues.updaterId = user.id;
-    caseValues.updatedAt = new Date();
-
-    if (input.department === undefined) {
-      if (existing.department) {
-        caseValues.department = existing.department;
-      } else if ((user.role === 'admin' || user.role === 'administration' || isSuperAdmin(user)) && user.department) {
-        caseValues.department = user.department as (typeof cases.$inferInsert)['department'];
-      }
-    }
-
-    if (input.assignedSaleId === undefined) {
-      if (existing.assignedSaleId) {
-        caseValues.assignedSaleId = existing.assignedSaleId;
-      } else if (user.role === 'admin' || user.role === 'administration' || isSuperAdmin(user)) {
-        caseValues.assignedSaleId = user.id;
-      }
-    }
-
-    const [updatedCase] = await tx
-      .update(cases)
-      .set(caseValues)
-      .where(eq(cases.id, id))
-      .returning();
-
-    if (!updatedCase) {
-      return null;
-    }
-
-    const changeDetails = buildChangeDetails(existing, updatedCase);
-    const shouldLog =
-      changeDetails.length > 0 ||
-      Boolean(input.timeline || input.hearings !== undefined || input.participants || input.collections);
-
-    if (shouldLog) {
-      const actor = extractActorContext(user);
-      await tx.insert(caseChangeLogs).values({
-        caseId: id,
-        action: 'update',
-        description: buildChangeDescription(changeDetails, input),
-        changes: changeDetails.length > 0 ? changeDetails : null,
-        actorId: actor.actorId,
-        actorName: actor.actorName,
-        actorRole: actor.actorRole
-      });
-    }
-
-    if (input.participants) {
-      await tx.delete(caseParticipants).where(eq(caseParticipants.caseId, id));
-      const participantValues = flattenParticipantsInput(input.participants, id);
-      if (participantValues.length > 0) {
-        await tx.insert(caseParticipants).values(participantValues);
-      }
-    }
-
-    if (input.collections) {
-      await tx.delete(caseCollections).where(eq(caseCollections.caseId, id));
-      const collectionValues = normalizeCollectionsInput(input.collections, id);
-      if (collectionValues.length > 0) {
-        await tx.insert(caseCollections).values(collectionValues);
-      }
-    }
-
-    if (input.timeline) {
-      await tx.delete(caseTimeline).where(eq(caseTimeline.caseId, id));
-      const timelineValues = normalizeTimelineInput(input.timeline, id);
-      if (timelineValues.length > 0) {
-        await tx.insert(caseTimeline).values(timelineValues);
-      }
-    }
-
-    if (input.hearings !== undefined) {
-      await tx.delete(caseHearings).where(eq(caseHearings.caseId, id));
-      const processedHearings = await applyDefaultTrialLawyerList(input.hearings, user);
-      const hearingValues = normalizeHearingInputs(processedHearings, id);
-      if (hearingValues.length > 0) {
-        await tx.insert(caseHearings).values(hearingValues);
-      }
-    }
-
-    const fullRecord = await tx.query.cases.findFirst({
-      where: eq(cases.id, id),
-      with: {
-        assignedSale: {
-          columns: {
-            id: true,
-            name: true,
-            role: true
-          }
-        },
-        assignedLawyer: {
-          columns: {
-            id: true,
-            name: true,
-            role: true
-          }
-        },
-        assignedAssistant: {
-          columns: {
-            id: true,
-            name: true,
-            role: true
-          }
-        },
-        participants: true,
-        collections: true,
-        timeline: {
-          with: {
-            follower: true
-          }
-        },
-        hearings: {
-          with: {
-            trialLawyer: {
-              columns: {
-                id: true,
-                name: true,
-                role: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (!fullRecord) {
-      return null;
-    }
-
-    return mapCaseRecord(fullRecord as CaseWithRelations);
-  });
-}
-
 export async function deleteCase(id: string, user: SessionUser) {
   ensureCasePermission(user, 'delete');
 
@@ -1747,7 +2871,8 @@ export async function deleteCase(id: string, user: SessionUser) {
       assignedSaleId: true,
       department: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -1805,7 +2930,8 @@ export async function createCaseCollection(
       department: true,
       assignedSaleId: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -1863,6 +2989,154 @@ export async function createCaseCollection(
   });
 }
 
+export async function updateCaseTimeNodes(
+  caseId: string,
+  inputs: CaseTimeNodeInput[],
+  user: SessionUser
+): Promise<CaseTimeNodeDTO[] | null> {
+  ensureCasePermission(user, 'update');
+
+  if (!inputs || inputs.length === 0) {
+    throw new BadRequestError('请选择要记录的时间节点');
+  }
+
+  const normalizedEntries: Array<{ nodeType: CaseTimeNodeType; occurredOn: string }> = [];
+  const seenTypes = new Set<CaseTimeNodeType>();
+
+  for (const item of inputs) {
+    const nodeType = normalizeTimeNodeTypeInput(item?.nodeType ?? null);
+    if (!nodeType) {
+      throw new BadRequestError('不支持的时间节点');
+    }
+
+    const occurredOn = normalizeDateInput(item?.occurredOn ?? null);
+    if (!occurredOn) {
+      throw new BadRequestError('请选择有效的时间');
+    }
+
+    if (seenTypes.has(nodeType)) {
+      throw new BadRequestError('同一时间节点存在重复记录');
+    }
+
+    seenTypes.add(nodeType);
+    normalizedEntries.push({ nodeType, occurredOn });
+  }
+
+  if (normalizedEntries.length === 0) {
+    throw new BadRequestError('请选择要记录的时间节点');
+  }
+
+  const accessContext = await buildCaseAccessContext(user);
+
+  const projection = await db.query.cases.findFirst({
+    where: eq(cases.id, caseId),
+    columns: {
+      id: true,
+      department: true,
+      assignedSaleId: true,
+      assignedLawyerId: true,
+      assignedAssistantId: true,
+      creatorId: true
+    },
+    with: {
+      hearings: {
+        columns: {
+          trialLawyerId: true
+        }
+      }
+    }
+  });
+
+  if (!projection) {
+    return null;
+  }
+
+  if (!canAccessCase(accessContext, projection)) {
+    throw new AuthorizationError();
+  }
+
+  if (!CASE_TIME_NODE_EDIT_ALLOWED_ROLES.has(user.role)) {
+    throw new AuthorizationError('您没有权限编辑时间节点');
+  }
+
+  const existingNodes = await db.query.caseTimeNodes.findMany({
+    where: eq(caseTimeNodes.caseId, caseId)
+  });
+
+  const existingMap = new Map<CaseTimeNodeType, CaseTimeNodeRow>();
+  existingNodes.forEach(node => {
+    existingMap.set(node.nodeType as CaseTimeNodeType, node);
+  });
+
+  const changes: Array<{ nodeType: CaseTimeNodeType; previous: string | null; current: string }> = [];
+
+  normalizedEntries.forEach(({ nodeType, occurredOn }) => {
+    const previous = existingMap.get(nodeType);
+    const previousDate = previous ? formatDateOnly(previous.occurredOn) : null;
+    if (!previousDate || previousDate !== occurredOn) {
+      changes.push({ nodeType, previous: previousDate, current: occurredOn });
+    }
+  });
+
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(caseTimeNodes)
+      .values(
+        normalizedEntries.map(({ nodeType, occurredOn }) => ({
+          caseId,
+          nodeType,
+          occurredOn
+        }))
+      )
+      .onConflictDoUpdate({
+        target: [caseTimeNodes.caseId, caseTimeNodes.nodeType],
+        set: {
+          occurredOn: sql`excluded.occurred_on`,
+          updatedAt: sql`now()`
+        }
+      });
+
+    if (changes.length > 0) {
+      await tx
+        .update(cases)
+        .set({
+          updatedAt: new Date(),
+          updaterId: user.id
+        })
+        .where(eq(cases.id, caseId));
+
+      const actor = extractActorContext(user);
+      const description = changes
+        .map(change => {
+          const previousLabel = change.previous ?? '未记录';
+          return `${CASE_TIME_NODE_LABEL_MAP[change.nodeType]}：${previousLabel} → ${change.current}`;
+        })
+        .join('；');
+
+      await tx.insert(caseChangeLogs).values({
+        caseId,
+        action: 'update_time_node',
+        description,
+        changes: null,
+        actorId: actor.actorId,
+        actorName: actor.actorName,
+        actorRole: actor.actorRole
+      });
+    }
+  });
+
+  const refreshedNodes = await db.query.caseTimeNodes.findMany({
+    where: eq(caseTimeNodes.caseId, caseId)
+  });
+
+  return refreshedNodes
+    .sort((a, b) =>
+      CASE_TIME_NODE_SEQUENCE.indexOf(a.nodeType as CaseTimeNodeType) -
+      CASE_TIME_NODE_SEQUENCE.indexOf(b.nodeType as CaseTimeNodeType)
+    )
+    .map(mapTimeNode);
+}
+
 export async function getCaseHearings(
   caseId: string,
   user: SessionUser
@@ -1878,7 +3152,8 @@ export async function getCaseHearings(
       assignedSaleId: true,
       department: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -1942,7 +3217,8 @@ export async function getCaseChangeLogs(
       assignedSaleId: true,
       department: true,
       assignedLawyerId: true,
-      assignedAssistantId: true
+      assignedAssistantId: true,
+      creatorId: true
     },
     with: {
       hearings: {
@@ -1978,19 +3254,25 @@ export async function getCaseChangeLogs(
   return records.map(mapCaseChangeLog);
 }
 
-interface AssignableStaffMemberDTO {
-  id: string;
-  name: string | null;
-  role: string;
-  department: (typeof departmentEnum.enumValues)[number] | null;
-}
-
-export interface AssignableStaffDTO {
-  lawyers: AssignableStaffMemberDTO[];
-  assistants: AssignableStaffMemberDTO[];
-}
-
 const ASSIGNABLE_ROLES = new Set(['super_admin', 'admin', 'administration', 'lawyer']);
+
+const USER_ROLE_VALUES = ['super_admin', 'admin', 'administration', 'lawyer', 'assistant', 'sale'] as const;
+
+function normalizeUserRoleValue(value: unknown): SharedUserRole {
+  return USER_ROLE_VALUES.includes(value as SharedUserRole)
+    ? (value as SharedUserRole)
+    : 'assistant';
+}
+
+function normalizeUserDepartmentValue(value: unknown): SharedUserDepartment | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  return (departmentEnum.enumValues as readonly string[]).includes(value)
+    ? (value as SharedUserDepartment)
+    : null;
+}
 
 function extractActorContext(user: SessionUser) {
   return {
@@ -2016,15 +3298,8 @@ export async function getAssignableStaff(
     throw new AuthorizationError('Insufficient permissions');
   }
 
-  const validDepartments = new Set<string>(departmentEnum.enumValues);
-  const normalizedDepartment =
-    department && validDepartments.has(department)
-      ? (department as (typeof departmentEnum.enumValues)[number])
-      : undefined;
-  const userDepartment =
-    user.department && validDepartments.has(user.department)
-      ? (user.department as (typeof departmentEnum.enumValues)[number])
-      : null;
+  const normalizedDepartment = normalizeUserDepartmentValue(department) ?? undefined;
+  const userDepartment = normalizeUserDepartmentValue(user.department);
 
   const members = await db.query.users.findMany({
     columns: {
@@ -2038,17 +3313,30 @@ export async function getAssignableStaff(
   });
 
   const activeMembers = members.filter((member) => !member.banned);
+  const currentMember = activeMembers.find((member) => member.id === user.id) ?? null;
+  const userSupervisorId = currentMember?.supervisorId ?? user.supervisorId ?? null;
 
   const toDTO = (member: typeof members[number]): AssignableStaffMemberDTO => ({
     id: member.id,
     name: member.name ?? null,
-    role: member.role ?? '',
-    department: (member.department as (typeof departmentEnum.enumValues)[number] | null) ?? null
+    role: normalizeUserRoleValue(member.role),
+    department: normalizeUserDepartmentValue(member.department)
   });
+
+  const filterBySupervisorGroup = (
+    list: typeof members,
+    supervisorId: string | null | undefined
+  ) => {
+    if (!supervisorId) {
+      return list;
+    }
+    const filtered = list.filter((member) => member.supervisorId === supervisorId || member.id === user.id);
+    return filtered.length > 0 ? filtered : list;
+  };
 
   const filterByDepartment = (
     list: typeof members,
-    targetDepartment?: (typeof departmentEnum.enumValues)[number] | null
+    targetDepartment?: SharedUserDepartment | null
   ) => {
     if (!targetDepartment) {
       return list;
@@ -2111,9 +3399,25 @@ export async function getAssignableStaff(
 
   const lawyerCandidates = departmentMembers.filter((member) => member.role === 'lawyer');
   const assistantCandidates = departmentMembers.filter((member) => member.role === 'assistant');
+  const salesCandidates = departmentMembers.filter((member) => member.role === 'sale');
+
+  const visibleLawyers = (() => {
+    if (user.role === 'lawyer') {
+      return filterBySupervisorGroup(lawyerCandidates, userSupervisorId);
+    }
+    return lawyerCandidates;
+  })();
+
+  const visibleSales = (() => {
+    if (user.role === 'sale') {
+      return filterBySupervisorGroup(salesCandidates, userSupervisorId);
+    }
+    return salesCandidates;
+  })();
 
   return {
-    lawyers: sortStaff(lawyerCandidates.map(toDTO)),
-    assistants: sortStaff(assistantCandidates.map(toDTO))
+    lawyers: sortStaff(visibleLawyers.map(toDTO)),
+    assistants: sortStaff(assistantCandidates.map(toDTO)),
+    sales: sortStaff(visibleSales.map(toDTO))
   };
 }

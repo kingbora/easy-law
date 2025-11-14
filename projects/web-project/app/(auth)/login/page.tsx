@@ -1,7 +1,7 @@
 'use client';
 
 import { LockOutlined, MailOutlined } from '@ant-design/icons';
-import { Alert, Button, Form, Input, Typography, message } from 'antd';
+import { Alert, App, Button, Form, Input, Typography } from 'antd';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useState } from 'react';
 
@@ -17,10 +17,11 @@ type LoginFormValues = {
 };
 
 const LoginPageContent = () => {
+  const { message } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectParam = useMemo(() => {
-    const redirect = searchParams.get('redirect');
+    const redirect = searchParams?.get('redirect');
     return redirect && redirect.startsWith('/') ? redirect : undefined;
   }, [searchParams]);
   const [isSubmitting, setIsSubmitting] = useState(false);

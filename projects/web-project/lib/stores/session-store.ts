@@ -1,3 +1,5 @@
+import { createContext, useContext } from 'react';
+
 import { createAppStore } from './createStore';
 import { fetchCurrentUser, type CurrentUserResponse } from '@/lib/users-api';
 import { ApiError } from '@/lib/api-client';
@@ -83,3 +85,11 @@ export const useSessionStore = createAppStore<SessionState>((set, get) => ({
     });
   }
 }));
+
+export const SessionInitialUserContext = createContext<CurrentUserResponse | null>(null);
+
+export function useCurrentUser(): CurrentUserResponse | null {
+  const storeUser = useSessionStore((state) => state.user);
+  const initialUser = useContext(SessionInitialUserContext);
+  return storeUser ?? initialUser ?? null;
+}

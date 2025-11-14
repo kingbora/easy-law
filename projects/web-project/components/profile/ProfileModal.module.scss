@@ -4,6 +4,13 @@
   }
 }
 
+.modalTitle {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
 .avatarUploadInner {
   position: relative;
   width: 72px;

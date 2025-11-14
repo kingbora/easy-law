@@ -1,248 +1,62 @@
-import { apiFetch } from './api-client';
-import type { UserDepartment, UserRole } from './users-api';
+import { ApiError, apiFetch } from './api-client';
+import type {
+  AssignableStaffResponse,
+  CaseChangeLog,
+  CaseCollectionRecord,
+  CaseHearingRecord,
+  CaseListQuery,
+  CaseListResponse,
+  CasePayload,
+  CaseRecord,
+  CaseTableColumnKey,
+  CaseTablePreference,
+  CaseTimeNodeInput,
+  CaseTimeNodeRecord,
+  CaseUpdateConflictDetails,
+  CaseUpdateRequest,
+  CreateCaseCollectionPayload,
+  UserDepartment
+} from '@easy-law/shared-types';
 
-export type CaseType = 'work_injury' | 'personal_injury' | 'other';
-export type CaseLevel = 'A' | 'B' | 'C';
-export type CaseStatus = 'open' | 'closed' | 'void';
+export class CaseUpdateConflictError extends ApiError {
+  override details: CaseUpdateConflictDetails;
 
-export const CASE_STATUS_LABEL_MAP: Record<CaseStatus, string> = {
-  open: '未结案',
-  closed: '已结案',
-  void: '废单'
-};
-export type TrialStage = 'first_instance' | 'second_instance' | 'retrial';
-
-export type CaseParticipantEntity = 'personal' | 'organization';
-
-export interface CaseParticipant {
-  id: string;
-  entityType: CaseParticipantEntity | null;
-  name: string;
-  idNumber: string | null;
-  phone: string | null;
-  address: string | null;
-  isDishonest: boolean;
-  sortOrder: number | null;
+  constructor(message: string, details: CaseUpdateConflictDetails) {
+    super(message, 409, details);
+    this.name = 'CaseUpdateConflictError';
+    this.details = details;
+  }
 }
 
-export interface CaseCollectionRecord {
-  id: string;
-  amount: string;
-  receivedAt: string;
-  createdAt: string;
-  updatedAt: string;
+function isCaseUpdateConflictDetails(value: unknown): value is CaseUpdateConflictDetails {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.type !== 'string') {
+    return false;
+  }
+  if (typeof record.caseId !== 'string') {
+    return false;
+  }
+  if (typeof record.latestVersion !== 'number') {
+    return false;
+  }
+  if (!Array.isArray(record.remoteChanges) || !Array.isArray(record.clientChanges)) {
+    return false;
+  }
+  return true;
 }
 
-export interface CreateCaseCollectionPayload {
-  amount: string | number;
-  receivedAt?: string | Date | null;
-}
+function extractConflictDetails(payload: unknown): CaseUpdateConflictDetails | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
 
-export interface CaseTimelineRecord {
-  id: string;
-  occurredOn: string;
-  createdAt: string;
-  updatedAt: string;
-  note: string;
-  followerId: string | null;
-  followerName: string | null;
-}
-
-export interface CaseChangeDetail {
-  field: string;
-  label: string;
-  previousValue: string | null;
-  currentValue: string | null;
-}
-
-export interface CaseChangeLog {
-  id: string;
-  action: string;
-  description: string | null;
-  changes: CaseChangeDetail[] | null;
-  actorId: string | null;
-  actorName: string | null;
-  actorRole: UserRole | string | null;
-  createdAt: string;
-}
-
-export interface CaseParticipantsGroup {
-  claimants?: CaseParticipant[];
-  respondents?: CaseParticipant[];
-}
-
-export interface CaseHearingRecord {
-  id: string;
-  trialLawyerId: string | null;
-  trialLawyerName: string | null;
-  hearingTime: string | null;
-  hearingLocation: string | null;
-  tribunal: string | null;
-  judge: string | null;
-  caseNumber: string | null;
-  contactPhone: string | null;
-  trialStage: TrialStage | null;
-  hearingResult: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CaseRecord {
-  id: string;
-  caseType: CaseType;
-  caseLevel: CaseLevel;
-  provinceCity: string | null;
-  targetAmount: string | null;
-  feeStandard: string | null;
-  agencyFeeEstimate: string | null;
-  dataSource: string | null;
-  hasContract: boolean | null;
-  hasSocialSecurity: boolean | null;
-  entryDate: string | null;
-  injuryLocation: string | null;
-  injurySeverity: string | null;
-  injuryCause: string | null;
-  workInjuryCertified: boolean | null;
-  monthlySalary: string | null;
-  appraisalLevel: string | null;
-  appraisalEstimate: string | null;
-  existingEvidence: string | null;
-  customerCooperative: boolean | null;
-  witnessCooperative: boolean | null;
-  remark: string | null;
-  department: UserDepartment | null;
-  assignedSaleId: string | null;
-  assignedSaleName: string | null;
-  assignedLawyerId: string | null;
-  assignedLawyerName: string | null;
-  assignedAssistantId: string | null;
-  assignedAssistantName: string | null;
-  caseStatus: CaseStatus | null;
-  closedReason: string | null;
-  voidReason: string | null;
-  salesCommission: string | null;
-  handlingFee: string | null;
-  createdAt: string;
-  updatedAt: string;
-  participants: CaseParticipantsGroup;
-  collections: CaseCollectionRecord[];
-  timeline: CaseTimelineRecord[];
-  hearings: CaseHearingRecord[];
-}
-
-export interface AssignableStaffMember {
-  id: string;
-  name: string | null;
-  role: UserRole;
-  department: UserDepartment | null;
-}
-
-export interface AssignableStaffResponse {
-  lawyers: AssignableStaffMember[];
-  assistants: AssignableStaffMember[];
-}
-
-export interface PaginationMeta {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-}
-
-export interface CaseListResponse {
-  data: CaseRecord[];
-  pagination: PaginationMeta;
-}
-
-export interface CaseListQuery {
-  page?: number;
-  pageSize?: number;
-  department?: UserDepartment;
-  assignedSaleId?: string;
-  assignedLawyerId?: string;
-  caseType?: CaseType;
-  caseLevel?: CaseLevel;
-  caseStatus?: CaseStatus;
-  search?: string;
-  orderBy?: 'createdAt' | 'updatedAt';
-  orderDirection?: 'asc' | 'desc';
-}
-
-export interface CaseParticipantInput {
-  entityType?: CaseParticipantEntity | null;
-  name?: string | null;
-  idNumber?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  isDishonest?: boolean | null;
-  sortOrder?: number | null;
-}
-
-export interface CaseParticipantsInput {
-  claimants?: CaseParticipantInput[];
-  respondents?: CaseParticipantInput[];
-}
-
-export interface CaseCollectionInput {
-  id?: string;
-  amount?: string | number | null;
-  receivedAt?: string | Date | null;
-}
-
-export interface CaseTimelineInput {
-  id?: string;
-  occurredOn: string | Date;
-  note: string | null;
-  followerId?: string | null;
-}
-
-export interface CaseHearingInput {
-  trialLawyerId?: string | null;
-  hearingTime?: string | Date | null;
-  hearingLocation?: string | null;
-  tribunal?: string | null;
-  judge?: string | null;
-  caseNumber?: string | null;
-  contactPhone?: string | null;
-  trialStage?: TrialStage | null;
-  hearingResult?: string | null;
-}
-
-export interface CasePayload {
-  caseType: CaseType;
-  caseLevel: CaseLevel;
-  provinceCity?: string | null;
-  targetAmount?: string | number | null;
-  feeStandard?: string | null;
-  agencyFeeEstimate?: string | number | null;
-  dataSource?: string | null;
-  hasContract?: boolean | null;
-  hasSocialSecurity?: boolean | null;
-  entryDate?: string | Date | null;
-  injuryLocation?: string | null;
-  injurySeverity?: string | null;
-  injuryCause?: string | null;
-  workInjuryCertified?: boolean | null;
-  monthlySalary?: string | number | null;
-  appraisalLevel?: string | null;
-  appraisalEstimate?: string | null;
-  existingEvidence?: string | null;
-  customerCooperative?: boolean | null;
-  witnessCooperative?: boolean | null;
-  remark?: string | null;
-  department?: UserDepartment | null;
-  assignedSaleId?: string | null;
-  assignedLawyerId?: string | null;
-  assignedAssistantId?: string | null;
-  caseStatus?: CaseStatus | null;
-  closedReason?: string | null;
-  voidReason?: string | null;
-  salesCommission?: string | number | null;
-  handlingFee?: string | number | null;
-  participants?: CaseParticipantsInput;
-  collections?: CaseCollectionInput[];
-  timeline?: CaseTimelineInput[];
-  hearings?: CaseHearingInput[] | null;
+  const data = payload as Record<string, unknown>;
+  const maybeDetails = data.details ?? payload;
+  return isCaseUpdateConflictDetails(maybeDetails) ? (maybeDetails as CaseUpdateConflictDetails) : null;
 }
 
 interface CaseDetailResponse {
@@ -285,12 +99,32 @@ export async function createCase(payload: CasePayload): Promise<CaseRecord> {
   return response.data;
 }
 
-export async function updateCase(id: string, payload: CasePayload): Promise<CaseRecord> {
-  const response = await apiFetch<CaseDetailResponse>(`/api/cases/${id}`, {
-    method: 'PUT',
-    body: payload
-  });
-  return response.data;
+export async function updateCase(id: string, input: CasePayload | CaseUpdateRequest): Promise<CaseRecord> {
+  const requestBody: CaseUpdateRequest =
+    input && typeof input === 'object' && 'payload' in input
+      ? {
+          payload: (input as CaseUpdateRequest).payload,
+          meta: (input as CaseUpdateRequest).meta ?? undefined
+        }
+      : {
+          payload: input as CasePayload
+        };
+
+  try {
+    const response = await apiFetch<CaseDetailResponse>(`/api/cases/${id}`, {
+      method: 'PUT',
+      body: requestBody
+    });
+    return response.data;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      const details = extractConflictDetails(error.details);
+      if (details) {
+        throw new CaseUpdateConflictError(error.message, details);
+      }
+    }
+    throw error;
+  }
 }
 
 export async function deleteCase(id: string): Promise<void> {
@@ -320,6 +154,17 @@ export async function fetchCaseHearings(id: string): Promise<CaseHearingRecord[]
   return response.data;
 }
 
+export async function updateCaseTimeNodes(
+  caseId: string,
+  payload: CaseTimeNodeInput[]
+): Promise<CaseTimeNodeRecord[]> {
+  const response = await apiFetch<{ data: CaseTimeNodeRecord[] }>(`/api/cases/${caseId}/time-nodes`, {
+    method: 'PUT',
+    body: payload
+  });
+  return response.data;
+}
+
 export async function fetchAssignableStaff(params?: {
   department?: UserDepartment;
 }): Promise<AssignableStaffResponse> {
@@ -331,5 +176,27 @@ export async function fetchAssignableStaff(params?: {
   const response = await apiFetch<{ data: AssignableStaffResponse }>(
     `/api/cases/assignable-staff${queryString ? `?${queryString}` : ''}`
   );
+  return response.data;
+}
+
+export async function fetchCaseTablePreferences(tableKey: string): Promise<CaseTablePreference> {
+  const query = tableKey ? `?tableKey=${encodeURIComponent(tableKey)}` : '';
+  const response = await apiFetch<{ data: CaseTablePreference }>(
+    `/api/cases/column-preferences${query}`
+  );
+  return response.data;
+}
+
+export async function updateCaseTablePreferences(
+  tableKey: string,
+  visibleColumns: CaseTableColumnKey[]
+): Promise<CaseTablePreference> {
+  const response = await apiFetch<{ data: CaseTablePreference }>(`/api/cases/column-preferences`, {
+    method: 'PUT',
+    body: {
+      tableKey,
+      visibleColumns
+    }
+  });
   return response.data;
 }

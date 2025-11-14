@@ -1,12 +1,17 @@
 'use client';
 
-import InsuranceCasesPage from '@/components/cases/insurance';
-import WorkInjuryCasesPage from '@/components/cases/work-injury';
-import { useSessionStore } from '@/lib/stores/session-store';
+import CasesPage from '@/components/cases';
+import { useCurrentUser } from '@/lib/stores/session-store';
+import { useSearchParams } from 'next/navigation';
 import React from 'react';
 
 export default function CaseManagementPage() {
-  const currentUser = useSessionStore((state) => state.user);
+  const currentUser = useCurrentUser();
+  const searchParams = useSearchParams();
   const department = currentUser?.department ?? null;
-  return department === 'insurance' ? <InsuranceCasesPage /> : <WorkInjuryCasesPage />;
+  if (!department) {
+    return <div>无法确定您的部门，请联系管理员。</div>;
+  }
+  const caseId = searchParams?.get('caseId');
+  return <CasesPage department={department} initialCaseId={caseId} />;
 }

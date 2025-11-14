@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { Avatar, Form, Input, Modal, Progress, Radio, Space, Typography, Upload, message } from 'antd';
+import { App, Avatar, Form, Input, Modal, Progress, Radio, Space, Tag, Typography, Upload } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import { CameraOutlined, UserOutlined } from '@ant-design/icons';
 import imageCompression from 'browser-image-compression';
 import styles from './ProfileModal.module.scss';
+import type { UserRole } from '@easy-law/shared-types';
+import { ROLE_COLOR_MAP, ROLE_LABEL_MAP } from '@easy-law/shared-types';
 
 const MAX_COMPRESSED_SIZE = 2 * 1024 * 1024; // 2MB
 
@@ -23,6 +25,7 @@ function formatFileSize(size: number): string {
 interface ProfileModalProps {
   open: boolean;
   initialValues?: {
+    role?: UserRole;
     name?: string | null;
     email?: string | null;
     image?: string | null;
@@ -44,6 +47,7 @@ interface ProfileSubmitPayload {
   email: string;
   gender: 'male' | 'female';
   avatarFile?: File | null;
+  currentAvatarPath?: string | null;
 }
 
 const fileToBase64 = (file: File): Promise<string> =>
@@ -55,6 +59,7 @@ const fileToBase64 = (file: File): Promise<string> =>
   });
 
 export default function ProfileModal({ open, initialValues, onCancel, onSubmit, confirmLoading }: ProfileModalProps) {
+  const { message } = App.useApp();
   const [form] = Form.useForm<ProfileFormValues>();
   const [avatarPreview, setAvatarPreview] = useState<string | undefined>();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
@@ -62,13 +67,6 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [compressionProgress, setCompressionProgress] = useState(0);
   const [compressedSize, setCompressedSize] = useState<number | null>(null);
-
-  const fallbackAvatar = useMemo(() => {
-    if (initialValues?.image) {
-      return initialValues.image;
-    }
-    return initialValues?.gender === 'female' ? '/images/female.png' : '/images/male.png';
-  }, [initialValues?.gender, initialValues?.image]);
 
   useEffect(() => {
     if (!open) {
@@ -87,12 +85,12 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
       email: initialValues?.email ?? '',
       gender: initialValues?.gender ?? 'male'
     });
-    setAvatarPreview(initialValues?.image ?? fallbackAvatar);
+    setAvatarPreview(initialValues?.image ?? undefined);
     setFileList([]);
     setAvatarFile(null);
     setCompressionProgress(0);
     setCompressedSize(null);
-  }, [fallbackAvatar, form, initialValues, open]);
+  }, [form, initialValues, open]);
 
   const handleUploadChange = async ({ fileList: newFileList }: { fileList: UploadFile[] }) => {
     const latest = newFileList.slice(-1);
@@ -120,9 +118,9 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
 
       const finalFile = compressedFile.size <= target.size ? compressedFile : target;
 
-    const preview = await fileToBase64(finalFile);
-    setAvatarPreview(preview);
-    setAvatarFile(finalFile);
+      const preview = await fileToBase64(finalFile);
+      setAvatarPreview(preview);
+      setAvatarFile(finalFile);
 
       setCompressionProgress(100);
       setCompressedSize(finalFile.size);
@@ -148,7 +146,8 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
         name: values.name.trim(),
         email: values.email.trim(),
         gender: values.gender,
-        avatarFile
+        avatarFile,
+        currentAvatarPath: initialValues?.image ?? null
       });
     } catch (error) {
       // validation errors handled by form
@@ -158,7 +157,14 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
   return (
     <Modal
       open={open}
-      title="个人资料"
+      title={<div className={styles.modalTitle}>
+        <span>个人资料</span>
+        {
+          initialValues?.role ?
+            <Tag color={ROLE_COLOR_MAP[initialValues.role]}>{ROLE_LABEL_MAP[initialValues?.role]}</Tag>
+          : null
+        }
+      </div>}
       okText="保存"
       cancelText="取消"
       onCancel={onCancel}
@@ -166,6 +172,7 @@ export default function ProfileModal({ open, initialValues, onCancel, onSubmit, 
       confirmLoading={confirmLoading || uploading}
       destroyOnHidden
       maskClosable={false}
+      className="scrollable-modal"
     >
       <Form form={form} layout="vertical">
         <Form.Item label="头像">
