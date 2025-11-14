@@ -192,7 +192,7 @@ jobs:
 
   # 健康检查（部署后）
   health-check:
-    needs: deploy-production
+    needs: build-and-images
     runs-on: ubuntu-latest
     
     steps:
