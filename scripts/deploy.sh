@@ -219,7 +219,6 @@ if ! docker run -d --name "$CONTAINER_NAME" \
     -v $APP_DIR/shared/data:/app/data \
     -e NODE_ENV=production \
     -e DATABASE_URL="$DATABASE_URL" \
-    -e CROSS_ORIGIN="https://easy-lay.top" \
     -e QINIU_ACCESS_KEY="$QINIU_ACCESS_KEY" \
     -e QINIU_SECRET_KEY="$QINIU_SECRET_KEY" \
     lawyer-app:latest; then
