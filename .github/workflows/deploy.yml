@@ -43,7 +43,9 @@ jobs:
       run: pnpm build
 
     - name: Run Database Migrations
-      run: pnpm db:migrate
+      run: |
+        export DATABASE_URL="${{ secrets.DATABASE_URL }}"
+        pnpm db:migrate
 
     - name: Run seed super admin user
       run: |
