@@ -42,18 +42,20 @@ jobs:
     - name: Build projects
       run: pnpm build
 
-    - name: Run Database Migrations
+    - name: Setup environment variables
       run: |
-        export DATABASE_URL="${{ secrets.DATABASE_URL }}"
-        pnpm db:migrate
+        echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+        echo "SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}" >> $GITHUB_ENV
+        echo "SUPER_ROLE_PASSWORD=${{ secrets.SUPER_ROLE_PASSWORD }}" >> $GITHUB_ENV
+        echo "SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}" >> $GITHUB_ENV
+        echo "QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}" >> $GITHUB_ENV
+        echo "QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}" >> $GITHUB_ENV
+
+    - name: Run Database Migrations
+      run: pnpm db:migrate
 
     - name: Run seed super admin user
-      run: |
-        export DATABASE_URL="${{ secrets.DATABASE_URL }}"
-        export SUPER_ROLE_EMAIL="${{ secrets.SUPER_ROLE_EMAIL }}"
-        export SUPER_ROLE_PASSWORD="${{ secrets.SUPER_ROLE_PASSWORD }}"
-        export SUPER_ROLE_NICKNAME="${{ secrets.SUPER_ROLE_NICKNAME }}"
-        pnpm db:seed
+      run: pnpm db:seed
 
     - name: Create build directory
       run: |
@@ -159,11 +161,6 @@ jobs:
           echo "部署时间: $(date)"
           echo "提交: ${{ github.sha }}"
           echo "分支: ${{ github.ref }}"
-
-          # 设置环境变量
-          export DATABASE_URL="${{ secrets.DATABASE_URL }}"
-          export QINIU_ACCESS_KEY="${{ secrets.QINIU_ACCESS_KEY }}"
-          export QINIU_SECRET_KEY="${{ secrets.QINIU_SECRET_KEY }}"
           
           echo "=== 复制Nginx配置文件 ==="
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/conf.d
