@@ -47,6 +47,7 @@ jobs:
 
     - name: Run seed super admin user
       run: |
+        export DATABASE_URL="${{ secrets.DATABASE_URL }}"
         export SUPER_ROLE_EMAIL="${{ secrets.SUPER_ROLE_EMAIL }}"
         export SUPER_ROLE_PASSWORD="${{ secrets.SUPER_ROLE_PASSWORD }}"
         export SUPER_ROLE_NICKNAME="${{ secrets.SUPER_ROLE_NICKNAME }}"
