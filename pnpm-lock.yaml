@@ -68,6 +68,9 @@ importers:
       '@types/express':
         specifier: ^4.17.21
         version: 4.17.23
+      '@types/multer':
+        specifier: ^1.4.11
+        version: 1.4.13
       '@types/node':
         specifier: ^20.14.10
         version: 20.19.21
@@ -104,19 +107,16 @@ importers:
       resend:
         specifier: ^6.2.2
         version: 6.2.2
+      tsx:
+        specifier: ^4.15.5
+        version: 4.20.6
       typescript:
         specifier: ~5.5.4
         version: 5.5.4
     devDependencies:
-      '@types/multer':
-        specifier: ^1.4.11
-        version: 1.4.13
       drizzle-kit:
         specifier: ^0.31.5
         version: 0.31.5
-      tsx:
-        specifier: ^4.15.5
-        version: 4.20.6
 
   projects/web-project:
     dependencies:
