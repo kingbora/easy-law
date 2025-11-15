@@ -1,3 +1,5 @@
+import "./utils/sentry-config";
+import * as Sentry from "@sentry/node"
 import { toNodeHandler } from 'better-auth/node';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
@@ -5,7 +7,6 @@ import express from 'express';
 
 import { auth } from './auth';
 import { AUTH_BASE_PATH } from './constants';
-import { errorHandler, notFoundHandler } from './middlewares/error-handlers';
 import { requireSession } from './middlewares/session';
 import calendarEventsRouter from './routes/calendar-events';
 import casesRouter from './routes/cases';
@@ -39,7 +40,6 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
-app.use(notFoundHandler);
-app.use(errorHandler);
+Sentry.setupExpressErrorHandler(app);
 
 export default app;
