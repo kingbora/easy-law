@@ -9,10 +9,6 @@ COPY . .
 RUN corepack enable
 RUN corepack prepare pnpm@9 --activate
 
-# 初始化数据库
-RUN pnpm db:migrate
-RUN pnpm db:seed
-
 # 创建非root用户
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nodejs -u 1001

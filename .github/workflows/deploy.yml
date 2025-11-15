@@ -2,9 +2,9 @@ name: Deploy Lawyer App to Alibaba Cloud ECS
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, chore/optimize-bundle-size ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, chore/optimize-bundle-size ]
 
 env:
   APP_NAME: "lawyer-app"
@@ -15,7 +15,7 @@ env:
 
 jobs:
   # 构建打包
-  build-and-images:
+  build:
     runs-on: ubuntu-latest
     
     steps:
@@ -32,15 +32,48 @@ jobs:
       with:
         node-version: '20'
         cache: 'pnpm'
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
         
     - name: Install dependencies
       run: pnpm install --prod --frozen-lockfile --ignore-scripts
       
     - name: Build projects
       run: pnpm build
+
+    - name: Create build directory
+      run: |
+        mkdir -p deployment
+        rsync -av \
+          --exclude='node_modules' \
+          --exclude='.git' \
+          --exclude='.next' \
+          --exclude='dist' \
+          . deployment/
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: deployment
+        retention-days: 1
+
+  deploy-production:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifacts
+
+    - name: Copy project to ECS
+      uses: appleboy/scp-action@v0.1.3
+      with:
+        host: ${{ secrets.ECS_HOST }}
+        username: ${{ secrets.ECS_USERNAME }}
+        key: ${{ secrets.ECS_SSH_KEY }}
+        source: "deployment/*"
+        target: ${{ env.APP_DIR }}
+        strip_components: 1
 
     - name: Setup environment variables
       run: |
@@ -52,99 +85,6 @@ jobs:
         echo "QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}" >> $GITHUB_ENV
         echo "QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}" >> $GITHUB_ENV
 
-    - name: Create build directory
-      run: |
-        mkdir -p deployment
-        # 仅复制镜像构建和部署所需文件
-        mkdir -p deployment/{docker,scripts,nginx,projects,node_modules}
-
-        rsync -a docker/ deployment/docker/
-        rsync -a scripts/ deployment/scripts/
-        rsync -a nginx/ deployment/nginx/
-        rsync -a node_modules/ deployment/node_modules/
-
-        mkdir -p deployment/projects/web-project
-        mkdir -p deployment/projects/web-project/node_modules
-        mkdir -p deployment/projects/web-project/.next
-
-        rsync -a projects/web-project/node_modules/ deployment/projects/web-project/node_modules/
-        rsync -a projects/web-project/.next/ deployment/projects/web-project/.next/
-        rsync -a projects/web-project/next.config.mjs deployment/projects/web-project/next.config.mjs
-        rsync -a projects/web-project/package.json deployment/projects/web-project/package.json
-        
-        mkdir -p deployment/projects/server-project
-        mkdir -p deployment/projects/server-project/node_modules
-        mkdir -p deployment/projects/server-project/dist
-
-        rsync -a projects/server-project/node_modules/ deployment/projects/server-project/node_modules/
-        rsync -a projects/server-project/package.json deployment/projects/server-project/package.json
-        rsync -a projects/server-project/dist/ deployment/projects/server-project/dist/
-        rsync -a package.json deployment/package.json
-
-        # 创建SSL证书目录
-        mkdir -p deployment/nginx/ssl
-      
-    - name: Build and test image
-      run: |
-        cd deployment
-        echo "=== 当前目录结构 ==="
-        ls -la
-        echo "=== 构建Docker镜像 ==="
-        docker build -t lawyer-app:latest -f docker/Dockerfile .
-        
-        echo "=== 测试服务启动 ==="
-        # 启动容器并测试服务
-        docker run -d --name test-lawyer-app -p 3000:3000 -p 4000:4000 -e DATABASE_URL="${{ secrets.DATABASE_URL }}" lawyer-app:latest
-        
-        echo "等待服务启动..."
-        sleep 30
-        
-        echo "=== 健康检查 ==="
-        # 检查后端服务
-        if curl -s -f http://localhost:4000/health; then
-          echo "✓ 后端服务启动成功"
-        else
-          echo "✗ 后端服务启动失败"
-          docker logs test-lawyer-app
-          docker stop test-lawyer-app
-          docker rm test-lawyer-app
-          exit 1
-        fi
-        
-        # 检查前端服务
-        if curl -s -f http://localhost:3000/api/health; then
-          echo "✓ 前端服务启动成功"
-        else
-          echo "✗ 前端服务启动失败"
-          docker logs test-lawyer-app
-          docker stop test-lawyer-app
-          docker rm test-lawyer-app
-          exit 1
-        fi
-        
-        echo "=== 停止并删除测试容器 ==="
-        docker stop test-lawyer-app
-        docker rm test-lawyer-app
-
-        mkdir -p ../publish
-        echo "=== 保存镜像 ==="
-        docker save lawyer-app:latest -o ../publish/app-image.tar
-        gzip ../publish/app-image.tar
-        # 复制其他部署文件
-        cp -r ../deployment/nginx ../publish/nginx
-        cp -r ../deployment/scripts ../publish/scripts
-        echo "=== 构建和测试完成 ==="
-
-    - name: Copy project to ECS
-      uses: appleboy/scp-action@v0.1.3
-      with:
-        host: ${{ secrets.ECS_HOST }}
-        username: ${{ secrets.ECS_USERNAME }}
-        key: ${{ secrets.ECS_SSH_KEY }}
-        source: "publish/*"
-        target: ${{ env.APP_DIR }}
-        strip_components: 1
-        
     - name: Execute deployment script
       uses: appleboy/ssh-action@v1.0.3
       with:
@@ -156,7 +96,17 @@ jobs:
           echo "部署时间: $(date)"
           echo "提交: ${{ github.sha }}"
           echo "分支: ${{ github.ref }}"
-          
+
+          cd ${{ env.APP_DIR }}
+          # 配置pnpm使用持久化存储
+          pnpm config set store-dir ${{ env.APP_DIR }}/shared/.pnpm-store
+          pnpm install --prod --frozen-lockfile --ignore-scripts
+          pnpm build
+          echo "=== 当前目录结构 ==="
+          ls -la
+          echo "=== 构建Docker镜像 ==="
+          docker build -t lawyer-app:latest -f ${{ env.APP_DIR }}/docker/Dockerfile .
+
           echo "=== 复制Nginx配置文件 ==="
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/conf.d
           sudo cp -f ${{ env.APP_DIR }}/nginx/conf.d/*.conf ${{ env.NGINX_CONF_DIR }}/conf.d/ || echo "Nginx配置文件复制完成"
@@ -177,26 +127,13 @@ jobs:
           systemctl status nginx --no-pager -l
           echo "服务状态:"
           docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-    
-    - name: Upload build and image artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: publish
-        retention-days: 1
 
   # 健康检查（部署后）
   health-check:
-    needs: build-and-images
+    needs: deploy-production
     runs-on: ubuntu-latest
     
     steps:
-    - name: Upload build and image artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: publish
-        retention-days: 1
     - name: Check service health
       uses: appleboy/ssh-action@v1.0.3
       with:
