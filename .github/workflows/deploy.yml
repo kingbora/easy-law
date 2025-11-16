@@ -9,6 +9,8 @@ on:
 env:
   APP_NAME: "lawyer-app"
   APP_DIR: "/home/apps/lawyer-app"
+  BACKUP_ROOT: "/home/backups"
+  TMP_DIR: "/home/tmp"
   NGINX_CONF_DIR: /etc/nginx
   ECS_HOST: ${{ secrets.ECS_HOST }}
   ECS_USERNAME: ${{ secrets.ECS_USERNAME }}
@@ -26,6 +28,7 @@ jobs:
       uses: pnpm/action-setup@v2
       with:
         version: 9
+        run_install: false
         
     - name: Setup Node.js 20
       uses: actions/setup-node@v4
@@ -33,14 +36,22 @@ jobs:
         node-version: '20'
         cache: 'pnpm'
 
+    - name: Get pnpm store path
+      id: pnpm-cache
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+        
+    - name: Setup pnpm cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-        
-    - name: Install dependencies
-      run: pnpm install --prod --frozen-lockfile --ignore-scripts
-      
-    - name: Build projects
-      run: pnpm build
 
     - name: Setup environment variables
       run: |
@@ -51,42 +62,15 @@ jobs:
         echo "SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}" >> $GITHUB_ENV
         echo "QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}" >> $GITHUB_ENV
         echo "QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}" >> $GITHUB_ENV
-
-    - name: Create build directory
-      run: |
-        mkdir -p deployment
-        # 仅复制镜像构建和部署所需文件
-        mkdir -p deployment/{docker,scripts,nginx,projects,node_modules}
-
-        rsync -a docker/ deployment/docker/
-        rsync -a scripts/ deployment/scripts/
-        rsync -a nginx/ deployment/nginx/
-        rsync -a node_modules/ deployment/node_modules/
-
-        mkdir -p deployment/projects/web-project
-        mkdir -p deployment/projects/web-project/node_modules
-        mkdir -p deployment/projects/web-project/.next
-
-        rsync -a projects/web-project/node_modules/ deployment/projects/web-project/node_modules/
-        rsync -a projects/web-project/.next/ deployment/projects/web-project/.next/
-        rsync -a projects/web-project/next.config.mjs deployment/projects/web-project/next.config.mjs
-        rsync -a projects/web-project/package.json deployment/projects/web-project/package.json
         
-        mkdir -p deployment/projects/server-project
-        mkdir -p deployment/projects/server-project/node_modules
-        mkdir -p deployment/projects/server-project/dist
-
-        rsync -a projects/server-project/node_modules/ deployment/projects/server-project/node_modules/
-        rsync -a projects/server-project/package.json deployment/projects/server-project/package.json
-        rsync -a projects/server-project/dist/ deployment/projects/server-project/dist/
-        rsync -a package.json deployment/package.json
-
-        # 创建SSL证书目录
-        mkdir -p deployment/nginx/ssl
+    - name: Install dependencies
+      run: pnpm install --prod --frozen-lockfile --ignore-scripts
+      
+    - name: Build projects
+      run: pnpm build
       
     - name: Build and test image
       run: |
-        cd deployment
         echo "=== 当前目录结构 ==="
         ls -la
         echo "=== 构建Docker镜像 ==="
@@ -126,13 +110,18 @@ jobs:
         docker stop test-lawyer-app
         docker rm test-lawyer-app
 
-        mkdir -p ../publish
+        mkdir -p deployment
         echo "=== 保存镜像 ==="
-        docker save lawyer-app:latest -o ../publish/app-image.tar
-        gzip ../publish/app-image.tar
-        # 复制其他部署文件
-        cp -r ../deployment/nginx ../publish/nginx
-        cp -r ../deployment/scripts ../publish/scripts
+        docker save lawyer-app:latest -o deployment/app-image.tar
+        # 复制构建产物
+        rsync -av \
+          --exclude='node_modules' \
+          --exclude='.git' \
+          --exclude='.next' \
+          --exclude='dist' \
+          --exclude='deployment' \
+          . deployment/
+        tar -czvf deployment.tar.gz -C deployment .
         echo "=== 构建和测试完成 ==="
 
     - name: Copy project to ECS
@@ -141,8 +130,8 @@ jobs:
         host: ${{ secrets.ECS_HOST }}
         username: ${{ secrets.ECS_USERNAME }}
         key: ${{ secrets.ECS_SSH_KEY }}
-        source: "publish/*"
-        target: ${{ env.APP_DIR }}
+        source: "deployment.tar.gz"
+        target: ${{ env.TMP_DIR }}
         strip_components: 1
         
     - name: Execute deployment script
@@ -156,6 +145,31 @@ jobs:
           echo "部署时间: $(date)"
           echo "提交: ${{ github.sha }}"
           echo "分支: ${{ github.ref }}"
+
+          # 备份当前应用，仅保留最近3份
+          if [ -d "${{ env.BACKUP_ROOT }}" ]; then
+            TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+            BACKUP_DIR="${{ env.BACKUP_ROOT }}/${{ env.APP_NAME }}_$TIMESTAMP"
+            mkdir -p ${{ env.BACKUP_ROOT }}
+            echo "备份当前应用到 $BACKUP_DIR"
+            mv ${{ env.APP_DIR }} "$BACKUP_DIR"
+            # 清理旧备份，仅保留最近3份
+            ls -dt ${{ env.BACKUP_ROOT }}/${{ env.APP_NAME }}_* | tail -n +4 | xargs -r rm -rf
+          else
+            echo "没有找到现有应用目录，跳过备份步骤"
+          fi
+
+          # 删除旧的应用目录（如果存在）
+          sudo rm -rf ${{ env.APP_DIR }}
+
+          # 创建新的应用目录
+          mkdir -p ${{ env.APP_DIR }}
+
+          # 解压传输的文件
+          tar -xzvf ${{ env.TMP_DIR }}/deployment.tar.gz -C ${{ env.APP_DIR }}
+
+          # 删除tmp目录
+          rm -rf ${{ env.TMP_DIR }}
           
           echo "=== 复制Nginx配置文件 ==="
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/conf.d
@@ -169,6 +183,8 @@ jobs:
           echo "SSL证书已配置"
           
           # 执行部署脚本
+          pnpm db:migrate
+          
           chmod +x ${{ env.APP_DIR }}/scripts/deploy.sh
           ${{ env.APP_DIR }}/scripts/deploy.sh
           
@@ -182,7 +198,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: build-artifacts
-        path: publish
+        path: deployment
         retention-days: 1
 
   # 健康检查（部署后）
@@ -191,12 +207,6 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Upload build and image artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: publish
-        retention-days: 1
     - name: Check service health
       uses: appleboy/ssh-action@v1.0.3
       with:

@@ -166,8 +166,8 @@ verify_nginx_config() {
 log "开始智能部署流程..."
 
 # 检查镜像文件
-if [ ! -f "$APP_DIR/app-image.tar.gz" ]; then
-    log "错误: 未找到Docker镜像文件 app-image.tar.gz"
+if [ ! -f "$APP_DIR/app-image.tar" ]; then
+    log "错误: 未找到Docker镜像文件 app-image.tar"
     exit 1
 fi
 
@@ -176,7 +176,6 @@ setup_environment
 
 # 加载新镜像
 log "加载Docker镜像..."
-gunzip -c "$APP_DIR/app-image.tar.gz"
 docker load -i "$APP_DIR/app-image.tar"
 
 # 获取当前和下一个端口
@@ -245,7 +244,7 @@ fi
 # 更新Nginx配置
 log "更新Nginx upstream指向新端口..."
 sudo mkdir -p /etc/nginx/conf.d
-cat > /tmp/lawyer-app-upstream.conf << EOF
+cat > /home/tmp/lawyer-app-upstream.conf << EOF
 upstream frontend_servers {
     server 127.0.0.1:$NEXT_FRONTEND_PORT;
 }
@@ -256,8 +255,8 @@ upstream backend_servers {
 EOF
 
 # 复制 upstream 配置文件到 nginx 目录，若已存在则直接覆盖
-sudo cp -f /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
-rm -f /tmp/lawyer-app-upstream.conf
+sudo cp -f /home/tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
+rm -f /home/tmp/lawyer-app-upstream.conf
 
 # 验证并重载Nginx
 if verify_nginx_config; then
@@ -272,7 +271,7 @@ else
     log "✗ Nginx配置验证失败，回滚upstream配置"
     # 恢复原有配置
     if [ -n "$CURRENT_FRONTEND_PORT" ] && [ -n "$CURRENT_BACKEND_PORT" ]; then
-        cat > /tmp/lawyer-app-upstream.conf << EOF
+        cat > /home/tmp/lawyer-app-upstream.conf << EOF
 upstream frontend_servers {
     server 127.0.0.1:$CURRENT_FRONTEND_PORT;
 }
@@ -281,8 +280,8 @@ upstream backend_servers {
     server 127.0.0.1:$CURRENT_BACKEND_PORT;
 }
 EOF
-        sudo cp -f /tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
-        rm -f /tmp/lawyer-app-upstream.conf
+        sudo cp -f /home/tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
+        rm -f /home/tmp/lawyer-app-upstream.conf
         sudo nginx -t && sudo systemctl reload nginx
     fi
     exit 1

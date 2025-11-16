@@ -8,8 +8,6 @@
     "dev:web": "pnpm --filter web-project dev",
     "dev:app": "pnpm --filter app-project dev",
     "dev:server": "pnpm --filter server-project dev",
-    "db:reset": "pnpm --filter server-project reset-db",
-    "db:seed": "pnpm --filter server-project seed:super-admin",
     "db:generate": "pnpm --filter server-project db:generate",
     "db:migrate": "pnpm --filter server-project db:migrate",
     "db:push": "pnpm --filter server-project db:push",
