@@ -3,24 +3,11 @@
   "version": "0.0.1",
   "private": true,
   "files": [
-    "dist"
+    "src"
   ],
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts",
-      "require": "./dist/index.js"
-    }
-  },
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "clean": "rimraf mode_module dist",
-    "watch": "tsc -p tsconfig.json --watch"
-  },
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "dependencies": {
-    "better-auth": "1.3.7",
-    "typescript": "~5.5.4"
+    "better-auth": "1.3.7"
   }
 }
