@@ -11,7 +11,6 @@ import { requireSession } from './middlewares/session';
 import calendarEventsRouter from './routes/calendar-events';
 import casesRouter from './routes/cases';
 import clientsRouter from './routes/clients';
-import seedRouter from './routes/db-opts';
 import profileRouter from './routes/profile';
 
 const app = express();
@@ -36,7 +35,6 @@ app.use('/restful/api/cases', requireSession, casesRouter);
 app.use('/restful/api/clients', requireSession, clientsRouter);
 app.use('/restful/api/calendar-events', requireSession, calendarEventsRouter);
 app.use('/restful/api/profile', requireSession, profileRouter);
-app.use('/restful/api/db', requireSession, seedRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });

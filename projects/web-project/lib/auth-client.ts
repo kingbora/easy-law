@@ -4,8 +4,6 @@ import { ac, allRoles } from '@easy-law/shared-types';
 
 const baseURL = `${process.env.NEXT_PUBLIC_WEBSITE_URL}/restful/api/auth`;
 
-console.log('Auth Client Secret:', process.env.NEXT_PUBLIC_BETTER_AUTH_SECRET);
-
 export const authClient = createAuthClient({
   baseURL,
   secret: process.env.NEXT_PUBLIC_BETTER_AUTH_SECRET,

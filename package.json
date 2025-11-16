@@ -11,6 +11,8 @@
     "db:generate": "pnpm --filter server-project db:generate",
     "db:migrate": "pnpm --filter server-project db:migrate",
     "db:push": "pnpm --filter server-project db:push",
+    "db:reset": "pnpm --filter server-project reset-db",
+    "db:seed": "pnpm --filter server-project seed:super-admin",
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "start": "pnpm --filter server-project start & pnpm --filter web-project start",
