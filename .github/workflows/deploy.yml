@@ -132,7 +132,7 @@ jobs:
         key: ${{ secrets.ECS_SSH_KEY }}
         source: "deployment.tar.gz"
         target: ${{ env.TMP_DIR }}
-        # 不使用 strip_components，确保文件完整上传
+        strip_components: 1
         
   deployment:
     needs: build-and-images
@@ -160,17 +160,6 @@ jobs:
           echo "提交: ${{ github.sha }}"
           echo "分支: ${{ github.ref }}"
 
-          # 解压传输的文件
-          if [ -f "${{ env.TMP_DIR }}/deployment.tar.gz" ]; then
-            tar -xzvf ${{ env.TMP_DIR }}/deployment.tar.gz -C ${{ env.APP_DIR }}
-          else
-            echo "❌ 未找到部署包: ${{ env.TMP_DIR }}/deployment.tar.gz"
-            exit 1
-          fi
-
-          # 删除tmp目录
-          rm -rf ${{ env.TMP_DIR }}
-
           # 备份当前应用，仅保留最近3份
           if [ -d "${{ env.BACKUP_ROOT }}" ]; then
             TIMESTAMP=$(date +"%Y%m%d%H%M%S")
@@ -189,6 +178,22 @@ jobs:
 
           # 创建新的应用目录
           mkdir -p ${{ env.APP_DIR }}
+
+          # 解压传输的文件
+          if [ -f "${{ env.TMP_DIR }}/deployment.tar.gz" ]; then
+            tar -xzvf ${{ env.TMP_DIR }}/deployment.tar.gz -C ${{ env.APP_DIR }}
+          else
+            echo "❌ 未找到部署包: ${{ env.TMP_DIR }}/deployment.tar.gz"
+            # 还原备份
+            if [ -d "$BACKUP_DIR" ]; then
+              mv "$BACKUP_DIR" ${{ env.APP_DIR }}
+              echo "已还原备份到 ${{ env.APP_DIR }}"
+            fi
+            exit 1
+          fi
+
+          # 删除tmp目录
+          rm -rf ${{ env.TMP_DIR }}
           
           echo "=== 复制Nginx配置文件 ==="
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/conf.d
