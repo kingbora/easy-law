@@ -68,14 +68,37 @@ jobs:
       
     - name: Build projects
       run: pnpm build
-      
+
     - name: Build and test image
       run: |
         echo "=== 当前目录结构 ==="
         ls -la
         echo "=== 构建Docker镜像 ==="
         docker build -t lawyer-app:latest -f docker/Dockerfile .
-        
+
+        mkdir -p deployment
+        echo "=== 保存镜像 ==="
+        docker save lawyer-app:latest -o deployment/app-image.tar
+        # 复制构建产物
+        rsync -av \
+          --exclude='node_modules' \
+          --exclude='.git' \
+          --exclude='.next' \
+          --exclude='dist' \
+          --exclude='deployment' \
+          . deployment/
+        tar -czvf deployment.tar.gz -C deployment .
+        echo "=== 构建和测试完成 ==="
+
+    - name: Upload build and image artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: deployment
+        retention-days: 1
+
+    - name: Test Docker image
+      run: |
         echo "=== 测试服务启动 ==="
         # 启动容器并测试服务
         docker run -d --name test-lawyer-app -p 3000:3000 -p 4000:4000 -e DATABASE_URL="${{ secrets.DATABASE_URL }}" lawyer-app:latest
@@ -109,20 +132,6 @@ jobs:
         echo "=== 停止并删除测试容器 ==="
         docker stop test-lawyer-app
         docker rm test-lawyer-app
-
-        mkdir -p deployment
-        echo "=== 保存镜像 ==="
-        docker save lawyer-app:latest -o deployment/app-image.tar
-        # 复制构建产物
-        rsync -av \
-          --exclude='node_modules' \
-          --exclude='.git' \
-          --exclude='.next' \
-          --exclude='dist' \
-          --exclude='deployment' \
-          . deployment/
-        tar -czvf deployment.tar.gz -C deployment .
-        echo "=== 构建和测试完成 ==="
 
     - name: Copy project to ECS
       uses: appleboy/scp-action@v0.1.3
@@ -184,7 +193,7 @@ jobs:
           
           # 执行部署脚本
           pnpm db:migrate
-          
+
           chmod +x ${{ env.APP_DIR }}/scripts/deploy.sh
           ${{ env.APP_DIR }}/scripts/deploy.sh
           
@@ -193,13 +202,6 @@ jobs:
           systemctl status nginx --no-pager -l
           echo "服务状态:"
           docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-    
-    - name: Upload build and image artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: deployment
-        retention-days: 1
 
   # 健康检查（部署后）
   health-check:
