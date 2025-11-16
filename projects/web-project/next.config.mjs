@@ -5,15 +5,6 @@ const isProd = process.env.NODE_ENV === 'production';
 const nextConfig = {
   reactStrictMode: true,
   distDir: '.next',
-  env: {
-    SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN,
-    NEXT_PUBLIC_API_BASE_URL: isProd 
-      ? 'https://easy-lay.top' 
-      : 'http://localhost:3000',
-    NEXT_PUBLIC_RESTFUL_BASE_URL: isProd
-      ? 'https://easy-lay.top/restful'
-      : 'http://localhost:4000/restful'
-  },
   images: {
     unoptimized: true,
   },

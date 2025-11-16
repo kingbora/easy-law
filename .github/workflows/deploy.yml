@@ -65,6 +65,11 @@ jobs:
         QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
         QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
         EOF
+
+        cat <<EOF > projects/web-project/.env.production
+        SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+        NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
+        EOF
         
     - name: Install dependencies
       run: pnpm install --prod --frozen-lockfile --ignore-scripts
@@ -94,20 +99,11 @@ jobs:
           --exclude='.env.*' \
           . deployment/
 
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: deployment
-        retention-days: 1
-        if-no-files-found: warn
-        exclude: app-image.tar
-
     - name: Test Docker image
       run: |
         echo "=== 测试服务启动 ==="
         # 启动容器并测试服务
-        docker run -d --name test-lawyer-app -p 3000:3000 -p 4000:4000 -e DATABASE_URL="${{ secrets.DATABASE_URL }}" lawyer-app:latest
+        docker run -d --name test-lawyer-app -p 3000:3000 -p 4000:4000 lawyer-app:latest
         
         echo "等待服务启动..."
         sleep 30
@@ -141,6 +137,13 @@ jobs:
 
         echo "=== 压缩发布文件 ==="
         tar -czvf deployment.tar.gz -C deployment .
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: deployment.tar.gz
+        retention-days: 1
 
     - name: Copy project to ECS
       uses: appleboy/scp-action@v0.1.3
@@ -215,6 +218,7 @@ jobs:
           
           # 执行部署脚本
           echo "=== 运行数据库迁移脚本 ==="
+          cd ${{ env.APP_DIR }}
           pnpm db:migrate
 
           chmod +x ${{ env.APP_DIR }}/scripts/deploy.sh
