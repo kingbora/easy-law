@@ -52,25 +52,7 @@ jobs:
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-        
-    - name: Install dependencies
-      run: pnpm install --prod --frozen-lockfile --ignore-scripts
-      
-    - name: Build projects
-      run: pnpm build
 
-    - name: Create deployment directory
-      run: |
-        mkdir -p deployment
-        # 复制构建产物
-        rsync -av \
-          --exclude='node_modules' \
-          --exclude='.git' \
-          --exclude='.next' \
-          --exclude='dist' \
-          --exclude='deployment' \
-          . deployment/
-        
     - name: Setup Production Environment
       run: |
         cat <<EOF > deployment/projects/server-project/.env.production
@@ -83,6 +65,26 @@ jobs:
         QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
         QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
         EOF
+        
+    - name: Install dependencies
+      run: pnpm install --prod --frozen-lockfile --ignore-scripts
+      
+    - name: Build projects
+      run: pnpm build
+
+    - name: Create deployment directory
+      run: |
+        mkdir -p deployment
+        # 复制构建产物
+         rsync -av \
+              --exclude='node_modules' \
+              --exclude='.git' \
+              --exclude='.next' \
+              --exclude='dist' \
+              --exclude='deployment' \
+              --exclude='.env' \
+              --exclude='.env.*' \
+              . deployment/
 
     - name: Upload build and image artifacts
       uses: actions/upload-artifact@v4
