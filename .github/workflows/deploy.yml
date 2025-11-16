@@ -415,6 +415,7 @@ jobs:
               # 隐藏版本信息
               server_tokens off;
           }
+          EOF
           
           # 执行部署脚本
           echo "=== 运行数据库迁移脚本 ==="
