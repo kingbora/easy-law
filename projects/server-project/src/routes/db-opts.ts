@@ -1,6 +1,4 @@
 /* eslint-disable no-console */
-import 'dotenv/config';
-
 import { eq } from 'drizzle-orm';
 import { Router } from 'express';
 import postgres from 'postgres';

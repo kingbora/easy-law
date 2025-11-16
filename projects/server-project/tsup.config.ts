@@ -16,7 +16,8 @@ export default defineConfig({
   ],
   noExternal: [
     /^@easy-law\//,
-    /drizzle-kit/
+    /drizzle-kit/,
+    /dotenv/
   ],
   // 保持目录结构
   splitting: true,
