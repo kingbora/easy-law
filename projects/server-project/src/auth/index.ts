@@ -19,6 +19,7 @@ const basePath = AUTH_BASE_PATH;
 export const auth = betterAuth({
   basePath,
   baseURL,
+  secret: process.env.BETTER_AUTH_SECRET,
   plugins: [
     admin({
       ac,
