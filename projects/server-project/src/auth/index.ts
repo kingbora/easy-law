@@ -11,7 +11,7 @@ import { users, accounts, sessions, verifications } from '../db/schema/auth-sche
 const isProduction = process.env.NODE_ENV === 'production';
 const baseURL =
   isProduction 
-      ? process.env.WEBSITE_URL 
+      ? process.env.NEXT_PUBLIC_WEBSITE_URL 
       : `http://localhost:3000`;
 
 const basePath = AUTH_BASE_PATH;

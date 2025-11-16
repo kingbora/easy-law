@@ -10,7 +10,7 @@ export class ApiError extends Error {
   }
 }
 
-const RAW_API_BASE_URL = process.env.WEBSITE_URL;
+const RAW_API_BASE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL;
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, '');
@@ -18,7 +18,7 @@ function normalizeBaseUrl(baseUrl: string): string {
 
 export function getApiBaseUrl(): string {
   if (!RAW_API_BASE_URL) {
-    throw new Error('未配置 WEBSITE_URL 环境变量');
+    throw new Error('未配置 NEXT_PUBLIC_WEBSITE_URL 环境变量');
   }
   return normalizeBaseUrl(RAW_API_BASE_URL);
 }
