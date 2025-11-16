@@ -55,7 +55,7 @@ jobs:
 
     - name: Setup Production Environment
       run: |
-        cat <<EOF > deployment/projects/server-project/.env.production
+        cat <<EOF > projects/server-project/.env.production
         DATABASE_URL=${{ secrets.DATABASE_URL }}
         NODE_ENV=production
         SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -72,39 +72,39 @@ jobs:
     - name: Build projects
       run: pnpm build
 
+    - name: Build Docker image
+      run: |
+        echo "=== 构建Docker镜像 ==="
+        docker build -t lawyer-app:latest -f docker/Dockerfile .
+        
+        echo "=== 保存镜像 ==="
+        docker save lawyer-app:latest -o app-image.tar
+
     - name: Create deployment directory
       run: |
         mkdir -p deployment
         # 复制构建产物
          rsync -av \
-              --exclude='node_modules' \
-              --exclude='.git' \
-              --exclude='.next' \
-              --exclude='dist' \
-              --exclude='deployment' \
-              --exclude='.env' \
-              --exclude='.env.*' \
-              . deployment/
+          --exclude='node_modules' \
+          --exclude='.git' \
+          --exclude='.next' \
+          --exclude='dist' \
+          --exclude='deployment' \
+          --exclude='.env' \
+          --exclude='.env.*' \
+          . deployment/
 
-    - name: Upload build and image artifacts
+    - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: build-artifacts
         path: deployment
         retention-days: 1
+        if-no-files-found: warn
+        exclude: app-image.tar
 
     - name: Test Docker image
       run: |
-        echo "=== 当前目录结构 ==="
-        ls -la
-        echo "=== 构建Docker镜像 ==="
-        docker build -t lawyer-app:latest -f docker/Dockerfile .
-        
-        echo "=== 保存镜像 ==="
-        docker save lawyer-app:latest -o deployment/app-image.tar
-
-        tar -czvf deployment.tar.gz -C deployment .
-        
         echo "=== 测试服务启动 ==="
         # 启动容器并测试服务
         docker run -d --name test-lawyer-app -p 3000:3000 -p 4000:4000 -e DATABASE_URL="${{ secrets.DATABASE_URL }}" lawyer-app:latest
@@ -138,6 +138,9 @@ jobs:
         echo "=== 停止并删除测试容器 ==="
         docker stop test-lawyer-app
         docker rm test-lawyer-app
+
+        echo "=== 压缩发布文件 ==="
+        tar -czvf deployment.tar.gz -C deployment .
 
     - name: Copy project to ECS
       uses: appleboy/scp-action@v0.1.3
