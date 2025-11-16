@@ -418,10 +418,6 @@ jobs:
           EOF
           
           # 执行部署脚本
-          echo "=== 运行数据库迁移脚本 ==="
-          cd ${{ env.APP_DIR }}
-          pnpm db:migrate
-
           chmod +x ${{ env.APP_DIR }}/scripts/deploy.sh
           ${{ env.APP_DIR }}/scripts/deploy.sh
           

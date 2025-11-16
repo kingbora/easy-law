@@ -239,6 +239,7 @@ fi
 # 更新Nginx配置
 log "更新Nginx upstream指向新端口..."
 sudo mkdir -p /etc/nginx/conf.d
+mkdir -p /home/tmp
 cat > /home/tmp/lawyer-app-upstream.conf << EOF
 upstream frontend_servers {
     server 127.0.0.1:$NEXT_FRONTEND_PORT;
