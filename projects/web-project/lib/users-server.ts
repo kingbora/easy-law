@@ -9,7 +9,7 @@ interface SessionResponsePayload {
   permissions?: unknown;
 }
 
-const AUTH_BASE_URL = `${process.env.WEBSITE_URL ?? ''}/restful/api/auth`;
+const AUTH_BASE_URL = `${process.env.NEXT_PUBLIC_WEBSITE_URL ?? ''}/restful/api/auth`;
 
 function buildCookieHeader(): string | null {
   const cookieStore = cookies();

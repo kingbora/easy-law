@@ -236,6 +236,9 @@ if ! check_backend_health "$NEXT_BACKEND_PORT"; then
     exit 1
 fi
 
+log "✓ 新服务启动成功，删除镜像文件..."
+rm -f "$APP_DIR/app-image.tar"
+
 # 更新Nginx配置
 log "更新Nginx upstream指向新端口..."
 sudo mkdir -p /etc/nginx/conf.d
