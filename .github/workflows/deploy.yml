@@ -68,7 +68,7 @@ jobs:
 
         cat <<EOF > projects/web-project/.env.production
         SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
-        NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
+        SITE_DOMAIN=${{ secrets.SITE_DOMAIN }}
         EOF
         
     - name: Install dependencies
