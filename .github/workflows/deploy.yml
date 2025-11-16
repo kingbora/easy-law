@@ -59,7 +59,7 @@ jobs:
     - name: Build projects
       run: pnpm build
 
-    - name: Build and test image
+    - name: Create deployment directory
       run: |
         mkdir -p deployment
         # 复制构建产物
@@ -70,6 +70,19 @@ jobs:
           --exclude='dist' \
           --exclude='deployment' \
           . deployment/
+        
+    - name: Setup Production Environment
+      run: |
+        cat <<EOF > deployment/projects/server-project/.env.production
+        DATABASE_URL=${{ secrets.DATABASE_URL }}
+        NODE_ENV=production
+        SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+        SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}
+        SUPER_ROLE_PASSWORD=${{ secrets.SUPER_ROLE_PASSWORD }}
+        SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}
+        QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
+        QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
+        EOF
 
     - name: Upload build and image artifacts
       uses: actions/upload-artifact@v4
@@ -137,16 +150,6 @@ jobs:
     needs: build-and-images
     runs-on: ubuntu-latest
     steps:
-    - name: Setup environment variables
-      run: |
-        echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
-        echo "SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}" >> $GITHUB_ENV
-        echo "SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}" >> $GITHUB_ENV
-        echo "SUPER_ROLE_PASSWORD=${{ secrets.SUPER_ROLE_PASSWORD }}" >> $GITHUB_ENV
-        echo "SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}" >> $GITHUB_ENV
-        echo "QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}" >> $GITHUB_ENV
-        echo "QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}" >> $GITHUB_ENV
-
     - name: Execute deployment script
       uses: appleboy/ssh-action@v1.0.3
       with:
@@ -206,6 +209,7 @@ jobs:
           echo "SSL证书已配置"
           
           # 执行部署脚本
+          echo "=== 运行数据库迁移脚本 ==="
           pnpm db:migrate
 
           chmod +x ${{ env.APP_DIR }}/scripts/deploy.sh
