@@ -10,7 +10,7 @@ export class ApiError extends Error {
   }
 }
 
-const RAW_API_BASE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL;
+const RAW_API_BASE_URL = `${process.env.NEXT_PUBLIC_WEBSITE_URL}/restful`;
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, '');
