@@ -132,7 +132,6 @@ jobs:
         key: ${{ secrets.ECS_SSH_KEY }}
         source: "deployment.tar.gz"
         target: ${{ env.TMP_DIR }}
-        strip_components: 1
         
   deployment:
     needs: build-and-images
