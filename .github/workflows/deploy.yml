@@ -97,7 +97,15 @@ jobs:
           --exclude='deployment' \
           --exclude='.env' \
           --exclude='.env.*' \
+          --exclude='app-image.tar' \
           . deployment/
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: deployment
+        retention-days: 1
 
     - name: Test Docker image
       run: |
@@ -136,14 +144,8 @@ jobs:
         docker rm test-lawyer-app
 
         echo "=== 压缩发布文件 ==="
+        mv app-image.tar deployment/app-image.tar
         tar -czvf deployment.tar.gz -C deployment .
-
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: deployment.tar.gz
-        retention-days: 1
 
     - name: Copy project to ECS
       uses: appleboy/scp-action@v0.1.3

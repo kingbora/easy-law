@@ -10,7 +10,7 @@
     "clean": "rimraf node_modules dist",
     "lint": "eslint --ext .ts,.tsx,.js,.jsx . --max-warnings=0",
     "db:generate": "drizzle-kit generate --config ./src/drizzle.config.ts",
-    "db:migrate": "npx drizzle-kit migrate --config ./src/drizzle.config.ts",
+    "db:migrate": "npx drizzle-kit migrate --config ./dist/drizzle.config.js",
     "db:push": "drizzle-kit push --config ./src/drizzle.config.ts"
   },
   "dependencies": {

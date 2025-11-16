@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: ['src/index.ts', 'src/drizzle.config.ts'],
   outDir: 'dist',
   format: ['cjs'], // Express 通常使用 CommonJS
   clean: true,
@@ -16,6 +16,7 @@ export default defineConfig({
   ],
   noExternal: [
     /^@easy-law\//,
+    /drizzle-kit/
   ],
   // 保持目录结构
   splitting: true,
