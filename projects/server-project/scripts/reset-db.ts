@@ -9,7 +9,7 @@ async function main() {
     process.exit(1);
   }
 
-  const sql = postgres(databaseUrl, { max: 1 });
+  const sql = postgres(databaseUrl, { max: 1, ssl: false });
 
   try {
     console.warn('Dropping schema "public" (cascade)...');

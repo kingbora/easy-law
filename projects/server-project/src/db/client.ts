@@ -9,7 +9,7 @@ if (!process.env.DATABASE_URL) {
 
 export const sql = postgres(process.env.DATABASE_URL, {
 	max: 10,
-	ssl: process.env.NODE_ENV === 'production' ? 'require' : undefined
+	ssl: false
 });
 
 export const db = drizzle(sql, { schema });
