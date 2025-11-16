@@ -52,16 +52,6 @@ jobs:
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-
-    - name: Setup environment variables
-      run: |
-        echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
-        echo "SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}" >> $GITHUB_ENV
-        echo "SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}" >> $GITHUB_ENV
-        echo "SUPER_ROLE_PASSWORD=${{ secrets.SUPER_ROLE_PASSWORD }}" >> $GITHUB_ENV
-        echo "SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}" >> $GITHUB_ENV
-        echo "QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}" >> $GITHUB_ENV
-        echo "QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}" >> $GITHUB_ENV
         
     - name: Install dependencies
       run: pnpm install --prod --frozen-lockfile --ignore-scripts
@@ -71,14 +61,7 @@ jobs:
 
     - name: Build and test image
       run: |
-        echo "=== 当前目录结构 ==="
-        ls -la
-        echo "=== 构建Docker镜像 ==="
-        docker build -t lawyer-app:latest -f docker/Dockerfile .
-
         mkdir -p deployment
-        echo "=== 保存镜像 ==="
-        docker save lawyer-app:latest -o deployment/app-image.tar
         # 复制构建产物
         rsync -av \
           --exclude='node_modules' \
@@ -87,8 +70,6 @@ jobs:
           --exclude='dist' \
           --exclude='deployment' \
           . deployment/
-        tar -czvf deployment.tar.gz -C deployment .
-        echo "=== 构建和测试完成 ==="
 
     - name: Upload build and image artifacts
       uses: actions/upload-artifact@v4
@@ -99,6 +80,16 @@ jobs:
 
     - name: Test Docker image
       run: |
+        echo "=== 当前目录结构 ==="
+        ls -la
+        echo "=== 构建Docker镜像 ==="
+        docker build -t lawyer-app:latest -f docker/Dockerfile .
+        
+        echo "=== 保存镜像 ==="
+        docker save lawyer-app:latest -o deployment/app-image.tar
+
+        tar -czvf deployment.tar.gz -C deployment .
+        
         echo "=== 测试服务启动 ==="
         # 启动容器并测试服务
         docker run -d --name test-lawyer-app -p 3000:3000 -p 4000:4000 -e DATABASE_URL="${{ secrets.DATABASE_URL }}" lawyer-app:latest
@@ -142,6 +133,20 @@ jobs:
         source: "deployment.tar.gz"
         target: ${{ env.TMP_DIR }}
         strip_components: 1
+        
+  deployment:
+    needs: build-and-images
+    runs-on: ubuntu-latest
+    steps:
+    - name: Setup environment variables
+      run: |
+        echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+        echo "SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}" >> $GITHUB_ENV
+        echo "SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}" >> $GITHUB_ENV
+        echo "SUPER_ROLE_PASSWORD=${{ secrets.SUPER_ROLE_PASSWORD }}" >> $GITHUB_ENV
+        echo "SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}" >> $GITHUB_ENV
+        echo "QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}" >> $GITHUB_ENV
+        echo "QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}" >> $GITHUB_ENV
         
     - name: Execute deployment script
       uses: appleboy/ssh-action@v1.0.3
@@ -205,7 +210,7 @@ jobs:
 
   # 健康检查（部署后）
   health-check:
-    needs: build-and-images
+    needs: deployment
     runs-on: ubuntu-latest
     
     steps:
