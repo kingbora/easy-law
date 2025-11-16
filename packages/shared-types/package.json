@@ -7,8 +7,16 @@
   ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "require": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "clean": "rimraf mode_module dist",
     "watch": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
