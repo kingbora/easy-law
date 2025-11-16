@@ -113,16 +113,15 @@ importers:
       resend:
         specifier: ^6.2.2
         version: 6.2.2
+      tsup:
+        specifier: 8.5.1
+        version: 8.5.1(postcss@8.4.31)(tsx@4.20.6)(typescript@5.5.4)(yaml@2.8.1)
       tsx:
         specifier: ^4.15.5
         version: 4.20.6
       typescript:
         specifier: ~5.5.4
         version: 5.5.4
-    devDependencies:
-      tsup:
-        specifier: 8.5.1
-        version: 8.5.1(postcss@8.4.31)(tsx@4.20.6)(typescript@5.5.4)(yaml@2.8.1)
 
   projects/web-project:
     dependencies:
