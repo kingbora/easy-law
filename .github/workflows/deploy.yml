@@ -132,7 +132,7 @@ jobs:
         key: ${{ secrets.ECS_SSH_KEY }}
         source: "deployment.tar.gz"
         target: ${{ env.TMP_DIR }}
-        strip_components: 1
+        # 不使用 strip_components，确保文件完整上传
         
   deployment:
     needs: build-and-images
@@ -147,7 +147,7 @@ jobs:
         echo "SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}" >> $GITHUB_ENV
         echo "QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}" >> $GITHUB_ENV
         echo "QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}" >> $GITHUB_ENV
-        
+
     - name: Execute deployment script
       uses: appleboy/ssh-action@v1.0.3
       with:
@@ -159,6 +159,17 @@ jobs:
           echo "部署时间: $(date)"
           echo "提交: ${{ github.sha }}"
           echo "分支: ${{ github.ref }}"
+
+          # 解压传输的文件
+          if [ -f "${{ env.TMP_DIR }}/deployment.tar.gz" ]; then
+            tar -xzvf ${{ env.TMP_DIR }}/deployment.tar.gz -C ${{ env.APP_DIR }}
+          else
+            echo "❌ 未找到部署包: ${{ env.TMP_DIR }}/deployment.tar.gz"
+            exit 1
+          fi
+
+          # 删除tmp目录
+          rm -rf ${{ env.TMP_DIR }}
 
           # 备份当前应用，仅保留最近3份
           if [ -d "${{ env.BACKUP_ROOT }}" ]; then
@@ -178,12 +189,6 @@ jobs:
 
           # 创建新的应用目录
           mkdir -p ${{ env.APP_DIR }}
-
-          # 解压传输的文件
-          tar -xzvf ${{ env.TMP_DIR }}/deployment.tar.gz -C ${{ env.APP_DIR }}
-
-          # 删除tmp目录
-          rm -rf ${{ env.TMP_DIR }}
           
           echo "=== 复制Nginx配置文件 ==="
           sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/conf.d
