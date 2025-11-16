@@ -39,4 +39,11 @@ pnpm db:generate
 # CI/CD中运行
 pnpm db:migrate
 ```
+## Data logs
+```bash
+# 查看前后端启动log
+docker logs app-3000-4000
 
+# 查看nginx错误日志
+tail -f /var/log/nginx/error.log
+```

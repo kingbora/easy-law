@@ -64,12 +64,14 @@ jobs:
         SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}
         QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
         QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
+        BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
         EOF
 
         cat <<EOF > projects/web-project/.env
         SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
         WEBSITE_URL=${{ secrets.WEBSITE_URL }}
         SITE_DOMAIN=${{ secrets.SITE_DOMAIN }}
+        BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
         EOF
         
     - name: Install dependencies
