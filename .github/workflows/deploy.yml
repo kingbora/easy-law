@@ -53,6 +53,28 @@ jobs:
     - name: Install dependencies
       run: pnpm install --prod --frozen-lockfile --ignore-scripts
       
+    - name: Setup build environment
+      run: |
+        # 配置环境变量
+        echo "配置环境变量..."
+        cat > ${{ env.APP_DIR }}/projects/web-project/.env << EOF
+        NODE_ENV=production
+        SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+        NEXT_PUBLIC_BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
+        NEXT_PUBLIC_WEBSITE_URL=${{ secrets.WEBSITE_URL }}
+        EOF
+
+        cat > ${{ env.APP_DIR }}/projects/server-project/.env << EOF
+        DATABASE_URL=${{ secrets.DATABASE_URL }}
+        NODE_ENV=production
+        SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+        SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}
+        SUPER_ROLE_PASSWORD=${{ secrets.SUPER_ROLE_PASSWORD }}
+        SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}
+        QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
+        QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
+        EOF
+
     - name: Build projects
       run: pnpm build
   
