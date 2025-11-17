@@ -94,6 +94,12 @@ jobs:
             echo "部署时间: $(date)"
             echo "提交: ${{ github.sha }}"
             echo "分支: ${{ github.ref }}"
+
+            cd ${{ env.APP_DIR }}
+            git fetch origin
+            git checkout ${{ github.ref }}
+            git reset --hard origin/${{ github.ref }}
+
             # 创建SSL证书目录并写入证书
             echo "配置SSL证书..."
             sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/ssl
