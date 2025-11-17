@@ -60,6 +60,7 @@ jobs:
         cat > projects/web-project/.env << EOF
         NODE_ENV=production
         SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+        BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
         NEXT_PUBLIC_BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
         NEXT_PUBLIC_WEBSITE_URL=${{ secrets.WEBSITE_URL }}
         EOF
@@ -67,6 +68,7 @@ jobs:
         cat > projects/server-project/.env << EOF
         DATABASE_URL=${{ secrets.DATABASE_URL }}
         NODE_ENV=production
+        BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
         SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
         SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}
         SUPER_ROLE_PASSWORD=${{ secrets.SUPER_ROLE_PASSWORD }}
@@ -113,6 +115,7 @@ jobs:
             cat > ${{ env.APP_DIR }}/projects/web-project/.env << EOF
             NODE_ENV=production
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+            BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
             NEXT_PUBLIC_BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
             NEXT_PUBLIC_WEBSITE_URL=${{ secrets.WEBSITE_URL }}
             EOF
@@ -120,6 +123,7 @@ jobs:
             cat > ${{ env.APP_DIR }}/projects/server-project/.env << EOF
             DATABASE_URL=${{ secrets.DATABASE_URL }}
             NODE_ENV=production
+            BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
             SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}
             SUPER_ROLE_PASSWORD=${{ secrets.SUPER_ROLE_PASSWORD }}

@@ -80,7 +80,7 @@ deploy() {
     
     # 安装依赖
     log "安装依赖..."
-    pnpm install  --prod --frozen-lockfile --ignore-scripts
+    pnpm install --force --prod --frozen-lockfile --ignore-scripts
     
     # 构建应用
     log "构建应用..."
