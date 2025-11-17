@@ -86,10 +86,9 @@ jobs:
       - name: Deploy to ECS via SSH
         uses: appleboy/ssh-action@v0.1.7
         with:
-          host: ${{ env.ECS_HOST }}
-          username: ${{ env.ECS_USERNAME }}
-          key: ${{ secrets.ECS_SSH_PRIVATE_KEY }}
-          port: 22
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USERNAME }}
+          key: ${{ secrets.ECS_SSH_KEY }}
           script: |
             echo "=== 开始部署 ==="
             echo "部署时间: $(date)"
