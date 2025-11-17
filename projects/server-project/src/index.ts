@@ -3,8 +3,8 @@ import app from './app';
 import { sql } from './db/client';
 
 const bootstrap = async () => {
-  app.listen('4000', () => {
-    console.warn(`🚀 Server ready at http://localhost:4000`);
+  app.listen(process.env.PORT || '4000', () => {
+    console.warn(`🚀 Server ready at http://localhost:${process.env.PORT}`);
   });
 };
 

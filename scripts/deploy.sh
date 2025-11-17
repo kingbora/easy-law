@@ -1,323 +1,181 @@
 #!/bin/bash
+# deploy.sh - 零停机部署脚本
+
 set -e
 
-APP_NAME="lawyer-app"
-APP_DIR="/home/apps/$APP_NAME"
-DEPLOY_DATE=$(date +%Y%m%d_%H%M%S)
-
-# 端口定义 - 分别定义前后端端口
-FRONTEND_PORTS=(3000 3001)
-BACKEND_PORTS=(4000 4001)
+PROJECT_DIR="/home/apps/easy-law"
+WEB_PROJECT_DIR="$PROJECT_DIR/projects/web-project"
+SERVER_PROJECT_DIR="$PROJECT_DIR/projects/server-project"
+BACKUP_DIR="$PROJECT_DIR/backups"
+LOG_FILE="/home/logs/deploy.log"
+BRANCH="master"
 
 log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
+    echo "$1"
 }
 
-check_frontend_health() {
-    local port=$1
-    local max_retries=20
+# 前端健康检查
+frontend_health_check() {
+    local url="http://localhost:3000/api/health"
+    local max_attempts=30
+    local attempt=1
     
-    for i in $(seq 1 $max_retries); do
-        if curl -s -f "http://localhost:${port}/api/health" >/dev/null 2>&1; then
-            log "✓ 前端服务健康 (端口: $port)"
+    log "检查前端健康状态..."
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl -f -s --retry 3 --retry-delay 1 "$url" > /dev/null 2>&1; then
+            log "✓ 前端健康检查通过 (尝试 $attempt/$max_attempts)"
             return 0
         fi
-        if [ $i -eq 1 ]; then
-            log "等待前端服务启动... ($i/$max_retries)"
-        elif [ $((i % 5)) -eq 0 ]; then
-            log "仍在等待前端服务启动... ($i/$max_retries)"
-        fi
-        sleep 3
+        
+        log "⏳ 前端健康检查失败，等待重试... (尝试 $attempt/$max_attempts)"
+        sleep 2
+        attempt=$((attempt + 1))
     done
-    log "✗ 前端服务健康检查失败 (端口: $port)"
+    
+    log "✗ 前端健康检查失败"
     return 1
 }
 
-check_backend_health() {
-    local port=$1
-    local max_retries=20
+# 后端健康检查
+backend_health_check() {
+    local url="http://localhost:4000/health"
+    local max_attempts=30
+    local attempt=1
     
-    for i in $(seq 1 $max_retries); do
-        if curl -s -f "http://localhost:${port}/health" >/dev/null 2>&1; then
-            log "✓ 后端服务健康 (端口: $port)"
+    log "检查后端健康状态..."
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl -f -s --retry 3 --retry-delay 1 "$url" > /dev/null 2>&1; then
+            log "✓ 后端健康检查通过 (尝试 $attempt/$max_attempts)"
             return 0
         fi
-        if [ $i -eq 1 ]; then
-            log "等待后端服务启动... ($i/$max_retries)"
-        elif [ $((i % 5)) -eq 0 ]; then
-            log "仍在等待后端服务启动... ($i/$max_retries)"
-        fi
-        sleep 3
+        
+        log "⏳ 后端健康检查失败，等待重试... (尝试 $attempt/$max_attempts)"
+        sleep 2
+        attempt=$((attempt + 1))
     done
-    log "✗ 后端服务健康检查失败 (端口: $port)"
+    
+    log "✗ 后端健康检查失败"
     return 1
 }
 
-# 获取当前运行的前端端口
-get_current_frontend_port() {
-    if [ -f "/etc/nginx/conf.d/lawyer-app-upstream.conf" ]; then
-        grep -A5 "upstream frontend_servers" /etc/nginx/conf.d/lawyer-app-upstream.conf 2>/dev/null | \
-        grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{gsub(/;.*/, "", $1); print $1}' || echo ""
+deploy() {
+    log "开始部署..."
+    
+    cd $PROJECT_DIR
+
+    # 备份当前版本
+    log "备份当前版本..."
+    local backup_name="backup_$(date +%Y%m%d_%H%M%S)"
+    cp -r $WEB_PROJECT_DIR/.next $BACKUP_DIR/$backup_name/frontend 2>/dev/null || true
+    cp -r $SERVER_PROJECT_DIR/dist $BACKUP_DIR/$backup_name/backend 2>/dev/null || true
+    
+    # 拉取最新代码
+    log "拉取最新代码..."
+    git fetch origin
+    git checkout $BRANCH
+    git reset --hard origin/$BRANCH
+    
+    # 安装依赖
+    log "安装依赖..."
+    pnpm install  --prod --frozen-lockfile --ignore-scripts
+    
+    # 构建应用
+    log "构建应用..."
+    pnpm build
+    
+    # 零停机重启
+    log "执行零停机重启..."
+    if pm2 list | grep -q "frontend\|backend"; then
+        echo "重启应用..."
+        pm2 reload ecosystem.config.js --update-env
     else
-        echo ""
+        echo "首次启动应用..."
+        pm2 start ecosystem.config.js
     fi
-}
-
-# 获取当前运行的后端端口
-get_current_backend_port() {
-    if [ -f "/etc/nginx/conf.d/lawyer-app-upstream.conf" ]; then
-        grep -A5 "upstream backend_servers" /etc/nginx/conf.d/lawyer-app-upstream.conf 2>/dev/null | \
-        grep "server 127.0.0.1:" | head -1 | awk -F: '{print $2}' | awk '{gsub(/;.*/, "", $1); print $1}' || echo ""
+    
+    # 等待应用就绪
+    log "等待应用就绪..."
+    sleep 10
+    
+    # 健康检查
+    if backend_health_check && frontend_health_check; then
+        log "✓ 全栈应用部署成功完成"
+        
+        # 清理旧备份（保留最近5个）
+        ls -dt $BACKUP_DIR/backup_* | tail -n +6 | xargs rm -rf 2>/dev/null || true
+        
+        # 重新加载Nginx配置
+        sudo nginx -t && sudo nginx -s reload
+        log "✓ Nginx配置已重新加载"
     else
-        echo ""
-    fi
-}
-
-# 获取下一个可用端口
-get_next_port() {
-    local current_port=$1
-    local ports=("${!2}")
-    
-    if [ -z "$current_port" ]; then
-        # 第一次部署，使用第一个端口
-        echo "${ports[0]}"
-        return
-    fi
-    
-    for port in "${ports[@]}"; do
-        if [ "$port" != "$current_port" ]; then
-            echo "$port"
-            return
-        fi
-    done
-    echo "${ports[0]}"
-}
-
-# 检查端口是否已被占用
-is_port_available() {
-    local port=$1
-    if ss -tln | grep -q ":$port "; then
-        return 1  # 端口被占用
-    else
-        return 0  # 端口可用
-    fi
-}
-
-# 检查容器是否在运行
-is_container_running() {
-    local container_name=$1
-    docker ps --format "table {{.Names}}" | grep -q "^${container_name}$"
-    return $?
-}
-
-# 创建必要的目录和配置
-setup_environment() {
-    log "设置部署环境..."
-    
-    # 创建应用目录
-    sudo mkdir -p $APP_DIR/shared/{logs,data}
-    sudo chown -R $USER:$USER $APP_DIR/shared
-}
-
-# 停止并清理旧容器
-cleanup_old_containers() {
-    local next_frontend_port=$1
-    local next_backend_port=$2
-    
-    log "清理旧容器..."
-    
-    # 清理所有与app相关的容器，不管状态如何
-    for container in $(docker ps -a --filter "name=app-" --format "{{.Names}}"); do
-        log "停止并移除容器: $container"
-        docker stop "$container" 2>/dev/null || true
-        docker rm "$container" 2>/dev/null || true
-    done
-    
-    # 特别清理将要使用的端口上的任何容器
-    log "检查端口占用情况..."
-    for port in "${FRONTEND_PORTS[@]}" "${BACKEND_PORTS[@]}"; do
-        local port_container=$(docker ps -a --format "table {{.Names}}\t{{.Ports}}" | grep ":${port}->" | awk '{print $1}')
-        if [ -n "$port_container" ]; then
-            log "发现占用端口 $port 的容器: $port_container，正在清理..."
-            docker stop "$port_container" 2>/dev/null || true
-            docker rm "$port_container" 2>/dev/null || true
-        fi
-    done
-    
-    # 再次检查并强制清理任何遗留的app容器
-    local remaining_containers=$(docker ps -a --filter "name=app-" --format "{{.Names}}" | wc -l)
-    if [ "$remaining_containers" -gt 0 ]; then
-        log "强制清理遗留的app容器..."
-        docker ps -a --filter "name=app-" --format "{{.Names}}" | xargs -r docker stop
-        docker ps -a --filter "name=app-" --format "{{.Names}}" | xargs -r docker rm
-    fi
-}
-
-# 验证Nginx配置
-verify_nginx_config() {
-    if ! sudo nginx -t; then
-        log "✗ Nginx配置验证失败"
-        return 1
-    fi
-    return 0
-}
-
-# 主部署流程
-log "开始智能部署流程..."
-
-# 检查镜像文件
-if [ ! -f "$APP_DIR/app-image.tar" ]; then
-    log "错误: 未找到Docker镜像文件 app-image.tar"
-    exit 1
-fi
-
-# 设置环境
-setup_environment
-
-# 加载新镜像
-log "加载Docker镜像..."
-docker load -i "$APP_DIR/app-image.tar"
-
-# 获取当前和下一个端口
-CURRENT_FRONTEND_PORT=$(get_current_frontend_port)
-CURRENT_BACKEND_PORT=$(get_current_backend_port)
-
-NEXT_FRONTEND_PORT=$(get_next_port "$CURRENT_FRONTEND_PORT" FRONTEND_PORTS[@])
-NEXT_BACKEND_PORT=$(get_next_port "$CURRENT_BACKEND_PORT" BACKEND_PORTS[@])
-
-log "部署信息:"
-log "  - 当前前端端口: ${CURRENT_FRONTEND_PORT:-未设置}"
-log "  - 当前后端端口: ${CURRENT_BACKEND_PORT:-未设置}"
-log "  - 下一前端端口: $NEXT_FRONTEND_PORT"
-log "  - 下一后端端口: $NEXT_BACKEND_PORT"
-
-# 清理旧容器
-cleanup_old_containers "$NEXT_FRONTEND_PORT" "$NEXT_BACKEND_PORT"
-
-# 检查端口是否可用
-if ! is_port_available "$NEXT_FRONTEND_PORT"; then
-    log "错误: 前端端口 $NEXT_FRONTEND_PORT 已被占用"
-    exit 1
-fi
-
-if ! is_port_available "$NEXT_BACKEND_PORT"; then
-    log "错误: 后端端口 $NEXT_BACKEND_PORT 已被占用"
-    exit 1
-fi
-
-# 启动新版本服务
-log "启动统一应用服务..."
-log "前端端口: $NEXT_FRONTEND_PORT, 后端端口: $NEXT_BACKEND_PORT"
-
-CONTAINER_NAME="app-$NEXT_FRONTEND_PORT-$NEXT_BACKEND_PORT"
-
-if ! docker run -d --name "$CONTAINER_NAME" \
-    -p $NEXT_FRONTEND_PORT:3000 \
-    -p $NEXT_BACKEND_PORT:4000 \
-    -v $APP_DIR/shared/logs:/app/logs \
-    -v $APP_DIR/shared/data:/app/data \
-    lawyer-app:latest; then
-    log "✗ 应用服务启动失败"
-    docker logs "$CONTAINER_NAME" 2>/dev/null || true
-    exit 1
-fi
-
-# 等待新服务就绪
-log "等待新服务启动..."
-if ! check_frontend_health "$NEXT_FRONTEND_PORT"; then
-    log "前端服务健康检查失败，查看日志:"
-    docker logs "$CONTAINER_NAME"
-    exit 1
-fi
-
-if ! check_backend_health "$NEXT_BACKEND_PORT"; then
-    log "后端服务健康检查失败，查看日志:"
-    docker logs "$CONTAINER_NAME"
-    exit 1
-fi
-
-log "✓ 新服务启动成功，删除镜像文件..."
-rm -f "$APP_DIR/app-image.tar"
-
-# 更新Nginx配置
-log "更新Nginx upstream指向新端口..."
-sudo mkdir -p /etc/nginx/conf.d
-mkdir -p /home/tmp
-cat > /home/tmp/lawyer-app-upstream.conf << EOF
-upstream frontend_servers {
-    server 127.0.0.1:$NEXT_FRONTEND_PORT;
-}
-
-upstream backend_servers {
-    server 127.0.0.1:$NEXT_BACKEND_PORT;
-}
-EOF
-
-# 复制 upstream 配置文件到 nginx 目录，若已存在则直接覆盖
-sudo cp -f /home/tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
-rm -f /home/tmp/lawyer-app-upstream.conf
-
-# 验证并重载Nginx
-if verify_nginx_config; then
-    log "重载Nginx配置..."
-    if sudo systemctl reload nginx; then
-        log "✓ Nginx重载成功，流量已切换到新实例"
-    else
-        log "✗ Nginx重载失败"
+        log "✗ 部署失败，执行回滚..."
+        rollback
         exit 1
     fi
-else
-    log "✗ Nginx配置验证失败，回滚upstream配置"
-    # 恢复原有配置
-    if [ -n "$CURRENT_FRONTEND_PORT" ] && [ -n "$CURRENT_BACKEND_PORT" ]; then
-        cat > /home/tmp/lawyer-app-upstream.conf << EOF
-upstream frontend_servers {
-    server 127.0.0.1:$CURRENT_FRONTEND_PORT;
-}
-
-upstream backend_servers {
-    server 127.0.0.1:$CURRENT_BACKEND_PORT;
-}
-EOF
-        sudo cp -f /home/tmp/lawyer-app-upstream.conf /etc/nginx/conf.d/lawyer-app-upstream.conf
-        rm -f /home/tmp/lawyer-app-upstream.conf
-        sudo nginx -t && sudo systemctl reload nginx
-    fi
-    exit 1
-fi
-
-# 等待新服务稳定运行
-log "等待新服务稳定..."
-sleep 10
-
-# 停止旧版本服务（如果存在）
-if [ -n "$CURRENT_FRONTEND_PORT" ] && [ -n "$CURRENT_BACKEND_PORT" ] && \
-   { [ "$CURRENT_FRONTEND_PORT" != "$NEXT_FRONTEND_PORT" ] || \
-     [ "$CURRENT_BACKEND_PORT" != "$NEXT_BACKEND_PORT" ]; }; then
     
-    OLD_CONTAINER_NAME="app-$CURRENT_FRONTEND_PORT-$CURRENT_BACKEND_PORT"
-    log "停止旧应用服务: $OLD_CONTAINER_NAME"
-    docker stop "$OLD_CONTAINER_NAME" 2>/dev/null || true
-    docker rm "$OLD_CONTAINER_NAME" 2>/dev/null || true
-fi
+    log "部署完成"
 
-# 清理资源
-log "清理Docker资源..."
-docker image prune -f
+    log "Nginx状态:"
+    systemctl status nginx --no-pager -l
 
-# 最终健康检查
-log "执行最终健康检查..."
-if check_frontend_health "$NEXT_FRONTEND_PORT" && check_backend_health "$NEXT_BACKEND_PORT"; then
-    log "✓ 所有服务健康检查通过"
-else
-    log "✗ 健康检查未通过"
-    exit 1
-fi
+    # 启动心跳监控
+    start_heartbeat_monitor
+}
 
-log "=== 部署完成 ==="
-log "部署时间: $DEPLOY_DATE"
-log "当前运行端口 - 前端: $NEXT_FRONTEND_PORT, 后端: $NEXT_BACKEND_PORT"
-log "服务状态:"
-docker ps --filter "name=app-*" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+# 回滚函数
+rollback() {
+    log "开始回滚..."
+    
+    local latest_backup=$(ls -dt $BACKUP_DIR/backup_* | head -n1)
+    
+    if [ -n "$latest_backup" ]; then
+        log "回滚到备份: $latest_backup"
+        
+        # 恢复前端
+        if [ -d "$latest_backup/frontend" ]; then
+            rm -rf $FRONTEND_DIR/.next
+            cp -r $latest_backup/frontend $FRONTEND_DIR/.next
+        fi
+        
+        # 恢复后端
+        if [ -d "$latest_backup/backend" ]; then
+            rm -rf $BACKEND_DIR/dist
+            cp -r $latest_backup/backend $BACKEND_DIR/dist
+        fi
+        
+        # 重启服务
+        pm2 reload all
+        
+        # 健康检查
+        if backend_health_check && frontend_health_check; then
+            log "✓ 回滚成功"
+        else
+            log "✗ 回滚后健康检查失败"
+            exit 1
+        fi
+    else
+        log "✗ 没有找到可用的备份"
+        exit 1
+    fi
+    # 启动心跳监控
+    start_heartbeat_monitor
+}
 
-log "部署完成!"
+# 启动心跳监控
+start_heartbeat_monitor() {
+    log "启动心跳检测监控..."
+    
+    # 停止已存在的监控
+    pkill -f "heartbeat-monitor.sh" || true
+    
+    # 启动新的监控
+    nohup bash scripts/heartbeat-monitor.sh start > /dev/null 2>&1 &
+    
+    log "心跳检测监控已启动"
+}
+
+# 执行部署
+deploy
