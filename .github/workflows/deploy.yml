@@ -97,8 +97,8 @@ jobs:
 
             cd ${{ env.APP_DIR }}
             git fetch origin
-            git checkout ${{ github.ref }}
-            git reset --hard origin/${{ github.ref }}
+            git checkout master
+            git reset --hard origin/master
 
             # 创建SSL证书目录并写入证书
             echo "配置SSL证书..."
