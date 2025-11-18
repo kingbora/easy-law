@@ -4,7 +4,8 @@
   "private": true,
   "main": "src/index.ts",
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "node ./dist/index.ts",
+    "build": "tsup --env.NODE_ENV production",
     "dev": "tsx watch src/index.ts",
     "clean": "rimraf node_modules dist",
     "lint": "eslint --ext .ts,.tsx,.js,.jsx . --max-warnings=0",
