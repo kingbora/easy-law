@@ -94,5 +94,5 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           script: |
             pm2 stop all || true
-            pm2 start $APP_DIR/ecosystem.config.js --env production
+            pm2 start ${{ env.APP_DIR }}/ecosystem.config.js --env production
             pm2 save
