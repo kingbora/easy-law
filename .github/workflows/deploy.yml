@@ -93,6 +93,46 @@ jobs:
           username: ${{ secrets.ECS_USERNAME }}
           key: ${{ secrets.ECS_SSH_KEY }}
           script: |
-            pm2 stop all || true
-            pm2 start ${{ env.APP_DIR }}/ecosystem.config.js --env production
-            pm2 save
+            echo "=== 开始部署 ==="
+            echo "部署时间: $(date)"
+            echo "提交: ${{ github.sha }}"
+            echo "分支: ${{ github.ref }}"
+
+            cd ${{ env.APP_DIR }}
+            git fetch origin
+            git checkout master
+            git reset --hard origin/master
+
+            # 创建SSL证书目录并写入证书
+            echo "配置SSL证书..."
+            sudo mkdir -p ${{ env.NGINX_CONF_DIR }}/ssl
+            echo "${{ secrets.SSL_CERT }}" | sudo tee ${{ env.NGINX_CONF_DIR }}/ssl/${{ env.APP_NAME }}.crt > /dev/null
+            echo "${{ secrets.SSL_KEY }}" | sudo tee ${{ env.NGINX_CONF_DIR }}/ssl/${{ env.APP_NAME }}.key > /dev/null
+            sudo chmod 600 ${{ env.NGINX_CONF_DIR }}/ssl/${{ env.APP_NAME }}.*
+            echo "SSL证书已配置"
+
+            # 配置环境变量
+            echo "配置环境变量..."
+            cat > ${{ env.APP_DIR }}/projects/web-project/.env << EOF
+            NODE_ENV=production
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+            BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
+            NEXT_PUBLIC_BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
+            NEXT_PUBLIC_WEBSITE_URL=${{ secrets.WEBSITE_URL }}
+            EOF
+
+            cat > ${{ env.APP_DIR }}/projects/server-project/.env << EOF
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            NODE_ENV=production
+            BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+            SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}
+            SUPER_ROLE_PASSWORD=${{ secrets.SUPER_ROLE_PASSWORD }}
+            SUPER_ROLE_NICKNAME=${{ secrets.SUPER_ROLE_NICKNAME }}
+            QINIU_ACCESS_KEY=${{ secrets.QINIU_ACCESS_KEY }}
+            QINIU_SECRET_KEY=${{ secrets.QINIU_SECRET_KEY }}
+            EOF
+
+            # 执行部署脚本
+            chmod +x ${{ env.APP_DIR }}/scripts/deploy.sh
+            ${{ env.APP_DIR }}/scripts/deploy.sh
