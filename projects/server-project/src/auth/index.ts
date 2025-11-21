@@ -11,7 +11,7 @@ import { users, accounts, sessions, verifications } from '../db/schema/auth-sche
 const isProduction = process.env.NODE_ENV === 'production';
 const baseURL =
   isProduction 
-      ? (process.env.WEBSITE_URL || '') 
+      ? `https://${process.env.WEBSITE_DOMAIN}`
       : `http://localhost:3000`;
 
 const basePath = AUTH_BASE_PATH;
@@ -20,7 +20,10 @@ export const auth = betterAuth({
   basePath,
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
-  trustedOrigins: [baseURL],
+  trustedOrigins: [
+    `https://${process.env.WEBSITE_DOMAIN}`,
+    `https://www.${process.env.WEBSITE_DOMAIN}`,
+  ],
   advanced: {
     useSecureCookies: isProduction,
     disableCSRFCheck: false,
