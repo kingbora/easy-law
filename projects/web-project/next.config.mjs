@@ -22,8 +22,6 @@ const nextConfig = {
   },
   experimental: {
     optimizeCss: true,
-    workerThreads: isProd ? false : true,
-    cpus: isProd ? 1 : 4,
   },
   poweredByHeader: false,
   compress: isProd,
@@ -31,13 +29,8 @@ const nextConfig = {
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
     // 解决大字符串序列化警告
     if (!dev && !isServer) {
-      config.cache = {
-        type: 'filesystem',
-        compression: 'gzip',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7天缓存
-        maxMemoryGenerations: 1, // 限制内存生成次数
-        memoryCacheUnaffected: false,
-      };
+      // 禁用缓存，减少内存开销
+      config.cache = false;
       
       // 优化 chunk 分割
       config.optimization = {
@@ -82,7 +75,7 @@ export default withSentryConfig(nextConfig, {
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
 
   // Upload a larger set of source maps for prettier stack traces (increases build time)
-  widenClientFileUpload: true,
+  widenClientFileUpload: false,
 
   // Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
   // This can increase your server load as well as your hosting bill.
