@@ -11,7 +11,7 @@ import { users, accounts, sessions, verifications } from '../db/schema/auth-sche
 const isProduction = process.env.NODE_ENV === 'production';
 const baseURL =
   isProduction 
-      ? process.env.WEBSITE_URL 
+      ? (process.env.WEBSITE_URL || '') 
       : `http://localhost:3000`;
 
 const basePath = AUTH_BASE_PATH;
@@ -20,6 +20,14 @@ export const auth = betterAuth({
   basePath,
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
+  trustedOrigins: [baseURL],
+  advanced: {
+    useSecureCookies: isProduction,
+    disableCSRFCheck: false,
+    ipAddress: {
+      disableIpTracking: true,
+    }
+  },
   plugins: [
     admin({
       ac,
@@ -70,11 +78,5 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true
-  },
-  session: {
-    cookieCache: {
-      enabled: true,
-      maxAge: 60 * 60
-    }
   },
 });
