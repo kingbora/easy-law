@@ -68,7 +68,7 @@ jobs:
         DATABASE_URL=${{ secrets.DATABASE_URL }}
         NODE_ENV=production
         PORT=4000
-        WEBSITE_URL=${{ secrets.WEBSITE_URL }}
+        WEBSITE_DOMAIN=${{ secrets.WEBSITE_DOMAIN }}
         BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
         SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
         SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}
@@ -110,7 +110,7 @@ jobs:
             cat > ${{ env.APP_DIR }}/projects/server-project/.env << EOF
             DATABASE_URL=${{ secrets.DATABASE_URL }}
             NODE_ENV=production
-            WEBSITE_URL=${{ secrets.WEBSITE_URL }}
+            WEBSITE_DOMAIN=${{ secrets.WEBSITE_DOMAIN }}
             BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
             SUPER_ROLE_EMAIL=${{ secrets.SUPER_ROLE_EMAIL }}
