@@ -10,16 +10,14 @@ export class ApiError extends Error {
   }
 }
 
-const RAW_API_BASE_URL = `${process.env.NEXT_PUBLIC_WEBSITE_URL}/restful`;
+const isServer = typeof window === 'undefined' || process.env.NODE_ENV === 'development';
+const RAW_API_BASE_URL = `${isServer ? 'http://localhost:4000' : window.location.origin }/restful`;
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, '');
 }
 
 export function getApiBaseUrl(): string {
-  if (!RAW_API_BASE_URL) {
-    throw new Error('未配置 NEXT_PUBLIC_WEBSITE_URL 环境变量');
-  }
   return normalizeBaseUrl(RAW_API_BASE_URL);
 }
 

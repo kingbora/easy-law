@@ -9,7 +9,8 @@ interface SessionResponsePayload {
   permissions?: unknown;
 }
 
-const AUTH_BASE_URL = `${process.env.NEXT_PUBLIC_WEBSITE_URL ?? ''}/restful/api/auth`;
+const isServer = typeof window === 'undefined' || process.env.NODE_ENV === 'development';
+const AUTH_BASE_URL = `${isServer ? 'http://localhost:4000' : window.location.origin }/restful/api/auth`;
 
 function buildCookieHeader(): string | null {
   const cookieStore = cookies();

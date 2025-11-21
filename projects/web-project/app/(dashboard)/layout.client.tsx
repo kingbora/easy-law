@@ -425,7 +425,7 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
               <div className={styles.logo}>
                 <Image
                   priority
-                  src={siderCollapsed ? '/images/logo-icon.png' : '/images/logo.png'}
+                  src={siderCollapsed ? '/logo-icon.png' : '/logo.png'}
                   width={siderCollapsed ? 32 : 120}
                   height={siderCollapsed ? 32 : 50}
                   alt="simple law"

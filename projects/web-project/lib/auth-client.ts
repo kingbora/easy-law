@@ -2,7 +2,8 @@ import { createAuthClient } from 'better-auth/client';
 import { adminClient } from 'better-auth/client/plugins';
 import { ac, allRoles } from '@easy-law/shared-types';
 
-const baseURL = `${process.env.NEXT_PUBLIC_WEBSITE_URL}/restful/api/auth`;
+const isServer = typeof window === 'undefined' || process.env.NODE_ENV === 'development';
+const baseURL = `${isServer ? 'http://localhost:4000' : window.location.origin }/restful/api/auth`;
 
 export const authClient = createAuthClient({
   baseURL,
