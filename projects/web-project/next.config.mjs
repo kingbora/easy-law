@@ -22,6 +22,8 @@ const nextConfig = {
   },
   experimental: {
     optimizeCss: true,
+    workerThreads: isProd ? false : true,
+    cpus: isProd ? 1 : 4,
   },
   poweredByHeader: false,
   compress: isProd,
@@ -33,9 +35,8 @@ const nextConfig = {
         type: 'filesystem',
         compression: 'gzip',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7天缓存
-        buildDependencies: {
-          config: [__filename],
-        },
+        maxMemoryGenerations: 1, // 限制内存生成次数
+        memoryCacheUnaffected: false,
       };
       
       // 优化 chunk 分割
