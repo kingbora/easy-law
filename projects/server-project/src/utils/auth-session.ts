@@ -24,12 +24,9 @@ export interface SessionContext {
   };
 }
 
-function buildRequestUrl(req: ExpressRequest): URL {
-  const originHost = req.get('host') ?? 'localhost';
-  const originProtocol = req.protocol ?? 'http';
-  const origin = `${originProtocol}://${originHost}`;
+function buildRequestUrl(): URL {
   const normalizedBasePath = AUTH_BASE_PATH?.endsWith('/') ? AUTH_BASE_PATH.slice(0, -1) : AUTH_BASE_PATH;
-  return new URL(`${normalizedBasePath}/get-session`, origin);
+  return new URL(`${normalizedBasePath}/get-session`, `http://localhost:${process.env.PORT || '4000'}`);
 }
 
 export async function fetchSessionFromRequest(req: ExpressRequest): Promise<SessionContext | null> {
@@ -40,7 +37,7 @@ export async function fetchSessionFromRequest(req: ExpressRequest): Promise<Sess
       headers.set('cookie', req.headers.cookie);
     }
 
-    const requestUrl = buildRequestUrl(req);
+    const requestUrl = buildRequestUrl();
     requestUrl.searchParams.set('disableCookieCache', 'true');
 
     const response = await fetch(requestUrl, {
