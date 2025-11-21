@@ -18,7 +18,7 @@ export async function requireSession(req: Request, res: Response, next: NextFunc
       return next();
     }
 
-  const session = await fetchSessionFromRequest(req);
+    const session = await fetchSessionFromRequest(req);
 
     if (!session) {
       throw new UnauthorizedError();

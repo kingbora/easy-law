@@ -20,16 +20,20 @@ export const auth = betterAuth({
   basePath,
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
-  trustedOrigins: [
+  trustedOrigins: isProduction ? [
     `https://${process.env.WEBSITE_DOMAIN}`,
     `https://www.${process.env.WEBSITE_DOMAIN}`,
-  ],
+  ] : [baseURL],
   advanced: {
-    useSecureCookies: isProduction,
+    useSecureCookies: false, // 本地环境使用 HTTP，禁用 Secure Cookie 避免 401
     disableCSRFCheck: false,
     ipAddress: {
       disableIpTracking: true,
-    }
+    },
+    crossSubDomainCookies: {
+      enabled: isProduction,
+      domain: isProduction ? `.${process.env.WEBSITE_DOMAIN}` : undefined,
+    },
   },
   plugins: [
     admin({

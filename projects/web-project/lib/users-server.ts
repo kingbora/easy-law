@@ -1,16 +1,14 @@
 import { cache } from 'react';
 import { cookies } from 'next/headers';
 
-import { mapSingularPayload, type CurrentUserResponse } from './users-api';
+import { authClient } from './auth-client';
+import { mapSingularPayload, type CurrentUserResponse, type BetterAuthResponse } from './users-api';
 
 interface SessionResponsePayload {
   user?: unknown;
   session?: Record<string, unknown> | null;
   permissions?: unknown;
 }
-
-const isServer = typeof window === 'undefined' || process.env.NODE_ENV === 'development';
-const AUTH_BASE_URL = `${isServer ? 'http://localhost:4000' : window.location.origin }/restful/api/auth`;
 
 function buildCookieHeader(): string | null {
   const cookieStore = cookies();
@@ -27,30 +25,24 @@ async function requestSession(): Promise<SessionResponsePayload | null> {
     return null;
   }
 
-  if (!AUTH_BASE_URL) {
-    return null;
-  }
-
-  const sessionUrl = `${AUTH_BASE_URL}/get-session?disableCookieCache=true`;
-  const requestHeaders = new Headers();
-  requestHeaders.set('cookie', cookieHeader);
-  requestHeaders.set('accept', 'application/json');
-
-  const requestInit: RequestInit = {
-    method: 'GET',
-    headers: requestHeaders,
-    cache: 'no-store',
-    credentials: 'include'
-  };
-
-  const response = await fetch(sessionUrl, requestInit).catch(() => null);
-
-  if (!response || !response.ok) {
-    return null;
-  }
-
   try {
-    return (await response.json()) as SessionResponsePayload;
+    // 在服务端调用客户端 SDK 时需要手动转发 Cookie，否则 Better Auth 无法识别当前会话
+    const requestHeaders = new Headers();
+    requestHeaders.set('cookie', cookieHeader);
+    requestHeaders.set('accept', 'application/json');
+
+    const sessionResult = (await authClient.getSession({
+      fetchOptions: {
+        headers: requestHeaders,
+        cache: 'no-store'
+      }
+    })) as BetterAuthResponse<SessionResponsePayload | null> | null;
+
+    if (!sessionResult || sessionResult.error) {
+      return null;
+    }
+
+    return sessionResult.data ?? null;
   } catch (error) {
     return null;
   }
@@ -58,6 +50,9 @@ async function requestSession(): Promise<SessionResponsePayload | null> {
 
 export const fetchCurrentUserServer = cache(async (): Promise<CurrentUserResponse | null> => {
   const payload = await requestSession();
+  if (!payload?.session) {
+    return null;
+  }
   if (!payload?.user) {
     return null;
   }
