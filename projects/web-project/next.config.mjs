@@ -1,6 +1,8 @@
 import { withSentryConfig } from '@sentry/nextjs';
 const isProd = process.env.NODE_ENV === 'production';
 
+const __filename = new URL('', import.meta.url).pathname;
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
