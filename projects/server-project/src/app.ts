@@ -42,6 +42,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
-Sentry.setupExpressErrorHandler(app);
+if (process.env.NODE_ENV === 'production') {
+  Sentry.setupExpressErrorHandler(app);
+}
 
 export default app;

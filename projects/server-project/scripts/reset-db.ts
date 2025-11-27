@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import postgres from 'postgres';
 
-const PRESERVED_TABLES = new Set(['user']);
+const PRESERVED_TABLES = new Set(['user', 'account', 'session', 'verifications']);
 
 const quoteIdentifier = (identifier: string): string => `"${identifier.replace(/"/g, '""')}"`;
 
