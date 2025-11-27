@@ -38,6 +38,7 @@ import {
 import {
   createCase as createCaseApi,
   createCaseCollection as createCaseCollectionApi,
+  deleteCase as deleteCaseApi,
   fetchAssignableStaff,
   fetchResponsibleStaff,
   fetchCaseChangeLogs,
@@ -105,6 +106,8 @@ const CASE_COLLECTION_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'admin',
   'administration'
 ]);
+
+const CASE_DELETE_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>(['super_admin', 'lawyer']);
 
 const CASE_TIME_NODE_EDIT_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
   'super_admin',
@@ -951,6 +954,7 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
   }, [loadResponsibleFilterOptions]);
 
 
+
   const currentPage = pagination.current ?? 1;
   const currentPageSize = pagination.pageSize ?? DEFAULT_PAGE_SIZE;
   const canCreateCase = useMemo(
@@ -1039,6 +1043,44 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
       setLoading(false);
     }
   }, [message, pageDepartment]);
+
+  const handleCaseDeletion = useCallback(
+    async (targetCase: CaseRecord) => {
+      try {
+        await deleteCaseApi(targetCase.id);
+        message.success('案件及关联信息已删除');
+        changeLogCacheRef.current.delete(targetCase.id);
+        setCases((prev) => prev.filter((item) => item.id !== targetCase.id));
+
+        if (caseModalCase?.id === targetCase.id) {
+          setCaseModalOpen(false);
+          setCaseModalCase(null);
+        }
+
+        await loadCases(currentPage, currentPageSize);
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '删除案件失败，请稍后重试';
+        message.error(errorMessage);
+        throw error;
+      }
+    },
+    [caseModalCase, currentPage, currentPageSize, loadCases, message]
+  );
+
+  const confirmCaseDeletion = useCallback(
+    (record: CaseRecord) => {
+      Modal.confirm({
+        title: '确认删除该案件？',
+        content: '删除后将同步清空所有关联信息（含开庭日程），且不可恢复，请谨慎操作。',
+        okText: '确认删除',
+        okType: 'danger',
+        cancelText: '取消',
+        centered: true,
+        onOk: () => handleCaseDeletion(record)
+      });
+    },
+    [handleCaseDeletion]
+  );
 
   useEffect(() => {
     const trimmedCaseId = typeof initialCaseId === 'string' ? initialCaseId.trim() : '';
@@ -1329,6 +1371,25 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
       }
       if (currentUser.role === 'sale') {
         return record.assignedSaleId === currentUser.id;
+      }
+      return false;
+    },
+    [currentUser]
+  );
+
+  const canDeleteCaseRecord = useCallback(
+    (record: CaseRecord) => {
+      if (!currentUser || !CASE_DELETE_ALLOWED_ROLES.has(currentUser.role as UserRole)) {
+        return false;
+      }
+      if (currentUser.role === 'super_admin') {
+        return true;
+      }
+      if (currentUser.role === 'lawyer') {
+        const isAssignedTrialLawyer = (record.hearings ?? []).some(
+          (hearing) => hearing.trialLawyerId === currentUser.id
+        );
+        return record.assignedLawyerId === currentUser.id || isAssignedTrialLawyer;
       }
       return false;
     },
@@ -2398,7 +2459,8 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
       align: 'center',
       render: (_, record) => {
   const canManageTimeNodes = canManageTimeNodesForCase(record);
-        const canEditStatus = canUpdateCaseRecord(record);
+  const canEditStatus = canUpdateCaseRecord(record);
+  const canDeleteCase = canDeleteCaseRecord(record);
         const items: MenuProps['items'] = [];
 
         if (enabledTableActions.has('update-status') && canEditStatus) {
@@ -2426,6 +2488,14 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
           items.push({
             key: 'add-time-node',
             label: '新增时间节点'
+          });
+        }
+
+        if (enabledTableActions.has('delete-case') && canDeleteCase) {
+          items.push({
+            key: 'delete-case',
+            label: '删除案件',
+            danger: true
           });
         }
 
@@ -2464,6 +2534,12 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
               }
               return;
             }
+            if (key === 'delete-case') {
+              if (enabledTableActions.has('delete-case') && canDeleteCase) {
+                confirmCaseDeletion(record);
+              }
+              return;
+            }
           }
         };
 
@@ -2484,8 +2560,10 @@ export default function CasesPage({ department, initialCaseId }: CasesPageProps)
     }),
   [
     canCreateCollectionRecord,
+    canDeleteCaseRecord,
     canManageTimeNodesForCase,
     canUpdateCaseRecord,
+    confirmCaseDeletion,
     enabledTableActions,
     handleOpenTimeNode,
     message,

@@ -16,7 +16,12 @@ export type CaseTableFilterKey =
 
 import type { WorkInjuryCaseTabKey } from './modal';
 
-export type CaseTableActionKey = 'update-status' | 'add-follow-up' | 'add-time-node' | 'add-collection';
+export type CaseTableActionKey =
+  | 'update-status'
+  | 'add-follow-up'
+  | 'add-time-node'
+  | 'add-collection'
+  | 'delete-case';
 
 export interface CaseModalOperationsConfig {
   assignment: boolean;
@@ -182,7 +187,13 @@ const SHARED_MODAL_OPERATIONS: CaseModalOperationsConfig = {
   changeLog: true
 };
 
-const SHARED_TABLE_ACTIONS: ReadonlyArray<CaseTableActionKey> = ['update-status', 'add-follow-up', 'add-time-node', 'add-collection'];
+const SHARED_TABLE_ACTIONS: ReadonlyArray<CaseTableActionKey> = [
+  'update-status',
+  'add-follow-up',
+  'add-time-node',
+  'add-collection',
+  'delete-case'
+];
 
 const DEPARTMENT_DEFAULT_COLUMNS: Record<UserDepartment, CaseTableColumnKey[]> = {
   work_injury: [
@@ -232,7 +243,7 @@ const DEPARTMENT_MODAL_OPERATION_OVERRIDES: Record<UserDepartment, Partial<CaseM
 
 const DEPARTMENT_TABLE_ACTIONS: Record<UserDepartment, CaseTableActionKey[]> = {
   work_injury: [],
-  insurance: ['update-status', 'add-follow-up', 'add-collection']
+  insurance: ['update-status', 'add-follow-up', 'add-collection', 'delete-case']
 };
 
 const DEPARTMENT_ALLOW_CREATE_OVERRIDES: Partial<Record<UserDepartment, boolean>> = {};

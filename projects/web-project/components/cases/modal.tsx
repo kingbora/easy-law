@@ -6,7 +6,7 @@ import {
   ROLE_LABEL_MAP,
   DEFAULT_TRIAL_STAGE_ORDER
 } from '@easy-law/shared-types';
-import { ArrowRightOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, ClockCircleOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   App,
   Button,
@@ -514,6 +514,18 @@ const formatDate = (value?: Dayjs | string | null, formatPattern = 'YYYY-MM-DD')
   }
   const parsed = dayjs(value);
   return parsed.isValid() ? parsed.format(formatPattern) : String(value);
+};
+
+const formatChangeLogTimestamp = (value?: Dayjs | string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+  const parsed = dayjs.isDayjs(value) ? value : dayjs(value);
+  if (!parsed.isValid()) {
+    return null;
+  }
+  const pattern = parsed.year() === dayjs().year() ? 'MM-DD HH:mm' : 'YYYY-MM-DD HH:mm';
+  return parsed.format(pattern);
 };
 
 const formatCurrency = (value?: number | null): string => {
@@ -3413,6 +3425,13 @@ export default function WorkInjuryCaseModal({
   }
 
   const buildChangeContentBlock = useCallback((log: CaseChangeLog): ChangeContentBlock => {
+    if (log.action === 'create') {
+      return {
+        title: resolveChangeLogTitle(log),
+        lines: []
+      } satisfies ChangeContentBlock;
+    }
+
     const items = log.changeList?.length
       ? log.changeList
       : [
@@ -3581,7 +3600,7 @@ export default function WorkInjuryCaseModal({
         title: '变更人',
         dataIndex: 'actorName',
         key: 'actor',
-        width: 200,
+        width: 100,
         render: (_value, log) => {
           const actorRole = (log.actorRole ?? '') as UserRole;
           const roleLabel = ROLE_LABEL_MAP[actorRole];
@@ -3600,60 +3619,63 @@ export default function WorkInjuryCaseModal({
         key: 'content',
         render: (_value, log) => {
           const { title, lines } = buildChangeContentBlock(log);
+          const changeTimeText = formatChangeLogTimestamp(log.createdAt);
           return (
             <div className={styles.changeEntry}>
-              <Typography.Text strong className={styles.changeEntryTitle}>
-                {title}
-              </Typography.Text>
-              <ul className={styles.changeContentList}>
-                {lines.map(line => {
-                  const colorPreset = CHANGE_VALUE_TAG_COLOR_MAP[line.changeType];
-                  return (
-                    <li key={line.key} className={styles.changeLine}>
-                      <div className={styles.changeLineBody}>
-                        <Typography.Text className={styles.changeLineLabel}>{line.label}</Typography.Text>
-                        {line.showValues ? (
-                          <>
-                            <span className={styles.changeLineColon}>：</span>
-                            <div className={styles.changeValueFlow}>
-                              <Tag
-                                bordered={false}
-                                color={colorPreset.previous}
-                                className={styles.changeValueTag}
-                              >
-                                {line.previousText}
-                              </Tag>
-                              <ArrowRightOutlined className={styles.changeArrow} />
-                              <Tag
-                                bordered={false}
-                                color={colorPreset.current}
-                                className={styles.changeValueTag}
-                              >
-                                {line.currentText}
-                              </Tag>
-                            </div>
-                          </>
+              <div className={styles.changeEntryHeader}>
+                <Typography.Text strong className={styles.changeEntryTitle}>
+                  {title}
+                </Typography.Text>
+                {changeTimeText ? (
+                  <Tag icon={<ClockCircleOutlined />} bordered={false} className={styles.changeEntryTimeTag}>
+                    {changeTimeText}
+                  </Tag>
+                ) : null}
+              </div>
+              {lines.length > 0 ? (
+                <ul className={styles.changeContentList}>
+                  {lines.map(line => {
+                    const colorPreset = CHANGE_VALUE_TAG_COLOR_MAP[line.changeType];
+                    return (
+                      <li key={line.key} className={styles.changeLine}>
+                        <div className={styles.changeLineBody}>
+                          <Typography.Text className={styles.changeLineLabel}>{line.label}</Typography.Text>
+                          {line.showValues ? (
+                            <>
+                              <span className={styles.changeLineColon}>：</span>
+                              <div className={styles.changeValueFlow}>
+                                <Tag
+                                  bordered={false}
+                                  color={colorPreset.previous}
+                                  className={styles.changeValueTag}
+                                >
+                                  {line.previousText}
+                                </Tag>
+                                <ArrowRightOutlined className={styles.changeArrow} />
+                                <Tag
+                                  bordered={false}
+                                  color={colorPreset.current}
+                                  className={styles.changeValueTag}
+                                >
+                                  {line.currentText}
+                                </Tag>
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                        {!line.showValues ? (
+                          <Typography.Text type="secondary" className={styles.changeInfoText}>
+                            {line.currentText}
+                          </Typography.Text>
                         ) : null}
-                      </div>
-                      {!line.showValues ? (
-                        <Typography.Text type="secondary" className={styles.changeInfoText}>
-                          {line.currentText}
-                        </Typography.Text>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
             </div>
           );
         }
-      },
-      {
-        title: '变更时间',
-        dataIndex: 'createdAt',
-        key: 'createdAt',
-        width: 200,
-        render: (_value, log) => formatDate(log.createdAt, 'YYYY-MM-DD HH:mm')
       },
       {
         title: '变更备注',

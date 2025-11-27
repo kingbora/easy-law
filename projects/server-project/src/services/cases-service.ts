@@ -50,6 +50,7 @@ import { alias } from 'drizzle-orm/pg-core';
 
 import { db } from '../db/client';
 import { departmentEnum, users } from '../db/schema/auth-schema';
+import { calendarEvents } from '../db/schema/calendar-schema';
 import {
   caseChangeLogs,
   caseCollections,
@@ -566,19 +567,6 @@ export async function updateCase(id: string, input: CaseUpdateInput, user: Sessi
           actor,
           fieldKey: 'collections',
           fieldLabel: '回款记录'
-        })
-      );
-    }
-
-    if (payload.timeline) {
-      changeLogRows.push(
-        createGeneralChangeLogRow({
-          caseId: id,
-          action: 'update_timeline',
-          description: '更新跟进记录',
-          actor,
-          fieldKey: 'timeline',
-          fieldLabel: '跟进记录'
         })
       );
     }
@@ -3380,8 +3368,14 @@ export async function deleteCase(id: string, user: SessionUser) {
     throw new AuthorizationError();
   }
 
-  const [deleted] = await db.delete(cases).where(eq(cases.id, id)).returning({ id: cases.id });
-  return deleted?.id ?? null;
+  const deletedId = await db.transaction(async (tx) => {
+    await tx.delete(calendarEvents).where(eq(calendarEvents.relatedCaseId, id));
+
+    const [deleted] = await tx.delete(cases).where(eq(cases.id, id)).returning({ id: cases.id });
+    return deleted?.id ?? null;
+  });
+
+  return deletedId;
 }
 
 export async function createCaseCollection(
@@ -3598,8 +3592,11 @@ export async function updateCaseTimeNodes(
       const actor = extractActorContext(user);
       const description = changes
         .map(change => {
-          const previousLabel = change.previous ?? '未记录';
-          return `${CASE_TIME_NODE_LABEL_MAP[change.nodeType]}：${previousLabel} → ${change.current}`;
+          const nodeLabel = CASE_TIME_NODE_LABEL_MAP[change.nodeType] ?? change.nodeType;
+          if (!change.previous) {
+            return `更新${nodeLabel}节点为${change.current}时间`;
+          }
+          return `更新${nodeLabel}节点时间：[${change.previous}] -> [${change.current}]`;
         })
         .join('；');
 
