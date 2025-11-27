@@ -1,6 +1,10 @@
 import 'dotenv/config';
 import postgres from 'postgres';
 
+const PRESERVED_TABLES = new Set(['user']);
+
+const quoteIdentifier = (identifier: string): string => `"${identifier.replace(/"/g, '""')}"`;
+
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
 
@@ -12,24 +16,32 @@ async function main() {
   const sql = postgres(databaseUrl, { max: 1, ssl: false });
 
   try {
-    console.warn('Dropping schema "public" (cascade)...');
-    await sql`drop schema if exists public cascade`;
+    const tables = await sql<{ tablename: string }[]>`
+      select tablename
+      from pg_tables
+      where schemaname = 'public'
+    `;
 
-    console.warn('Recreating schema "public"...');
-    await sql`create schema public`;
-    await sql`grant all on schema public to public`;
-    await sql`grant all on schema public to current_user`;
+    const targetTables = tables
+      .map(row => row.tablename)
+      .filter(name => !PRESERVED_TABLES.has(name));
 
-    console.warn('Dropping schema "drizzle" (cascade)...');
-    await sql`drop schema if exists drizzle cascade`;
+    if (!targetTables.length) {
+      console.warn('No tables found to truncate. User table data preserved by default.');
+      return;
+    }
 
-    console.warn('Recreating schema "drizzle"...');
-    await sql`create schema drizzle`;
+    console.warn('Truncating public tables (excluding user table data)...');
+    for (const tableName of targetTables) {
+      const qualifiedName = `${quoteIdentifier('public')}.${quoteIdentifier(tableName)}`;
+      console.warn(` -> Truncating ${qualifiedName}`);
+      await sql.unsafe(`TRUNCATE TABLE ${qualifiedName} RESTART IDENTITY CASCADE`);
+    }
 
     // eslint-disable-next-line no-console
-    console.log('Database schemas reset. You can rerun migrations now.');
+    console.log('All non-user tables have been truncated. User data preserved.');
   } catch (error) {
-    console.error('Failed to reset database schemas', error);
+    console.error('Failed to truncate tables', error);
   } finally {
     await sql.end({ timeout: 5 }).catch(() => {});
   }
