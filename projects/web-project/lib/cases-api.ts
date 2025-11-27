@@ -149,6 +149,23 @@ export async function fetchCaseChangeLogs(id: string): Promise<CaseChangeLog[]> 
   return response.data;
 }
 
+export async function updateCaseChangeLogRemark(
+  caseId: string,
+  logId: string,
+  remark: string | null
+): Promise<CaseChangeLog> {
+  const response = await apiFetch<{ data: CaseChangeLog }>(
+    `/api/cases/${caseId}/change-logs/${logId}/remark`,
+    {
+      method: 'PUT',
+      body: {
+        remark
+      }
+    }
+  );
+  return response.data;
+}
+
 export async function fetchCaseHearings(id: string): Promise<CaseHearingRecord[]> {
   const response = await apiFetch<{ data: CaseHearingRecord[] }>(`/api/cases/${id}/hearings`);
   return response.data;
@@ -175,6 +192,20 @@ export async function fetchAssignableStaff(params?: {
   const queryString = query.toString();
   const response = await apiFetch<{ data: AssignableStaffResponse }>(
     `/api/cases/assignable-staff${queryString ? `?${queryString}` : ''}`
+  );
+  return response.data;
+}
+
+export async function fetchResponsibleStaff(params?: {
+  department?: UserDepartment;
+}): Promise<AssignableStaffResponse> {
+  const query = new URLSearchParams();
+  if (params?.department) {
+    query.set('department', params.department);
+  }
+  const queryString = query.toString();
+  const response = await apiFetch<{ data: AssignableStaffResponse }>(
+    `/api/cases/responsible-staff${queryString ? `?${queryString}` : ''}`
   );
   return response.data;
 }

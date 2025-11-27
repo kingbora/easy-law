@@ -23,7 +23,7 @@ const nextConfig = {
   poweredByHeader: false,
   compress: isProd,
    // 优化 webpack 配置
-  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+  webpack: (config, { buildId: _buildId, dev, isServer, defaultLoaders: _defaultLoaders, webpack: _webpack }) => {
     // 解决大字符串序列化警告
     if (!dev && !isServer) {
       // 禁用缓存，减少内存开销

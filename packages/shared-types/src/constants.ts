@@ -1,4 +1,5 @@
 import type { CaseLevel, CaseStatus, CaseType, ContractFormType, TrialStage, UserDepartment, UserRole } from './types';
+import { TRIAL_STAGES } from './types';
 
 export const ROLE_LABEL_MAP: Record<UserRole, string> = {
   super_admin: '超级管理员',
@@ -58,7 +59,12 @@ export const CONTRACT_FORM_LABELS: Record<ContractFormType, string> = {
 };
 
 export const TRIAL_STAGE_LABEL_MAP: Record<TrialStage, string> = {
+  arbitration: '仲裁',
   first_instance: '一审',
   second_instance: '二审',
   retrial: '再审'
 };
+
+export const DEFAULT_MENU_DATA_SOURCES = ['视频号', '抖音', '飞鱼'] as const;
+
+export const DEFAULT_TRIAL_STAGE_ORDER: readonly TrialStage[] = [...TRIAL_STAGES];

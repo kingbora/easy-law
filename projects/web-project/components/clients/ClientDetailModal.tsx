@@ -54,6 +54,7 @@ export function ClientDetailModal({
   const [form] = Form.useForm<ClientDetailFormValues>();
   const router = useRouter();
   const currentUser = useSessionStore((state) => state.user);
+  const userRole = currentUser?.role;
 
   useEffect(() => {
     if (!open) {
@@ -88,13 +89,22 @@ export function ClientDetailModal({
     await onSubmit(payload);
   };
 
-  const handleViewCase = useCallback((caseId: string) => {
+  const handleViewCase = useCallback((record: RelatedCaseRecord) => {
+    const caseId = record.caseId;
     if (!caseId) {
       return;
     }
+
     onCancel();
-    router.push(`/cases/my?caseId=${caseId}`);
-  }, [onCancel, router]);
+
+    if (userRole !== 'super_admin') {
+      router.push(`/cases/my?caseId=${caseId}`);
+      return;
+    }
+
+    const resolvedDepartment = record.department ?? 'work_injury';
+    router.push(`/cases/${resolvedDepartment}?caseId=${caseId}`);
+  }, [onCancel, router, userRole]);
 
   const relatedCases: RelatedCaseRecord[] = client
     ? [
@@ -157,7 +167,7 @@ export function ClientDetailModal({
       title: "操作",
       key: "action",
       render: (_: unknown, record) => (
-        <Button type="link" onClick={() => handleViewCase(record.caseId)}>
+        <Button type="link" onClick={() => handleViewCase(record)}>
           查看
         </Button>
       )

@@ -30,6 +30,7 @@ import {
   deleteCalendarEvent,
   type CalendarEventRecord
 } from '@/lib/calendar-events-api';
+import { fetchCaseById } from '@/lib/cases-api';
 import { ApiError } from '@/lib/api-client';
 import { useSessionStore } from '@/lib/stores/session-store';
 import { TRIAL_STAGE_LABEL_MAP } from '@easy-law/shared-types';
@@ -164,15 +165,29 @@ const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
   );
 
   const handleHearingClick = useCallback(
-    (caseId: string) => {
+    async (caseId: string) => {
       if (!caseId) {
         message.warning('未关联案件，无法查看详情');
         return;
       }
       onClose();
-      router.push(`/cases/my?caseId=${caseId}`);
+
+      if (sessionUser?.role !== 'super_admin') {
+        router.push(`/cases/my?caseId=${caseId}`);
+        return;
+      }
+
+      try {
+        const record = await fetchCaseById(caseId);
+        const department = record.department === 'insurance' ? 'insurance' : 'work_injury';
+        router.push(`/cases/${department}?caseId=${caseId}`);
+      } catch (error) {
+        console.error('Failed to resolve case department for calendar navigation', error);
+        message.warning('无法确认案件所属部门，已跳转至默认页面');
+        router.push(`/cases/my?caseId=${caseId}`);
+      }
     },
-    [message, onClose, router]
+    [message, onClose, router, sessionUser]
   );
 
   const dateCellRender: CalendarProps<Dayjs>['cellRender'] = (current) => {
@@ -262,7 +277,7 @@ const ScheduleDrawer = ({ open, onClose }: ScheduleDrawerProps) => {
                       {event.type === 'hearing' ? (
                         <Button
                           type="link"
-                          onClick={() => event.relatedCaseId && handleHearingClick(event.relatedCaseId)}
+                          onClick={() => event.relatedCaseId && void handleHearingClick(event.relatedCaseId)}
                           disabled={!event.relatedCaseId}
                         >
                           查看案件

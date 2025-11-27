@@ -19,7 +19,7 @@ const basePath = AUTH_BASE_PATH;
 export const auth = betterAuth({
   basePath,
   baseURL,
-  secret: process.env.BETTER_AUTH_SECRET,
+  secret: isProduction ? process.env.BETTER_AUTH_SECRET : undefined,
   trustedOrigins: isProduction ? [
     `https://${process.env.WEBSITE_DOMAIN}`,
     `https://www.${process.env.WEBSITE_DOMAIN}`,

@@ -5,6 +5,8 @@ export type CaseTableFilterKey =
   | 'caseStatus'
   | 'caseType'
   | 'caseLevel'
+  | 'partyName'
+  | 'responsible'
   | 'provinceCity'
   | 'assignedLawyerName'
   | 'assignedAssistantName'
@@ -14,7 +16,7 @@ export type CaseTableFilterKey =
 
 import type { WorkInjuryCaseTabKey } from './modal';
 
-export type CaseTableActionKey = 'update-status' | 'add-follow-up' | 'add-time-node';
+export type CaseTableActionKey = 'update-status' | 'add-follow-up' | 'add-time-node' | 'add-collection';
 
 export interface CaseModalOperationsConfig {
   assignment: boolean;
@@ -30,9 +32,9 @@ export interface CaseModalOperationsConfig {
 export type BasicInfoFieldKey =
   | 'caseType'
   | 'caseLevel'
-  | 'provinceCity'
+  | 'province'
+  | 'city'
   | 'targetAmount'
-  | 'feeStandard'
   | 'agencyFeeEstimate'
   | 'dataSource'
   | 'entryDate'
@@ -43,7 +45,6 @@ export type BasicInfoFieldKey =
   | 'injuryCause'
   | 'workInjuryCertified'
   | 'appraisalLevel'
-  | 'appraisalEstimate'
   | 'monthlySalary'
   | 'customerCooperative'
   | 'hasContract'
@@ -88,16 +89,19 @@ const DEPARTMENT_FILTER_OPTIONS: Record<UserDepartment, CaseTableFilterKey[]> = 
     'caseStatus',
     'caseType',
     'caseLevel',
+    'partyName',
     'provinceCity',
     'assignedLawyerName',
     'assignedAssistantName',
     'entryDate',
-    'createdAt'
+    'createdAt',
+    'responsible'
   ],
   insurance: [
-    'caseNumber',
     'caseStatus',
-    'caseLevel'
+    'caseLevel',
+    'partyName',
+    'responsible'
   ]
 };
 
@@ -108,17 +112,14 @@ export const CASE_TABLE_COLUMN_LABELS: Record<CaseTableColumnKey, string> = {
   caseStatus: '案件状态',
   caseType: '案件类型',
   caseLevel: '案件级别',
-  claimantNames: '当事人',
-  respondentNames: '对方当事人',
+  partyNames: '当事人（含对方）',
   provinceCity: '省份/城市',
-  assignedLawyerName: '负责律师',
-  assignedAssistantName: '负责助理',
-  assignedSaleName: '跟进销售',
+  responsibleStaff: '负责人',
+  collectionAmount: '回款金额',
   contractDate: '合同日期',
   clueDate: '线索日期',
-  targetAmount: '标的额',
+  targetAmount: '案件标的',
   contractForm: '合同形式',
-  insuranceRiskLevel: '风险等级',
   insuranceTypes: '保险类型',
   dataSource: '数据来源',
   entryDate: '入职时间',
@@ -128,34 +129,34 @@ export const CASE_TABLE_COLUMN_LABELS: Record<CaseTableColumnKey, string> = {
 
 const DEPARTMENT_COLUMN_OPTION_KEYS: Record<UserDepartment, CaseTableColumnKey[]> = {
   work_injury: [
-    'caseNumber',
     'caseStatus',
     'caseType',
     'caseLevel',
-    'claimantNames',
-    'respondentNames',
+    'partyNames',
     'provinceCity',
-    'assignedLawyerName',
-    'assignedSaleName',
-    'dataSource',
+    'responsibleStaff',
+    'collectionAmount',
     'targetAmount',
-    'createdAt'
+    'dataSource',
+    'entryDate',
+    'createdAt',
+    'updatedAt'
   ],
   insurance: [
-    'caseNumber',
     'caseStatus',
-    'claimantNames',
-    'respondentNames',
+    'caseType',
+    'caseLevel',
+    'partyNames',
     'contractDate',
     'clueDate',
     'targetAmount',
     'contractForm',
-    'insuranceRiskLevel',
     'insuranceTypes',
-    'assignedLawyerName',
-    'assignedSaleName',
+    'responsibleStaff',
+    'collectionAmount',
     'dataSource',
-    'createdAt'
+    'createdAt',
+    'updatedAt'
   ]
 };
 
@@ -181,26 +182,34 @@ const SHARED_MODAL_OPERATIONS: CaseModalOperationsConfig = {
   changeLog: true
 };
 
-const SHARED_TABLE_ACTIONS: ReadonlyArray<CaseTableActionKey> = ['update-status', 'add-follow-up', 'add-time-node'];
+const SHARED_TABLE_ACTIONS: ReadonlyArray<CaseTableActionKey> = ['update-status', 'add-follow-up', 'add-time-node', 'add-collection'];
 
 const DEPARTMENT_DEFAULT_COLUMNS: Record<UserDepartment, CaseTableColumnKey[]> = {
   work_injury: [
-    'caseNumber',
     'caseStatus',
     'caseType',
     'caseLevel',
-    'claimantNames',
-    'assignedLawyerName',
-    'assignedSaleName'
+    'partyNames',
+    'responsibleStaff',
+    'collectionAmount',
+    'targetAmount'
   ],
   insurance: [
-    'caseNumber',
     'caseStatus',
-    'claimantNames',
+    'caseLevel',
+    'partyNames',
     'contractDate',
     'contractForm',
-    'insuranceRiskLevel'
+    'responsibleStaff',
+    'collectionAmount'
   ]
+};
+
+const DEPARTMENT_COLUMN_LABEL_OVERRIDES: Partial<Record<UserDepartment, Partial<Record<CaseTableColumnKey, string>>>> = {
+  insurance: {
+    caseLevel: '风险等级',
+    targetAmount: '案件标的'
+  }
 };
 
 const DEPARTMENT_VISIBLE_TABS: Record<UserDepartment, WorkInjuryCaseTabKey[]> = {
@@ -223,20 +232,20 @@ const DEPARTMENT_MODAL_OPERATION_OVERRIDES: Record<UserDepartment, Partial<CaseM
 
 const DEPARTMENT_TABLE_ACTIONS: Record<UserDepartment, CaseTableActionKey[]> = {
   work_injury: [],
-  insurance: ['update-status', 'add-follow-up']
+  insurance: ['update-status', 'add-follow-up', 'add-collection']
 };
 
 const DEPARTMENT_ALLOW_CREATE_OVERRIDES: Partial<Record<UserDepartment, boolean>> = {};
 
 const DEPARTMENT_BASIC_INFO_LAYOUT: Record<UserDepartment, BasicInfoLayoutRow[]> = {
   work_injury: [
-    ['caseType', 'caseLevel', 'provinceCity'],
-    ['targetAmount', 'feeStandard', 'agencyFeeEstimate'],
+    ['caseType', 'caseLevel', 'province'],
+    ['city', 'targetAmount', 'agencyFeeEstimate'],
+    ['contractQuoteType', 'contractQuoteAmount', 'contractQuoteUpfront', 'contractQuoteRatio', 'contractQuoteOther'],
     ['dataSource', 'entryDate', 'injuryLocation'],
     ['injurySeverity', 'injuryCause', 'workInjuryCertified'],
-    ['appraisalLevel', 'appraisalEstimate', 'monthlySalary'],
-    ['customerCooperative', 'hasContract', 'hasSocialSecurity'],
-    ['witnessCooperative', '', ''],
+    ['appraisalLevel', 'monthlySalary', 'customerCooperative'],
+    ['hasContract', 'hasSocialSecurity', 'witnessCooperative'],
     ['existingEvidence', '', ''],
     ['remark', '', '']
   ],
@@ -252,7 +261,7 @@ const DEPARTMENT_BASIC_INFO_LAYOUT: Record<UserDepartment, BasicInfoLayoutRow[]>
 };
 
 const DEPARTMENT_REQUIRED_BASIC_FIELDS: Record<UserDepartment, BasicInfoFieldKey[]> = {
-  work_injury: ['caseType', 'caseLevel', 'provinceCity', 'dataSource'],
+  work_injury: ['caseType', 'caseLevel', 'province', 'city', 'dataSource', 'contractQuoteType'],
   insurance: [
     'contractDate',
     'contractForm',
@@ -281,11 +290,15 @@ const buildDepartmentConfig = (department: UserDepartment): CaseDepartmentConfig
   const filterOptions = DEPARTMENT_FILTER_OPTIONS[department] || [];
   const columnKeys = DEPARTMENT_COLUMN_OPTION_KEYS[department] ?? [];
 
+  const columnLabelOverrides = DEPARTMENT_COLUMN_LABEL_OVERRIDES[department];
   const columnOptions =
     columnKeys.length > 0
-      ? columnKeys.map((key) => ({ key, label: CASE_TABLE_COLUMN_LABELS[key] }))
+      ? columnKeys.map((key) => ({
+        key,
+        label: columnLabelOverrides?.[key] ?? CASE_TABLE_COLUMN_LABELS[key]
+      }))
       : (Object.entries(CASE_TABLE_COLUMN_LABELS) as Array<[CaseTableColumnKey, string]>).map(
-          ([key, label]) => ({ key, label })
+          ([key, label]) => ({ key, label: columnLabelOverrides?.[key] ?? label })
         );
   const availableColumnSet = new Set(columnOptions.map((option) => option.key));
 

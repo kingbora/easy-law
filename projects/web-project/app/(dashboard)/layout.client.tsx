@@ -10,7 +10,8 @@ import {
   RightOutlined,
   TeamOutlined,
   UserOutlined,
-  DownOutlined
+  DownOutlined,
+  SettingOutlined
 } from '@ant-design/icons';
 import {
   Avatar,
@@ -55,7 +56,8 @@ const pathKeyMap: Record<string, string> = CASE_DEPARTMENTS.reduce(
   {
     '/': 'overview',
     '/clients': 'clients',
-    '/team': 'team'
+    '/team': 'team',
+    '/menu-config': 'menu-config'
   } as Record<string, string>
 );
 
@@ -67,7 +69,8 @@ const breadcrumbMap: Record<string, string[]> = CASE_DEPARTMENTS.reduce(
   },
   {
     '/clients': ['我的客户'],
-    '/team': ['团队管理']
+    '/team': ['团队管理'],
+    '/menu-config': ['系统设置', '菜单配置']
   } as Record<string, string[]>
 );
 
@@ -165,6 +168,14 @@ export default function DashboardLayoutClient({ children, initialUser }: Dashboa
         key: 'team',
         icon: <TeamOutlined />,
         label: <Link href="/team">团队管理</Link>
+      });
+    }
+
+    if (role === 'super_admin' || role === 'admin') {
+      items.push({
+        key: 'menu-config',
+        icon: <SettingOutlined />,
+        label: <Link href="/menu-config">菜单配置</Link>
       });
     }
 

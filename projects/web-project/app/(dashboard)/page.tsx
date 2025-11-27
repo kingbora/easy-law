@@ -172,15 +172,18 @@ function safeParseAmount(value: string | number | null | undefined): number {
 }
 
 function buildCaseDisplayName(record: CaseRecord): string {
-  const claimantNames = record.participants?.claimants
-    ?.map((participant) => participant.name?.trim())
+  const participantNames = [
+    ...(record.participants?.claimants ?? []),
+    ...(record.participants?.respondents ?? [])
+  ]
+    .map((participant) => participant.name?.trim())
     .filter((name): name is string => Boolean(name && name.length > 0));
 
-  if (claimantNames && claimantNames.length > 0) {
-    if (claimantNames.length === 1) {
-      return claimantNames[0];
+  if (participantNames.length > 0) {
+    if (participantNames.length === 1) {
+      return participantNames[0];
     }
-    return `${claimantNames[0]} 等 ${claimantNames.length} 人`;
+    return `${participantNames[0]} 等 ${participantNames.length} 人`;
   }
 
   if (record.assignedSaleName) {

@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { TRIAL_STAGE_LABEL_MAP, CASE_STATUS_LABEL_MAP, ROLE_LABEL_MAP } from '@easy-law/shared-types';
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import {
+  TRIAL_STAGE_LABEL_MAP,
+  CASE_STATUS_LABEL_MAP,
+  ROLE_LABEL_MAP,
+  DEFAULT_TRIAL_STAGE_ORDER
+} from '@easy-law/shared-types';
+import { ArrowRightOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   App,
   Button,
@@ -18,15 +23,17 @@ import {
   Radio,
   Row,
   Select,
-  Skeleton,
   Space,
   Spin,
   Tabs,
   Timeline,
   Tag,
+  Table,
+  Tooltip,
   Typography,
 } from 'antd';
-import type { TabsProps } from 'antd';
+import type { InputNumberProps, TabsProps } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import type { Rule } from 'antd/es/form';
 import dayjs, { type Dayjs } from 'dayjs';
 import type {
@@ -54,10 +61,13 @@ import {
 } from '@/lib/case-time-nodes';
 import styles from './modal.module.scss';
 import { useSessionStore } from '@/lib/stores/session-store';
+import { useDepartmentMenuOptions } from '@/lib/hooks/use-department-menu-options';
 import {
   CASE_DEPARTMENT_CONFIG,
   type BasicInfoFieldKey
 } from './department-config';
+import { PROVINCE_SELECT_OPTIONS } from './provinces';
+import { updateCaseChangeLogRemark } from '@/lib/cases-api';
 
 const { TextArea } = Input;
 
@@ -79,13 +89,87 @@ const TAB_LABEL_MAP: Record<TabKey, string> = {
   basic: '基本信息',
   parties: '当事人信息',
   hearing: '庭审信息',
-  staff: '相关人员',
+  staff: '人员分配',
   timeNodes: '时间节点',
   followUp: '跟进备注',
+  fees: '费用明细',
   changeLog: '变更日志',
-  fees: '费用明细'
 };
 
+const CHANGE_ACTION_LABEL_MAP: Record<string, string> = {
+  create: '创建案件',
+  update: '更新基本信息',
+  update_participants: '更新当事人信息',
+  update_collections: '更新回款记录',
+  add_collection: '新增回款记录',
+  update_timeline: '更新跟进备注',
+  update_hearings: '更新庭审信息',
+  update_time_node: '更新时间节点'
+};
+
+type ChangeVisualType = 'info' | 'added' | 'removed' | 'changed';
+
+interface ChangeContentLine {
+  key: string;
+  label: string;
+  changeType: ChangeVisualType;
+  previousText: string;
+  currentText: string;
+  showValues: boolean;
+}
+
+interface ChangeContentBlock {
+  title: string;
+  lines: ChangeContentLine[];
+}
+
+const CHANGE_VALUE_TAG_COLOR_MAP: Record<ChangeVisualType, { previous: string | undefined; current: string | undefined }> = {
+  info: { previous: 'default', current: 'default' },
+  added: { previous: 'default', current: 'success' },
+  removed: { previous: 'error', current: 'default' },
+  changed: { previous: 'warning', current: 'processing' }
+};
+
+const normalizeChangeLogValue = (value?: string | null): string | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+};
+
+const getChangeLineType = (previousValue: string | null, currentValue: string | null): ChangeVisualType => {
+  if (previousValue === null && currentValue === null) {
+    return 'info';
+  }
+  if (previousValue === null) {
+    return 'added';
+  }
+  if (currentValue === null) {
+    return 'removed';
+  }
+  if (previousValue !== currentValue) {
+    return 'changed';
+  }
+  return 'info';
+};
+
+const ASSIGNMENT_FIELD_SUFFIXES = new Set(['assignedSaleId', 'assignedLawyerId', 'assignedAssistantId']);
+
+const resolveChangeLogTitle = (log: CaseChangeLog): string => {
+  if (log.action === 'update') {
+    const hasAssignmentChange = (log.changeList ?? []).some(item => {
+      if (!item.field) {
+        return false;
+      }
+      const parts = item.field.split('.');
+      const lastKey = parts[parts.length - 1];
+      return ASSIGNMENT_FIELD_SUFFIXES.has(lastKey);
+    });
+    return hasAssignmentChange ? '更新人员分配' : '更新基本信息';
+  }
+  return CHANGE_ACTION_LABEL_MAP[log.action] ?? '更新记录';
+};
 const buildTabLabel = (key: TabKey): ReactNode => {
   const label = TAB_LABEL_MAP[key];
   return label;
@@ -94,6 +178,14 @@ const buildTabLabel = (key: TabKey): ReactNode => {
 const isTabKey = (key: string): key is TabKey => key in TAB_LABEL_MAP;
 
 const DEFAULT_VISIBLE_TABS = Object.keys(TAB_LABEL_MAP) as WorkInjuryCaseTabKey[];
+const CREATE_MODE_VISIBLE_TABS: WorkInjuryCaseTabKey[] = [
+  'basic',
+  'parties',
+  'staff',
+  'fees'
+];
+
+const ADMIN_ROLE_SET = new Set<UserRole>(['super_admin', 'admin', 'administration']);
 
 const CASE_TYPES = [
   { label: '工伤', value: 'work_injury' },
@@ -130,6 +222,7 @@ const INSURANCE_TYPE_OPTIONS = [
 ].map(label => ({ label, value: label }));
 
 const INSURANCE_MISREPRESENTATION_OPTIONS = [
+  '未如实告知',
   '既往症',
   '未达到合同约定',
   '先天性疾病',
@@ -149,25 +242,25 @@ const CONTRACT_QUOTE_TYPE_OPTIONS: Array<{ label: string; value: ContractQuoteTy
 ];
 
 const LITIGATION_FEE_TYPE_LABEL_MAP: Record<LitigationFeeType, string> = {
-  advance: '律师垫付',
-  no_advance: '无需垫付',
-  reimbursed: '客户报销'
+  party_pay: '当事人支付',
+  law_firm_advance: '律所垫付',
+  other: '其他'
 };
 const LITIGATION_FEE_TYPE_OPTIONS: Array<{ label: string; value: LitigationFeeType }> = [
-  { label: LITIGATION_FEE_TYPE_LABEL_MAP.advance, value: 'advance' },
-  { label: LITIGATION_FEE_TYPE_LABEL_MAP.no_advance, value: 'no_advance' },
-  { label: LITIGATION_FEE_TYPE_LABEL_MAP.reimbursed, value: 'reimbursed' }
+  { label: LITIGATION_FEE_TYPE_LABEL_MAP.party_pay, value: 'party_pay' },
+  { label: LITIGATION_FEE_TYPE_LABEL_MAP.law_firm_advance, value: 'law_firm_advance' },
+  { label: LITIGATION_FEE_TYPE_LABEL_MAP.other, value: 'other' }
 ];
 
 const TRAVEL_FEE_TYPE_LABEL_MAP: Record<TravelFeeType, string> = {
-  lawyer: '律师承担',
-  reimbursed: '客户报销',
-  no_advance: '无需垫付'
+  law_firm_advance: '律所承担',
+  reimbursed: '胜诉后当事人报销',
+  other: '其他'
 };
 const TRAVEL_FEE_TYPE_OPTIONS: Array<{ label: string; value: TravelFeeType }> = [
-  { label: TRAVEL_FEE_TYPE_LABEL_MAP.lawyer, value: 'lawyer' },
+  { label: TRAVEL_FEE_TYPE_LABEL_MAP.law_firm_advance, value: 'law_firm_advance' },
   { label: TRAVEL_FEE_TYPE_LABEL_MAP.reimbursed, value: 'reimbursed' },
-  { label: TRAVEL_FEE_TYPE_LABEL_MAP.no_advance, value: 'no_advance' }
+  { label: TRAVEL_FEE_TYPE_LABEL_MAP.other, value: 'other' }
 ];
 
 const CONTRACT_FORM_LABEL_MAP: Record<ContractFormType, string> = {
@@ -205,17 +298,23 @@ const CASE_STATUS_COLOR_MAP: Record<CaseStatusValue, string> = {
   void: 'error'
 };
 
-const TRIAL_STAGE_SEQUENCE: TrialStage[] = ['first_instance', 'second_instance', 'retrial'];
+const TRIAL_STAGE_SEQUENCE: TrialStage[] = [...DEFAULT_TRIAL_STAGE_ORDER];
 
-const resolveStageOrder = (stage?: TrialStage | null): number => {
+const resolveStageOrder = (
+  stage?: TrialStage | null,
+  sequence: readonly TrialStage[] = TRIAL_STAGE_SEQUENCE
+): number => {
   if (!stage) {
-    return TRIAL_STAGE_SEQUENCE.length;
+    return sequence.length;
   }
-  const index = TRIAL_STAGE_SEQUENCE.indexOf(stage);
-  return index === -1 ? TRIAL_STAGE_SEQUENCE.length : index;
+  const index = sequence.indexOf(stage);
+  return index === -1 ? sequence.length : index;
 };
 
-const sortHearings = (hearings: CaseHearingRecord[] = []): CaseHearingRecord[] =>
+const sortHearings = (
+  hearings: CaseHearingRecord[] = [],
+  sequence: readonly TrialStage[] = TRIAL_STAGE_SEQUENCE
+): CaseHearingRecord[] =>
   [...hearings].sort((a, b) => {
     const timeA = a.hearingTime ? new Date(a.hearingTime).getTime() : Number.MAX_SAFE_INTEGER;
     const timeB = b.hearingTime ? new Date(b.hearingTime).getTime() : Number.MAX_SAFE_INTEGER;
@@ -224,34 +323,44 @@ const sortHearings = (hearings: CaseHearingRecord[] = []): CaseHearingRecord[] =
       return timeA - timeB;
     }
 
-    return resolveStageOrder(a.trialStage) - resolveStageOrder(b.trialStage);
+    return resolveStageOrder(a.trialStage, sequence) - resolveStageOrder(b.trialStage, sequence);
   });
 
-const collectUsedTrialStages = (hearings: CaseHearingRecord[] = []): Set<TrialStage> => {
-  const usedStages = new Set<TrialStage>();
-  hearings.forEach(item => {
-    if (item.trialStage) {
-      usedStages.add(item.trialStage);
-    }
-  });
-  return usedStages;
+const mapHearingRecordToFormValues = (
+  record: CaseHearingRecord,
+  fallbackTrialLawyerId: string | null
+): HearingFormValues => ({
+  trialLawyerId: record.trialLawyerId ?? fallbackTrialLawyerId,
+  hearingTime: record.hearingTime ? dayjs(record.hearingTime) : null,
+  hearingLocation: record.hearingLocation ?? null,
+  tribunal: record.tribunal ?? null,
+  judge: record.judge ?? null,
+  caseNumber: record.caseNumber ?? null,
+  contactPhone: record.contactPhone ?? null,
+  trialStage: record.trialStage ?? null,
+  hearingResult: record.hearingResult ?? null
+});
+
+const buildEmptyHearingFormValues = (stage: TrialStage | null): HearingFormValues => ({
+  trialLawyerId: null,
+  hearingTime: null,
+  hearingLocation: null,
+  tribunal: null,
+  judge: null,
+  caseNumber: null,
+  contactPhone: null,
+  trialStage: stage ?? null,
+  hearingResult: null
+});
+
+
+const moneyFormatter: InputNumberProps<number>['formatter'] = (value) => {
+  const [start, end] = `${value}`.split('.') || [];
+  const v = `${start}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `￥ ${end ? `${v}.${end}` : `${v}`}`;
 };
 
-const resolveAvailableTrialStages = (hearings: CaseHearingRecord[] = []): TrialStage[] => {
-  const usedStages = collectUsedTrialStages(hearings);
-  return TRIAL_STAGE_SEQUENCE.filter((stage, index) => {
-    if (usedStages.has(stage)) {
-      return false;
-    }
-    const prerequisites = TRIAL_STAGE_SEQUENCE.slice(0, index);
-    return prerequisites.every(requiredStage => usedStages.has(requiredStage));
-  });
-};
-
-const resolveDisabledTrialStages = (hearings: CaseHearingRecord[] = []): TrialStage[] => {
-  const availableStages = new Set(resolveAvailableTrialStages(hearings));
-  return TRIAL_STAGE_SEQUENCE.filter(stage => !availableStages.has(stage));
-};
+const moneyParser = (value?: string) => value?.replace(/￥\s?|(,*)/g, '') as unknown as number;
 
 type CaseTypeValue = (typeof CASE_TYPES)[number]['value'];
 type CaseLevelValue = (typeof CASE_LEVELS)[number]['value'];
@@ -312,12 +421,6 @@ export interface FeeFormValues {
 }
 
 type TimeNodeFormValues = Partial<Record<CaseTimeNodeType, Dayjs | null>>;
-
-const CASE_COLLECTION_ALLOWED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
-  'super_admin',
-  'admin',
-  'administration'
-]);
 
 const CASE_TYPE_LABEL_MAP = CASE_TYPES.reduce<Record<CaseTypeValue, string>>((acc, item) => {
   acc[item.value] = item.label;
@@ -384,6 +487,14 @@ const formatNumberWithSuffix = (value?: number | null, suffix = ''): string => {
   })}${suffix}`;
 };
 
+const formatChangeLogValue = (value?: string | null): string => {
+  if (value === undefined || value === null) {
+    return '—';
+  }
+  const text = String(value).trim();
+  return text.length > 0 ? text : '—';
+};
+
 const formatStringList = (items?: string[] | null): string => {
   if (!items || items.length === 0) {
     return '—';
@@ -415,9 +526,9 @@ export interface WorkInjuryCaseFormValues {
     caseCategory?: CaseCategory;
     caseType?: CaseTypeValue;
     caseLevel?: CaseLevelValue;
-    provinceCity?: string;
+    province?: string;
+    city?: string;
     targetAmount?: string;
-    feeStandard?: string;
     agencyFeeEstimate?: string;
     dataSource?: string;
     hasContract?: boolean;
@@ -431,8 +542,8 @@ export interface WorkInjuryCaseFormValues {
     workInjuryCertified?: boolean;
     monthlySalary?: string;
     appraisalLevel?: string;
+  appraisalEstimate?: string;
     existingEvidence?: string;
-    appraisalEstimate?: string;
     customerCooperative?: boolean;
     witnessCooperative?: boolean;
     remark?: string;
@@ -498,6 +609,8 @@ type BasicInfoFieldMeta =
         department: UserDepartment;
         defaultCaseCategory: CaseCategory;
         form: FormInstance<WorkInjuryCaseFormValues>;
+        dataSourceOptions?: Array<{ value: string; label: string }>;
+        dataSourceLoading?: boolean;
       }) => ReactNode;
       renderDisplay: (info: BasicInfoValues | undefined, defaultCaseCategory: CaseCategory) => ReactNode;
     }
@@ -511,14 +624,6 @@ const INSURANCE_ONLY_FIELDS: ReadonlySet<BasicInfoFieldKey> = new Set<BasicInfoF
   'clueDate',
   'contractDate',
   'contractForm',
-  'contractQuoteType',
-  'contractQuoteAmount',
-  'contractQuoteUpfront',
-  'contractQuoteRatio',
-  'contractQuoteOther',
-  'estimatedCollection',
-  'litigationFeeType',
-  'travelFeeType',
   'insuranceTypes',
   'insuranceMisrepresentations'
 ]);
@@ -543,28 +648,34 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
     renderDisplay: (info, _defaultCaseCategory) =>
       formatOptionLabel(CASE_LEVEL_LABEL_MAP, info?.caseLevel ?? null)
   },
-  provinceCity: {
+  province: {
     kind: 'field',
-    label: '省份/城市',
-    requiredMessage: '请输入案件省份/城市',
-    renderInput: () => <Input placeholder="请输入省份/城市" />,
-    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.provinceCity)
+    label: '省份',
+    requiredMessage: '请选择省份',
+    renderInput: () => (
+      <Select
+        showSearch
+        allowClear
+        placeholder="请选择省份"
+        optionFilterProp="label"
+        options={PROVINCE_SELECT_OPTIONS}
+      />
+    ),
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.province)
+  },
+  city: {
+    kind: 'field',
+    label: '城市',
+    requiredMessage: '请输入城市',
+    renderInput: () => <Input placeholder="请输入城市" />,
+    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.city)
   },
   targetAmount: {
     kind: 'field',
-    label: '标的额',
-    requiredMessage: '请输入标的额',
-    labelOverrides: {
-      insurance: '案件标的'
-    },
-    renderInput: () => <Input style={{ width: '100%' }} placeholder="请输入标的额" />,
+    label: '案件标的',
+    requiredMessage: '请输入案件标的',
+    renderInput: () => <Input style={{ width: '100%' }} placeholder="请输入案件标的" />,
     renderDisplay: (info, _defaultCaseCategory) => formatText(info?.targetAmount)
-  },
-  feeStandard: {
-    kind: 'field',
-    label: '收费标准',
-    renderInput: () => <Input placeholder="请输入收费标准" />,
-    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.feeStandard)
   },
   agencyFeeEstimate: {
     kind: 'field',
@@ -575,8 +686,17 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
   dataSource: {
     kind: 'field',
     label: '数据来源',
-    requiredMessage: '请输入数据来源',
-    renderInput: () => <Input placeholder="请输入数据来源" />,
+    requiredMessage: '请选择数据来源',
+    renderInput: ({ dataSourceOptions = [], dataSourceLoading }) => (
+      <Select
+        showSearch
+        allowClear
+        placeholder="请选择数据来源"
+        loading={dataSourceLoading}
+        optionFilterProp="label"
+        options={dataSourceOptions}
+      />
+    ),
     renderDisplay: (info, _defaultCaseCategory) => formatText(info?.dataSource)
   },
   entryDate: {
@@ -631,12 +751,6 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
     label: '劳动能力等级鉴定/人损等级',
     renderInput: () => <Input placeholder="请输入鉴定等级或填写无" />,
     renderDisplay: (info, _defaultCaseCategory) => formatText(info?.appraisalLevel)
-  },
-  appraisalEstimate: {
-    kind: 'field',
-    label: '劳动能力/人损等级预估',
-    renderInput: () => <Input placeholder="请输入预估等级" />,
-    renderDisplay: (info, _defaultCaseCategory) => formatText(info?.appraisalEstimate)
   },
   monthlySalary: {
     kind: 'field',
@@ -731,11 +845,13 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
         return null;
       }
       return (
-        <InputNumber
+        <InputNumber<number>
           style={{ width: '100%' }}
           min={0}
-          precision={2}
           placeholder="请输入收费金额"
+          step={1000}
+          formatter={moneyFormatter}
+          parser={moneyParser}
         />
       );
     },
@@ -751,7 +867,14 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
       if (!isRisk) {
         return null;
       }
-      return <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入前期收费金额" />;
+      return <InputNumber 
+        style={{ width: '100%' }} 
+        min={0} 
+        placeholder="请输入前期收费金额"
+        step={1000}
+        formatter={moneyFormatter}
+        parser={moneyParser}
+        />;
     },
     renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.contractQuoteUpfront ?? null)
   },
@@ -765,11 +888,13 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
       if (!isRisk) {
         return null;
       }
-      return <InputNumber
+      return <InputNumber<number>
         style={{ width: '100%' }}
         min={0}
         max={100}
-        precision={2}
+        step={10}
+        formatter={(value) => `${value}%`}
+        parser={(value) => value?.replace('%', '') as unknown as number}
         placeholder="请输入回款比例"
       />;
     },
@@ -795,7 +920,14 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
     label: '预计回款',
     requiredMessage: '请输入预计回款',
     renderInput: () => (
-      <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入预计回款" />
+      <InputNumber<number> 
+        style={{ width: '100%' }} 
+        step={1000} 
+        min={0} 
+        placeholder="请输入预计回款"
+        formatter={moneyFormatter}
+        parser={moneyParser}
+         />
     ),
     renderDisplay: (info, _defaultCaseCategory) => formatNumber(info?.estimatedCollection ?? null)
   },
@@ -836,9 +968,9 @@ const BASIC_INFO_FIELD_META: Record<BasicInfoFieldKey, BasicInfoFieldMeta> = {
   },
   insuranceMisrepresentations: {
     kind: 'field',
-    label: '未如实告知',
+    label: '拒赔理由',
     colSpan: 24,
-    requiredMessage: '请选择未如实告知类型',
+    requiredMessage: '请选择拒赔理由',
     renderInput: () => <Checkbox.Group options={INSURANCE_MISREPRESENTATION_OPTIONS} />,
     renderDisplay: (info, _defaultCaseCategory) =>
       formatStringList(info?.insuranceMisrepresentations ?? null)
@@ -895,20 +1027,38 @@ const shouldRenderBasicInfoField = (
   }
 };
 
-const resolveDescriptionSpan = (colSpan?: number): number => {
+const shouldDisplayContractQuoteField = (
+  fieldKey: BasicInfoFieldKey,
+  contractQuoteType: ContractQuoteType | null
+): boolean => {
+  switch (fieldKey) {
+    case 'contractQuoteAmount':
+      return contractQuoteType === 'fixed';
+    case 'contractQuoteUpfront':
+    case 'contractQuoteRatio':
+      return contractQuoteType === 'risk';
+    case 'contractQuoteOther':
+      return contractQuoteType === 'other';
+    default:
+      return true;
+  }
+};
+
+const resolveDescriptionSpan = (colSpan?: number, columnCount = 3): number => {
   if (!colSpan || colSpan <= 8) {
     return 1;
   }
   if (colSpan >= 24) {
-    return 3;
+    return Math.min(columnCount, columnCount >= 3 ? 3 : columnCount);
   }
-  return 2;
+  return Math.min(2, columnCount);
 };
 
 interface WorkInjuryCaseModalProps {
   department: UserDepartment;
   open: boolean;
   mode?: 'create' | 'view' | 'update';
+  caseId?: string;
   initialValues?: WorkInjuryCaseFormValues;
   initialActiveTab?: TabKey;
   allowEdit?: boolean;
@@ -950,6 +1100,7 @@ interface WorkInjuryCaseModalProps {
   ) => Promise<WorkInjuryCaseFormValues | void>;
   onLoadAssignableStaff?: () => Promise<AssignableStaffResponse>;
   onLoadChangeLogs?: () => Promise<CaseChangeLog[]>;
+  onChangeLogsUpdated?: (logs: CaseChangeLog[]) => void;
   canEditAssignments?: boolean;
   canUpdateStatus?: boolean;
   canAddHearings?: boolean;
@@ -1003,6 +1154,7 @@ export default function WorkInjuryCaseModal({
   department,
   open,
   mode = 'create',
+  caseId,
   initialValues,
   initialActiveTab,
   allowEdit = false,
@@ -1022,6 +1174,7 @@ export default function WorkInjuryCaseModal({
   onSaveTimeNodes,
   onLoadAssignableStaff,
   onLoadChangeLogs,
+  onChangeLogsUpdated,
   canEditAssignments = false,
   canUpdateStatus = false,
   canAddHearings = false,
@@ -1033,11 +1186,19 @@ export default function WorkInjuryCaseModal({
   visibleTabs,
   editableTabs
 }: WorkInjuryCaseModalProps) {
-  const initialTabKey = (visibleTabs && visibleTabs.length ? visibleTabs[0] : DEFAULT_VISIBLE_TABS[0]) ?? DEFAULT_ACTIVE_TAB;
-  const resolvedVisibleTabs = useMemo<WorkInjuryCaseTabKey[]>(
+  const baseVisibleTabs = useMemo<WorkInjuryCaseTabKey[]>(
     () => (visibleTabs && visibleTabs.length ? visibleTabs : DEFAULT_VISIBLE_TABS),
     [visibleTabs]
   );
+  const resolvedVisibleTabs = useMemo<WorkInjuryCaseTabKey[]>(() => {
+    if (mode !== 'create') {
+      return baseVisibleTabs;
+    }
+    const baseSet = new Set(baseVisibleTabs);
+    const orderedTabs = CREATE_MODE_VISIBLE_TABS.filter(tab => baseSet.has(tab));
+    return orderedTabs.length > 0 ? orderedTabs : baseVisibleTabs;
+  }, [baseVisibleTabs, mode]);
+  const initialTabKey = resolvedVisibleTabs[0] ?? DEFAULT_ACTIVE_TAB;
   const visibleTabsSet = useMemo(() => new Set(resolvedVisibleTabs), [resolvedVisibleTabs]);
   const resolvedEditableTabs = useMemo<WorkInjuryCaseTabKey[]>(
     () =>
@@ -1057,6 +1218,9 @@ export default function WorkInjuryCaseModal({
   const scopedTimeNodeOrderMap = useMemo(() => getCaseTimeNodeOrderMap(department), [department]);
 
   const sessionUser = useSessionStore(state => state.user);
+  const userRole = sessionUser?.role ?? null;
+  const currentUserId = sessionUser?.id ?? null;
+  const hasAdministrativePrivileges = Boolean(userRole && ADMIN_ROLE_SET.has(userRole));
   const { message } = App.useApp();
   const [form] = Form.useForm<WorkInjuryCaseFormValues>();
   const [assignmentForm] = Form.useForm<AssignStaffFormValues>();
@@ -1084,6 +1248,9 @@ export default function WorkInjuryCaseModal({
   const [changeLogs, setChangeLogs] = useState<CaseChangeLog[] | null>(null);
   const [changeLogsLoading, setChangeLogsLoading] = useState(false);
   const [changeLogsLoaded, setChangeLogsLoaded] = useState(false);
+  const [editingRemarkId, setEditingRemarkId] = useState<string | null>(null);
+  const [remarkDraft, setRemarkDraft] = useState('');
+  const [remarkSaving, setRemarkSaving] = useState(false);
 
   const markDirty = useCallback((section: string) => {
     setDirtySections(prev => {
@@ -1137,6 +1304,7 @@ export default function WorkInjuryCaseModal({
     [dirtySections]
   );
 
+  const isCreateMode = mode === 'create';
   const isUpdateMode = mode === 'update';
   const isEditable = !isViewMode;
   const isRestrictedEditor = sessionUser ? ['lawyer', 'assistant'].includes(sessionUser.role) : false;
@@ -1208,6 +1376,40 @@ export default function WorkInjuryCaseModal({
   }, [mode, initialValues, cachedDisplayValues]);
 
   const displayValues = cachedDisplayValues;
+
+  const extraDataSourceValues = useMemo(() => {
+    const value = `${displayValues.basicInfo?.dataSource ?? ''}`.trim();
+    return value ? [value] : undefined;
+  }, [displayValues.basicInfo?.dataSource]);
+
+  const extraTrialStages = useMemo(() => {
+    const records = displayValues.lawyerInfo?.hearingRecords ?? [];
+    if (!records.length) {
+      return undefined;
+    }
+    return records.map(record => record.trialStage ?? null);
+  }, [displayValues.lawyerInfo?.hearingRecords]);
+
+  const {
+    config: departmentMenuConfig,
+    loading: menuConfigLoading,
+    dataSources: resolvedDataSourceValues,
+    trialStages: resolvedTrialStageSequence
+  } = useDepartmentMenuOptions({
+    department,
+    autoFetch: open,
+    extras: {
+      dataSources: extraDataSourceValues,
+      trialStages: extraTrialStages
+    }
+  });
+
+  const dataSourceSelectOptions = useMemo(
+    () => resolvedDataSourceValues.map(value => ({ value, label: value })),
+    [resolvedDataSourceValues]
+  );
+
+  const isDataSourceOptionsLoading = menuConfigLoading && !departmentMenuConfig;
   const currentStatus = useMemo(
     () => (displayValues.adminInfo?.caseStatus ?? 'open') as CaseStatusValue,
     [displayValues.adminInfo?.caseStatus]
@@ -1218,18 +1420,6 @@ export default function WorkInjuryCaseModal({
     setPendingClosedReason(displayValues.adminInfo?.closedReason ?? null);
     setPendingVoidReason(displayValues.adminInfo?.voidReason ?? null);
   }, [currentStatus, displayValues.adminInfo?.closedReason, displayValues.adminInfo?.voidReason]);
-  const hearingRecords = useMemo(
-    () => sortHearings(displayValues.lawyerInfo?.hearingRecords ?? []),
-    [displayValues]
-  );
-  const availableTrialStages = useMemo(
-    () => resolveAvailableTrialStages(hearingRecords),
-    [hearingRecords]
-  );
-  const disabledTrialStages = useMemo(
-    () => resolveDisabledTrialStages(hearingRecords),
-    [hearingRecords]
-  );
   const assignedLawyerId = displayValues.adminInfo?.assignedLawyer ?? null;
   const assignedLawyerName = displayValues.adminInfo?.assignedLawyerName ?? null;
   const assignedAssistantId = displayValues.adminInfo?.assignedAssistant ?? null;
@@ -1305,13 +1495,49 @@ export default function WorkInjuryCaseModal({
   );
   const hearingStageOptions = useMemo(
     () =>
-      TRIAL_STAGE_SEQUENCE.map(stage => ({
+      resolvedTrialStageSequence.map(stage => ({
         value: stage,
-        label: TRIAL_STAGE_LABEL_MAP[stage],
-        disabled: disabledTrialStages.includes(stage)
+        label: TRIAL_STAGE_LABEL_MAP[stage]
       })),
-    [disabledTrialStages]
+    [resolvedTrialStageSequence]
   );
+
+  const stagePrefillLockRef = useRef(false);
+
+  const setHearingFormValues = useCallback(
+    (nextValues: HearingFormValues) => {
+      stagePrefillLockRef.current = true;
+      hearingForm.setFieldsValue(nextValues);
+    },
+    [hearingForm]
+  );
+
+  const hearingRecords = useMemo(
+    () => sortHearings(displayValues.lawyerInfo?.hearingRecords ?? [], resolvedTrialStageSequence),
+    [displayValues.lawyerInfo?.hearingRecords, resolvedTrialStageSequence]
+  );
+  const hearingStageRecordMap = useMemo(() => {
+    const map = new Map<TrialStage, CaseHearingRecord>();
+    hearingRecords.forEach(record => {
+      if (record.trialStage) {
+        map.set(record.trialStage, record);
+      }
+    });
+    return map;
+  }, [hearingRecords]);
+  const fallbackTrialLawyerId = useMemo(
+    () => displayValues.lawyerInfo?.trialLawyerId ?? displayValues.adminInfo?.assignedLawyer ?? null,
+    [displayValues.adminInfo?.assignedLawyer, displayValues.lawyerInfo?.trialLawyerId]
+  );
+  const selectedTrialStage = Form.useWatch('trialStage', hearingForm);
+  const isExistingStageSelected = useMemo(
+    () => Boolean(selectedTrialStage && hearingStageRecordMap.has(selectedTrialStage)),
+    [hearingStageRecordMap, selectedTrialStage]
+  );
+  const hearingActionText = isExistingStageSelected ? '更新庭审记录' : '新增庭审记录';
+  const hearingActionHint = isExistingStageSelected
+    ? '当前阶段已有记录，保存后将覆盖原有数据'
+    : '该阶段暂无记录，填写后保存即可新增庭审信息';
 
   const buildTimeNodeFormValues = useCallback(
     (nodes?: CaseTimeNodeRecord[]): TimeNodeFormValues => {
@@ -1345,26 +1571,21 @@ export default function WorkInjuryCaseModal({
         handlingFee: adminInfo.handlingFee ?? null
       });
 
-      const hearings = sortHearings(values.lawyerInfo?.hearingRecords ?? []);
-      const latestHearing = hearings.length ? hearings[hearings.length - 1] : null;
-      const availableStages = resolveAvailableTrialStages(hearings);
-      const defaultStage = availableStages.length ? availableStages[0] : null;
+  const hearings = sortHearings(values.lawyerInfo?.hearingRecords ?? [], resolvedTrialStageSequence);
+  const latestHearing = hearings.length ? hearings[hearings.length - 1] : null;
+  const defaultStage = latestHearing?.trialStage ?? resolvedTrialStageSequence[0] ?? null;
       const defaultTrialLawyerId =
         values.lawyerInfo?.trialLawyerId ??
         adminInfo.assignedLawyer ??
         null;
 
-      hearingForm.setFieldsValue({
-        trialLawyerId: defaultTrialLawyerId,
-        hearingTime: null,
-        hearingLocation: latestHearing?.hearingLocation ?? null,
-        tribunal: latestHearing?.tribunal ?? null,
-        judge: latestHearing?.judge ?? null,
-        caseNumber: null,
-        contactPhone: latestHearing?.contactPhone ?? null,
-        trialStage: defaultStage,
-        hearingResult: null
-      });
+      const defaultStageRecord = defaultStage
+        ? hearings.find(item => item.trialStage === defaultStage) ?? null
+        : null;
+      const nextHearingValues = defaultStageRecord
+        ? mapHearingRecordToFormValues(defaultStageRecord, defaultTrialLawyerId)
+        : buildEmptyHearingFormValues(defaultStage);
+      setHearingFormValues(nextHearingValues);
 
       followUpForm.setFieldsValue({
         occurredOn: dayjs(),
@@ -1387,7 +1608,7 @@ export default function WorkInjuryCaseModal({
       clearDirty('parties');
       clearDirty('timeNodes');
     },
-  [assignmentForm, buildTimeNodeFormValues, clearDirty, collectionForm, feeForm, followUpForm, form, hearingForm, timeNodeForm]
+  [assignmentForm, buildTimeNodeFormValues, clearDirty, collectionForm, feeForm, followUpForm, form, resolvedTrialStageSequence, setHearingFormValues, timeNodeForm]
   );
 
   const applyUpdatedValues = useCallback(
@@ -1431,10 +1652,20 @@ export default function WorkInjuryCaseModal({
   }, [open, isEditable, editableInitialValues, form, assignmentForm, hearingForm, followUpForm, collectionForm, feeForm, resetDirty]);
 
   useEffect(() => {
-    if (open) {
-      syncFormsFromValues(displayValues);
+    if (!open) {
+      return;
     }
-  }, [open, displayValues, syncFormsFromValues]);
+    // include isEditable so switching modes rehydrates detached forms like assignmentForm
+    syncFormsFromValues(displayValues);
+  }, [open, isEditable, displayValues, syncFormsFromValues]);
+
+  useEffect(() => {
+    if (!open) {
+      setEditingRemarkId(null);
+      setRemarkDraft('');
+      setRemarkSaving(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!isEditable) {
@@ -1456,6 +1687,49 @@ export default function WorkInjuryCaseModal({
     },
     [isEditable, markDirty]
   );
+
+  const handleHearingValuesChange = useCallback(
+    (changedValues: Partial<HearingFormValues>) => {
+      if (stagePrefillLockRef.current) {
+        stagePrefillLockRef.current = false;
+        return;
+      }
+      if ('trialStage' in changedValues) {
+        return;
+      }
+      markDirty('hearing');
+    },
+    [markDirty]
+  );
+
+  useEffect(() => {
+    if (!isEditable || !canAddHearings) {
+      return;
+    }
+    if (selectedTrialStage === undefined) {
+      return;
+    }
+    if (stagePrefillLockRef.current) {
+      stagePrefillLockRef.current = false;
+      return;
+    }
+    const resolvedStage = selectedTrialStage ?? null;
+    const stageRecord = resolvedStage ? hearingStageRecordMap.get(resolvedStage) ?? null : null;
+    const nextValues = stageRecord
+      ? mapHearingRecordToFormValues(stageRecord, fallbackTrialLawyerId)
+      : buildEmptyHearingFormValues(resolvedStage);
+    setHearingFormValues({
+      ...nextValues,
+      trialStage: resolvedStage
+    });
+  }, [
+    canAddHearings,
+    fallbackTrialLawyerId,
+    hearingStageRecordMap,
+    isEditable,
+    selectedTrialStage,
+    setHearingFormValues
+  ]);
 
   const promptReason = useCallback(
     <T extends string>(title: string, options: readonly T[], initialValue: T | null) =>
@@ -1643,6 +1917,35 @@ export default function WorkInjuryCaseModal({
     [hasTabChanges]
   );
 
+  const switchToViewMode = useCallback(() => {
+    form.resetFields();
+    form.setFieldsValue(cachedDisplayValues);
+    resetDirty();
+    syncFormsFromValues(cachedDisplayValues);
+    if (onRequestView) {
+      onRequestView();
+    } else {
+      onCancel();
+    }
+  }, [cachedDisplayValues, form, onCancel, onRequestView, resetDirty, syncFormsFromValues]);
+
+  const handleCancelButtonClick = useCallback(async () => {
+    if (!isEditable) {
+      onCancel();
+      return;
+    }
+
+    if (dirtySections.size === 0) {
+      switchToViewMode();
+      return;
+    }
+
+    const canLeave = await confirmDiscardChanges(activeTab);
+    if (canLeave) {
+      switchToViewMode();
+    }
+  }, [activeTab, confirmDiscardChanges, dirtySections, isEditable, onCancel, switchToViewMode]);
+
   const handleCancel = useCallback(async () => {
     if (isEditable) {
       if (dirtySections.size === 0) {
@@ -1659,18 +1962,15 @@ export default function WorkInjuryCaseModal({
         form.setFieldsValue(cachedDisplayValues);
         resetDirty();
         syncFormsFromValues(cachedDisplayValues);
-        if (onRequestView) {
-          onRequestView();
-        } else {
-          onCancel();
-        }
+        onCancel();
       }
-    } else {
-      form.resetFields();
-      syncFormsFromValues(cachedDisplayValues);
-      onCancel();
+      return;
     }
-  }, [activeTab, cachedDisplayValues, confirmDiscardChanges, dirtySections, form, isEditable, onCancel, onRequestView, resetDirty, syncFormsFromValues]);
+
+    form.resetFields();
+    syncFormsFromValues(cachedDisplayValues);
+    onCancel();
+  }, [activeTab, cachedDisplayValues, confirmDiscardChanges, dirtySections, form, isEditable, onCancel, resetDirty, syncFormsFromValues]);
 
   const handleBasicInfoReset = useCallback(() => {
     if (!canEditBasicInfo) {
@@ -1716,23 +2016,24 @@ export default function WorkInjuryCaseModal({
       return;
     }
 
-    const currentValues = hearingForm.getFieldsValue() as HearingFormValues;
     const defaultTrialLawyerId =
       displayValues.lawyerInfo?.trialLawyerId ?? displayValues.adminInfo?.assignedLawyer ?? null;
+    const hearings = sortHearings(
+      displayValues.lawyerInfo?.hearingRecords ?? [],
+      resolvedTrialStageSequence
+    );
+    const latestHearing = hearings.length ? hearings[hearings.length - 1] : null;
+    const defaultStage = latestHearing?.trialStage ?? resolvedTrialStageSequence[0] ?? null;
 
-    hearingForm.setFieldsValue({
-      trialLawyerId: currentValues.trialLawyerId ?? defaultTrialLawyerId ?? null,
-      hearingTime: null,
-      hearingLocation: null,
-      tribunal: null,
-      judge: null,
-      caseNumber: null,
-      contactPhone: null,
-      trialStage: currentValues.trialStage ?? null,
-      hearingResult: null
-    });
+    const defaultStageRecord = defaultStage
+      ? hearings.find(item => item.trialStage === defaultStage) ?? null
+      : null;
+    const nextValues = defaultStageRecord
+      ? mapHearingRecordToFormValues(defaultStageRecord, defaultTrialLawyerId)
+      : buildEmptyHearingFormValues(defaultStage);
+    setHearingFormValues(nextValues);
     clearDirty('hearing');
-  }, [clearDirty, displayValues, hearingForm, isEditable]);
+  }, [clearDirty, displayValues, isEditable, resolvedTrialStageSequence, setHearingFormValues]);
 
   const handleFollowUpReset = useCallback(() => {
     if (!isEditable) {
@@ -1795,62 +2096,83 @@ export default function WorkInjuryCaseModal({
     timeNodeForm
   ]);
 
-  const handleBasicInfoSave = useCallback(async () => {
-    if (!canEditBasicInfo) {
-      return;
-    }
-    try {
-      await form.validateFields(['basicInfo']);
-    } catch (error) {
-      if ((error as { errorFields?: unknown[] })?.errorFields) {
-        message.error('请完善基本信息');
+  const handleBasicInfoSave = useCallback(
+    async (options?: { includeParties?: boolean }) => {
+      if (!canEditBasicInfo) {
         return;
       }
-      throw error;
-    }
-    const basicValues = form.getFieldValue('basicInfo') as WorkInjuryCaseFormValues['basicInfo'];
-    const shouldUseGlobalSubmit = mode === 'create' || (!onSaveBasicInfo && onSubmit);
-
-    if (shouldUseGlobalSubmit) {
-      if (!onSubmit) {
-        return;
-      }
-      const allValues = form.getFieldsValue(true) as WorkInjuryCaseFormValues;
-      const maybeUpdated = await onSubmit(allValues);
-      if (maybeUpdated !== undefined) {
-        applyUpdatedValues(maybeUpdated);
-        if (isUpdateMode) {
-          message.success('基本信息已保存');
+      const includeParties = Boolean(options?.includeParties);
+      try {
+        await form.validateFields(includeParties ? ['basicInfo', 'parties'] : ['basicInfo']);
+      } catch (error) {
+        if ((error as { errorFields?: unknown[] })?.errorFields) {
+          message.error(includeParties ? '请完善基本信息及当事人信息' : '请完善基本信息');
+          return;
         }
+        throw error;
       }
-      return;
-    }
+      const basicValues = form.getFieldValue('basicInfo') as WorkInjuryCaseFormValues['basicInfo'];
+      const partiesValues = includeParties
+        ? (form.getFieldValue('parties') as WorkInjuryCaseFormValues['parties'])
+        : undefined;
+      const shouldUseGlobalSubmit =
+        mode === 'create' || ((!onSaveBasicInfo || (includeParties && !onSaveParties)) && onSubmit);
 
-    if (!onSaveBasicInfo) {
-      return;
-    }
-
-    setBasicInfoSaving(true);
-    try {
-      const maybeUpdated = await onSaveBasicInfo(basicValues ?? {});
-      if (maybeUpdated !== undefined) {
-        applyUpdatedValues(maybeUpdated);
+      if (shouldUseGlobalSubmit) {
+        if (!onSubmit) {
+          return;
+        }
+        const allValues = form.getFieldsValue(true) as WorkInjuryCaseFormValues;
+        const maybeUpdated = await onSubmit(allValues);
+        if (maybeUpdated !== undefined) {
+          applyUpdatedValues(maybeUpdated);
+          if (isUpdateMode) {
+            message.success('基本信息已保存');
+          }
+        }
+        return;
       }
-      clearDirty('basic');
-    } finally {
-      setBasicInfoSaving(false);
-    }
-  }, [
-    applyUpdatedValues,
-    canEditBasicInfo,
-    clearDirty,
-    form,
-    isUpdateMode,
-    message,
-    mode,
-    onSaveBasicInfo,
-    onSubmit
-  ]);
+
+      const shouldRunBasicInfoSave = Boolean(onSaveBasicInfo);
+      const shouldRunPartiesSave = includeParties && Boolean(onSaveParties);
+
+      if (!shouldRunBasicInfoSave && !shouldRunPartiesSave) {
+        return;
+      }
+
+      setBasicInfoSaving(true);
+      try {
+        if (shouldRunBasicInfoSave && onSaveBasicInfo) {
+          const maybeUpdated = await onSaveBasicInfo(basicValues ?? {});
+          if (maybeUpdated !== undefined) {
+            applyUpdatedValues(maybeUpdated);
+          }
+          clearDirty('basic');
+        }
+        if (shouldRunPartiesSave && onSaveParties) {
+          const maybeUpdated = await onSaveParties(partiesValues ?? {});
+          if (maybeUpdated !== undefined) {
+            applyUpdatedValues(maybeUpdated);
+          }
+          clearDirty('parties');
+        }
+      } finally {
+        setBasicInfoSaving(false);
+      }
+    },
+    [
+      applyUpdatedValues,
+      canEditBasicInfo,
+      clearDirty,
+      form,
+      isUpdateMode,
+      message,
+      mode,
+      onSaveBasicInfo,
+      onSaveParties,
+      onSubmit
+    ]
+  );
 
   const handlePartiesSave = useCallback(async () => {
     if (!isEditable) {
@@ -1912,11 +2234,6 @@ export default function WorkInjuryCaseModal({
 
   const canShowEditButton = Boolean(allowEdit && onRequestEdit && sessionUser);
 
-  const canShowCollectionSection = Boolean(
-    sessionUser &&
-    CASE_COLLECTION_ALLOWED_ROLES.has(sessionUser.role)
-  );
-
   const ensureAssignableStaff = useCallback(async (force = false) => {
     if (!onLoadAssignableStaff) {
       return;
@@ -1935,8 +2252,12 @@ export default function WorkInjuryCaseModal({
     }
   }, [assignableStaff, message, onLoadAssignableStaff]);
 
-  const loadChangeLogs = useCallback(async () => {
-    if (!onLoadChangeLogs || changeLogsLoaded) {
+  const loadChangeLogs = useCallback(async (options?: { force?: boolean }) => {
+    if (!onLoadChangeLogs) {
+      return;
+    }
+
+    if (changeLogsLoaded && !options?.force) {
       return;
     }
     setChangeLogsLoading(true);
@@ -1950,6 +2271,17 @@ export default function WorkInjuryCaseModal({
       setChangeLogsLoading(false);
     }
   }, [changeLogsLoaded, message, onLoadChangeLogs]);
+
+  useEffect(() => {
+    setEditingRemarkId(null);
+    setRemarkDraft('');
+    setRemarkSaving(false);
+    setChangeLogs(null);
+    setChangeLogsLoaded(false);
+    if (caseId) {
+      void loadChangeLogs({ force: true });
+    }
+  }, [caseId, loadChangeLogs]);
 
   useEffect(() => {
     if (!open) {
@@ -1980,8 +2312,16 @@ export default function WorkInjuryCaseModal({
     }
   }, [activeTab, ensureAssignableStaff, isEditable, loadChangeLogs, open]);
 
+  const assignmentEditable = hasAdministrativePrivileges && (isCreateMode ? editableTabsSet.has('staff') : canEditAssignments);
+  const collectionEditable = hasAdministrativePrivileges && (isCreateMode ? editableTabsSet.has('fees') : canAddCollections);
+  const feeEditable = hasAdministrativePrivileges && (isCreateMode ? editableTabsSet.has('fees') : canUpdateFees);
+
   const handleAssignmentSave = useCallback(async () => {
     if (!onSaveAssignment) {
+      return;
+    }
+    if (!assignmentEditable) {
+      message.error('您没有权限调整人员分配');
       return;
     }
     let values: AssignStaffFormValues;
@@ -2001,7 +2341,7 @@ export default function WorkInjuryCaseModal({
         assignedAssistantId: values.assignedAssistantId ?? null,
         assignedSaleId: values.assignedSaleId ?? null
       };
-      const updated = await onSaveAssignment(payload);
+  const updated = await onSaveAssignment(payload);
       if (updated !== undefined) {
         applyUpdatedValues(updated);
       }
@@ -2009,7 +2349,7 @@ export default function WorkInjuryCaseModal({
     } finally {
       setAssignmentSaving(false);
     }
-  }, [applyUpdatedValues, assignmentForm, clearDirty, message, onSaveAssignment]);
+  }, [applyUpdatedValues, assignmentEditable, assignmentForm, clearDirty, message, onSaveAssignment]);
 
   const handleHearingSave = useCallback(async () => {
     if (!onAddHearing) {
@@ -2084,6 +2424,10 @@ export default function WorkInjuryCaseModal({
     if (!onAddCollection) {
       return;
     }
+    if (!collectionEditable) {
+      message.error('您没有权限新增回款记录');
+      return;
+    }
     let values: CollectionFormValues;
     try {
       values = await collectionForm.validateFields();
@@ -2111,10 +2455,14 @@ export default function WorkInjuryCaseModal({
     } finally {
       setCollectionSaving(false);
     }
-  }, [applyUpdatedValues, clearDirty, collectionForm, message, onAddCollection]);
+  }, [applyUpdatedValues, clearDirty, collectionEditable, collectionForm, message, onAddCollection]);
 
   const handleFeeSave = useCallback(async () => {
     if (!onUpdateFees) {
+      return;
+    }
+    if (!feeEditable) {
+      message.error('您没有权限更新费用信息');
       return;
     }
     let values: FeeFormValues;
@@ -2140,7 +2488,7 @@ export default function WorkInjuryCaseModal({
     } finally {
       setFeeSaving(false);
     }
-  }, [applyUpdatedValues, clearDirty, feeForm, message, onUpdateFees]);
+  }, [applyUpdatedValues, clearDirty, feeEditable, feeForm, message, onUpdateFees]);
 
   const viewFooter = [
     <Button key="close" onClick={handleCancel}>
@@ -2306,6 +2654,7 @@ export default function WorkInjuryCaseModal({
   );
   const isInsuranceCase =
     (watchedCaseCategory ?? displayValues.basicInfo?.caseCategory ?? defaultCaseCategory) === 'insurance';
+  const shouldInlinePartySection = isInsuranceCase && visibleTabsSet.has('parties');
 
   useEffect(() => {
     const basicValues = (form.getFieldValue('basicInfo') ?? {}) as BasicInfoValues;
@@ -2354,6 +2703,12 @@ export default function WorkInjuryCaseModal({
     }
   }, [form, isInsuranceCase, watchedContractQuoteType]);
 
+  useEffect(() => {
+    if (shouldInlinePartySection && activeTab === 'parties') {
+      setActiveTab('basic');
+    }
+  }, [activeTab, shouldInlinePartySection]);
+
   const basicInfoElements: ReactNode[] = [];
 
   basicInfoLayout.forEach((row, rowIndex) => {
@@ -2394,7 +2749,13 @@ export default function WorkInjuryCaseModal({
         rules.push(...meta.extraRules);
       }
 
-      const formItem = meta.renderInput({ department, defaultCaseCategory, form });
+      const formItem = meta.renderInput({
+        department,
+        defaultCaseCategory,
+        form,
+        dataSourceOptions: dataSourceSelectOptions,
+        dataSourceLoading: isDataSourceOptionsLoading
+      });
 
       if (formItem != null) {
         fieldColumns.push(
@@ -2419,28 +2780,43 @@ export default function WorkInjuryCaseModal({
     }
   });
 
-  const basicInfoPane = <>{basicInfoElements}</>;
-
-  const personnelPane = (
-    <>
+  const renderPartiesForm = (options?: { showWrapperTitle?: boolean }) => (
+    <div className={styles.sectionList}>
+      {options?.showWrapperTitle ? <Typography.Title level={5}>当事人信息</Typography.Title> : null}
       <Typography.Title level={5}>当事人</Typography.Title>
       {renderPartyList('claimants', '当事人')}
       <Divider dashed />
       <Typography.Title level={5}>对方当事人</Typography.Title>
       {renderPartyList('respondents', '对方当事人')}
+    </div>
+  );
+
+  const basicInfoPane = (
+    <>
+      {basicInfoElements}
+      {shouldInlinePartySection ? (
+        <>
+          <Divider dashed />
+          {renderPartiesForm({ showWrapperTitle: true })}
+        </>
+      ) : null}
     </>
   );
+
+  const personnelPane = renderPartiesForm();
+
+  const canOperateAssignmentForm = assignmentEditable && (isCreateMode || Boolean(onSaveAssignment));
 
   const staffEditPane = (
     <div className={styles.sectionList}>
       <Typography.Title level={5}>人员分配</Typography.Title>
-      {onSaveAssignment ? (
+      {canOperateAssignmentForm ? (
         <Spin spinning={assignableStaffLoading}>
           <Form
             form={assignmentForm}
             layout="vertical"
             component={false}
-            disabled={!canEditAssignments}
+            disabled={!assignmentEditable}
             onValuesChange={() => markDirty('assignment')}
           >
             <Row gutter={16}>
@@ -2457,7 +2833,7 @@ export default function WorkInjuryCaseModal({
                     showSearch
                     optionFilterProp="label"
                     loading={assignableStaffLoading}
-                    disabled={!canEditAssignments}
+                    disabled={!assignmentEditable}
                   />
                 </Form.Item>
               </Col>
@@ -2474,7 +2850,7 @@ export default function WorkInjuryCaseModal({
                     showSearch
                     optionFilterProp="label"
                     loading={assignableStaffLoading}
-                    disabled={!canEditAssignments}
+                    disabled={!assignmentEditable}
                   />
                 </Form.Item>
               </Col>
@@ -2487,7 +2863,7 @@ export default function WorkInjuryCaseModal({
                     showSearch
                     optionFilterProp="label"
                     loading={assignableStaffLoading}
-                    disabled={!canEditAssignments}
+                    disabled={!assignmentEditable}
                   />
                 </Form.Item>
               </Col>
@@ -2505,25 +2881,19 @@ export default function WorkInjuryCaseModal({
     </div>
   );
 
-  const canAddMoreHearings = availableTrialStages.length > 0;
   const canShowHearingForm = Boolean(onAddHearing && canAddHearings);
 
   const hearingEditPane = (
     <div className={styles.sectionList}>
       {canShowHearingForm ? (
         <>
-          <Typography.Title level={5}>新增庭审记录</Typography.Title>
-          {!canAddMoreHearings ? (
-            <Typography.Text type="secondary" className={styles.emptyHint}>
-              所有审理阶段均已记录或前序阶段未完成，暂无法新增新的庭审记录。
-            </Typography.Text>
-          ) : null}
+          <Typography.Title level={5}>{hearingActionText}</Typography.Title>
           <Form
             form={hearingForm}
             layout="vertical"
             component={false}
-            disabled={!canAddHearings || !canAddMoreHearings}
-            onValuesChange={() => markDirty('hearing')}
+            disabled={!canAddHearings}
+            onValuesChange={handleHearingValuesChange}
           >
             <Row gutter={16}>
               <Col span={12}>
@@ -2538,7 +2908,7 @@ export default function WorkInjuryCaseModal({
                     allowClear
                     showSearch
                     optionFilterProp="label"
-                    disabled={!canAddHearings || !canAddMoreHearings}
+                    disabled={!canAddHearings}
                   />
                 </Form.Item>
               </Col>
@@ -2551,9 +2921,14 @@ export default function WorkInjuryCaseModal({
                   <Select
                     placeholder="请选择审理阶段"
                     options={hearingStageOptions}
-                    disabled={!canAddHearings || !canAddMoreHearings}
+                    disabled={!canAddHearings}
                   />
                 </Form.Item>
+              </Col>
+              <Col span={24}>
+                <Typography.Text type={isExistingStageSelected ? 'warning' : 'secondary'}>
+                  {hearingActionHint}
+                </Typography.Text>
               </Col>
               <Col span={12}>
                 <Form.Item label="庭审时间" name="hearingTime">
@@ -2562,37 +2937,38 @@ export default function WorkInjuryCaseModal({
                     style={{ width: '100%' }}
                     placeholder="请选择庭审时间"
                     format="YYYY-MM-DD HH:mm"
+                    disabled={!canAddHearings}
                   />
                 </Form.Item>
               </Col>
               <Col span={12}>
                 <Form.Item label="法院" name="hearingLocation">
-                  <Input placeholder="请输入法院" />
+                  <Input placeholder="请输入法院" disabled={!canAddHearings} />
                 </Form.Item>
               </Col>
               <Col span={12}>
                 <Form.Item label="判庭" name="tribunal">
-                  <Input placeholder="请输入判庭" />
+                  <Input placeholder="请输入判庭" disabled={!canAddHearings} />
                 </Form.Item>
               </Col>
               <Col span={12}>
                 <Form.Item label="主审法官" name="judge">
-                  <Input placeholder="请输入主审法官" />
+                  <Input placeholder="请输入主审法官" disabled={!canAddHearings} />
                 </Form.Item>
               </Col>
               <Col span={12}>
                 <Form.Item label="联系电话" name="contactPhone">
-                  <Input placeholder="请输入联系电话" />
+                  <Input placeholder="请输入联系电话" disabled={!canAddHearings} />
                 </Form.Item>
               </Col>
               <Col span={12}>
                 <Form.Item label="案号" name="caseNumber">
-                  <Input placeholder="请输入案号" />
+                  <Input placeholder="请输入案号" disabled={!canAddHearings} />
                 </Form.Item>
               </Col>
               <Col span={24}>
                 <Form.Item label="庭审结果" name="hearingResult">
-                  <TextArea rows={3} placeholder="请输入庭审结果" />
+                  <TextArea rows={3} placeholder="请输入庭审结果" disabled={!canAddHearings} />
                 </Form.Item>
               </Col>
             </Row>
@@ -2700,6 +3076,7 @@ export default function WorkInjuryCaseModal({
     const caseCategory = (info.caseCategory ?? defaultCaseCategory) as CaseCategory;
     const isInsuranceCase = caseCategory === 'insurance';
   const contractQuoteType = (info.contractQuoteType ?? null) as ContractQuoteType | null;
+    const BASIC_INFO_DISPLAY_COLUMNS = 2;
     const sections: ReactNode[] = [];
     let currentItems: ReactNode[] = [];
     const commitItems = () => {
@@ -2711,7 +3088,7 @@ export default function WorkInjuryCaseModal({
           key={`basic-desc-${sections.length}`}
           bordered
           size="small"
-          column={3}
+          column={BASIC_INFO_DISPLAY_COLUMNS}
           className={styles.descriptions}
         >
           {currentItems}
@@ -2733,6 +3110,10 @@ export default function WorkInjuryCaseModal({
         ) {
           return;
         }
+
+        if (!shouldDisplayContractQuoteField(fieldKey, contractQuoteType)) {
+          return;
+        }
         const meta = BASIC_INFO_FIELD_META[fieldKey];
         const elementKey = `${fieldKey}-${rowIndex}-${columnIndex}`;
 
@@ -2752,7 +3133,7 @@ export default function WorkInjuryCaseModal({
           <Descriptions.Item
             key={`basic-display-${elementKey}`}
             label={itemLabel}
-            span={resolveDescriptionSpan(meta.colSpan)}
+            span={resolveDescriptionSpan(meta.colSpan, BASIC_INFO_DISPLAY_COLUMNS)}
           >
             {meta.renderDisplay(info, defaultCaseCategory)}
           </Descriptions.Item>
@@ -2966,23 +3347,11 @@ export default function WorkInjuryCaseModal({
 
   const renderAssignmentDisplay = (values: WorkInjuryCaseFormValues) => {
     const adminInfo = values.adminInfo ?? {};
-    const collections = adminInfo.collections ?? [];
     const assignedLawyerDisplay =
       adminInfo.assignedLawyerName ?? adminInfo.assignedLawyer ?? values.lawyerInfo?.trialLawyerName ?? null;
     const assignedAssistantDisplay =
       adminInfo.assignedAssistantName ?? adminInfo.assignedAssistant ?? null;
     const salesDisplay = adminInfo.assignedSaleName ?? adminInfo.assignedSaleId ?? null;
-
-    const collectionItems = collections.map((item, index) => ({
-      key: `collection-${index}`,
-      color: 'blue',
-      children: (
-        <div>
-          <Typography.Text strong>{formatDate(item.date ?? null)}</Typography.Text>
-          <div>回款金额：{formatCurrency(item.amount ?? null)}</div>
-        </div>
-      )
-    }));
 
     return (
       <div className={styles.sectionList}>
@@ -2994,19 +3363,6 @@ export default function WorkInjuryCaseModal({
           <Descriptions.Item label="结案原因">{formatText(adminInfo.closedReason)}</Descriptions.Item>
           <Descriptions.Item label="退单原因">{formatText(adminInfo.voidReason)}</Descriptions.Item>
         </Descriptions>
-        {
-          canShowCollectionSection ? 
-            <>
-              <Divider dashed>回款记录</Divider>
-              {collectionItems.length ? (
-                <Timeline items={collectionItems} />
-        ) : (
-          <Typography.Text type="secondary" className={styles.emptyHint}>
-            暂无回款记录
-          </Typography.Text>
-        )}
-            </> : null
-        }
       </div>
     );
   };
@@ -3056,70 +3412,299 @@ export default function WorkInjuryCaseModal({
     );
   }
 
-  const renderChangeLogDisplay = (logs?: CaseChangeLog[] | null, loading = false) => {
-    if (loading) {
-      return <Skeleton active paragraph={{ rows: 4 }} />;
+  const buildChangeContentBlock = useCallback((log: CaseChangeLog): ChangeContentBlock => {
+    const items = log.changeList?.length
+      ? log.changeList
+      : [
+          {
+            id: log.id,
+            action: log.action,
+            field: null,
+            fieldLabel: null,
+            previousValue: null,
+            currentValue: null
+          }
+        ];
+
+    const lines: ChangeContentLine[] = items.map((item, index) => {
+      const label =
+        item.fieldLabel ??
+        CHANGE_ACTION_LABEL_MAP[item.action] ??
+        CHANGE_ACTION_LABEL_MAP[log.action] ??
+        item.action ??
+        log.action ??
+        '—';
+      const normalizedPrevious = normalizeChangeLogValue(item.previousValue);
+      const normalizedCurrent = normalizeChangeLogValue(item.currentValue);
+      const changeType = getChangeLineType(normalizedPrevious, normalizedCurrent);
+
+      return {
+        key: item.id ?? `${log.id}-change-${index}`,
+        label,
+        changeType,
+        previousText: formatChangeLogValue(normalizedPrevious),
+        currentText: formatChangeLogValue(normalizedCurrent),
+        showValues: changeType !== 'info'
+      };
+    });
+
+    return {
+      title: resolveChangeLogTitle(log),
+      lines
+    };
+  }, []);
+
+  const canEditChangeLogRemark = useCallback(
+    (log: CaseChangeLog) => {
+      if (!caseId) {
+        return false;
+      }
+      if (currentUserId && log.actorId && log.actorId === currentUserId) {
+        return true;
+      }
+      return Boolean(userRole && ADMIN_ROLE_SET.has(userRole));
+    },
+    [caseId, currentUserId, userRole]
+  );
+
+  const handleRemarkEditStart = useCallback((log: CaseChangeLog) => {
+    setEditingRemarkId(log.id);
+    setRemarkDraft(log.remark ?? '');
+  }, []);
+
+  const handleRemarkCancel = useCallback(() => {
+    setEditingRemarkId(null);
+    setRemarkDraft('');
+    setRemarkSaving(false);
+  }, []);
+
+  const handleRemarkSave = useCallback(async () => {
+    if (!caseId || !editingRemarkId) {
+      message.warning('请选择要更新的变更记录');
+      return;
     }
-    if (!logs || logs.length === 0) {
-      return (
-        <Typography.Text type="secondary" className={styles.emptyHint}>
-          暂无变更记录
-        </Typography.Text>
+
+    setRemarkSaving(true);
+    try {
+      const trimmed = remarkDraft.trim();
+      const updated = await updateCaseChangeLogRemark(
+        caseId,
+        editingRemarkId,
+        trimmed.length > 0 ? trimmed : null
       );
+
+      setChangeLogs(prev => {
+        if (!prev) {
+          const fallback = [updated];
+          onChangeLogsUpdated?.(fallback);
+          return fallback;
+        }
+        const next = prev.map(log => (log.id === updated.id ? updated : log));
+        onChangeLogsUpdated?.(next);
+        return next;
+      });
+
+      message.success('变更备注已更新');
+      setEditingRemarkId(null);
+      setRemarkDraft('');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '更新变更备注失败，请稍后重试';
+      message.error(errorMessage);
+    } finally {
+      setRemarkSaving(false);
     }
-    return (
-      <div className={styles.sectionList}>
-        {logs.map((log, index) => {
+  }, [caseId, editingRemarkId, message, onChangeLogsUpdated, remarkDraft]);
+
+  const renderRemarkCell = useCallback(
+    (log: CaseChangeLog) => {
+      const editable = canEditChangeLogRemark(log);
+      const isEditing = editingRemarkId === log.id;
+      const remarkText = log.remark?.trim() ?? '';
+      const isSavingCurrent = remarkSaving && editingRemarkId === log.id;
+      const canStartEditing = editable && (!editingRemarkId || editingRemarkId === log.id);
+
+      if (isEditing) {
+        return (
+          <div className={styles.remarkEditor}>
+            <TextArea
+              value={remarkDraft}
+              onChange={event => setRemarkDraft(event.target.value)}
+              autoSize={{ minRows: 2, maxRows: 4 }}
+              maxLength={500}
+              placeholder="请输入备注"
+            />
+            <Space size="small" className={styles.remarkActions}>
+              <Button
+                type="primary"
+                size="small"
+                loading={isSavingCurrent}
+                onClick={() => void handleRemarkSave()}
+              >
+                保存
+              </Button>
+              <Button size="small" disabled={isSavingCurrent} onClick={handleRemarkCancel}>
+                取消
+              </Button>
+            </Space>
+          </div>
+        );
+      }
+
+      return (
+        <div className={styles.remarkDisplay}>
+          <div className={styles.remarkTextRow}>
+            <Typography.Paragraph className={styles.remarkText}>
+              {remarkText.length > 0 ? remarkText : '—'}
+            </Typography.Paragraph>
+            {canStartEditing ? (
+              <Tooltip title={remarkText.length > 0 ? '编辑备注' : '填写备注'}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined />}
+                  className={styles.remarkIconButton}
+                  onClick={() => handleRemarkEditStart(log)}
+                  aria-label={remarkText.length > 0 ? '编辑备注' : '填写备注'}
+                />
+              </Tooltip>
+            ) : null}
+          </div>
+        </div>
+      );
+    },
+    [canEditChangeLogRemark, editingRemarkId, handleRemarkCancel, handleRemarkEditStart, handleRemarkSave, remarkDraft, remarkSaving]
+  );
+
+  const changeLogColumns = useMemo<ColumnsType<CaseChangeLog>>(
+    () => [
+      {
+        title: '变更人',
+        dataIndex: 'actorName',
+        key: 'actor',
+        width: 200,
+        render: (_value, log) => {
           const actorRole = (log.actorRole ?? '') as UserRole;
           const roleLabel = ROLE_LABEL_MAP[actorRole];
-          const actorLabel = log.actorName
-            ? roleLabel
-              ? `${log.actorName}（${roleLabel}）`
-              : log.actorName
-            : '系统';
-          const timestamp = log.createdAt ? formatDate(log.createdAt, 'YYYY-MM-DD HH:mm') : '—';
+          const actorLabel = log.actorName ?? '系统';
           return (
-            <div key={log.id} style={{ marginBottom: index < logs.length - 1 ? 16 : 0 }}>
-              <Typography.Paragraph strong style={{ marginBottom: 4 }}>
-                {log.description ?? log.action ?? '变更记录'}
-              </Typography.Paragraph>
-              <Typography.Paragraph type="secondary" style={{ marginBottom: log.changes?.length ? 8 : 0 }}>
-                {actorLabel} · {timestamp}
-              </Typography.Paragraph>
-              {log.changes?.length ? (
-                <div>
-                  {log.changes.map(change => (
-                    <Typography.Paragraph key={change.field} style={{ marginBottom: 0 }}>
-                      <Typography.Text strong>{change.label}：</Typography.Text>
-                      <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
-                        {(change.previousValue ?? '—')} → {(change.currentValue ?? '—')}
-                      </Typography.Text>
-                    </Typography.Paragraph>
-                  ))}
-                </div>
-              ) : null}
-              {index < logs.length - 1 ? <Divider dashed /> : null}
+            <div className={styles.changeLogActorCell}>
+              <Typography.Text strong>{actorLabel}</Typography.Text>
+              {roleLabel ? <Tag color="blue">{roleLabel}</Tag> : null}
             </div>
           );
-        })}
-      </div>
-    );
-  };
+        }
+      },
+      {
+        title: '变更内容',
+        dataIndex: 'changeList',
+        key: 'content',
+        render: (_value, log) => {
+          const { title, lines } = buildChangeContentBlock(log);
+          return (
+            <div className={styles.changeEntry}>
+              <Typography.Text strong className={styles.changeEntryTitle}>
+                {title}
+              </Typography.Text>
+              <ul className={styles.changeContentList}>
+                {lines.map(line => {
+                  const colorPreset = CHANGE_VALUE_TAG_COLOR_MAP[line.changeType];
+                  return (
+                    <li key={line.key} className={styles.changeLine}>
+                      <div className={styles.changeLineBody}>
+                        <Typography.Text className={styles.changeLineLabel}>{line.label}</Typography.Text>
+                        {line.showValues ? (
+                          <>
+                            <span className={styles.changeLineColon}>：</span>
+                            <div className={styles.changeValueFlow}>
+                              <Tag
+                                bordered={false}
+                                color={colorPreset.previous}
+                                className={styles.changeValueTag}
+                              >
+                                {line.previousText}
+                              </Tag>
+                              <ArrowRightOutlined className={styles.changeArrow} />
+                              <Tag
+                                bordered={false}
+                                color={colorPreset.current}
+                                className={styles.changeValueTag}
+                              >
+                                {line.currentText}
+                              </Tag>
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                      {!line.showValues ? (
+                        <Typography.Text type="secondary" className={styles.changeInfoText}>
+                          {line.currentText}
+                        </Typography.Text>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        }
+      },
+      {
+        title: '变更时间',
+        dataIndex: 'createdAt',
+        key: 'createdAt',
+        width: 200,
+        render: (_value, log) => formatDate(log.createdAt, 'YYYY-MM-DD HH:mm')
+      },
+      {
+        title: '变更备注',
+        dataIndex: 'remark',
+        key: 'remark',
+        width: 280,
+        render: (_value, log) => renderRemarkCell(log)
+      }
+    ],
+    [buildChangeContentBlock, renderRemarkCell]
+  );
 
-  const changeLogEditPane = canViewChangeLogs ? (
-    <div className={styles.sectionList}>
-      <Space size="middle" wrap style={{ marginBottom: 16 }}>
-        <Button onClick={() => void loadChangeLogs()} loading={changeLogsLoading}>
-          刷新变更记录
-        </Button>
-      </Space>
-      {renderChangeLogDisplay(changeLogs, changeLogsLoading)}
-    </div>
+  const changeLogTable = (
+    <Table
+      rowKey="id"
+      columns={changeLogColumns}
+      dataSource={changeLogs ?? []}
+      size="small"
+      loading={changeLogsLoading}
+      pagination={false}
+      scroll={{ x: 960 }}
+      locale={{
+        emptyText: (
+          <Typography.Text type="secondary" className={styles.emptyHint}>
+            暂无变更记录
+          </Typography.Text>
+        )
+      }}
+    />
+  );
+
+  const changeLogReadOnlyPane = canViewChangeLogs ? (
+    changeLogTable
   ) : (
     <Typography.Text type="secondary" className={styles.emptyHint}>
       暂无权限查看变更记录
     </Typography.Text>
   );
+
+  const changeLogEditPane = canViewChangeLogs
+    ? (
+      <div className={styles.sectionList}>
+        <Space size="middle" wrap style={{ marginBottom: 16 }}>
+          <Button onClick={() => void loadChangeLogs({ force: true })} loading={changeLogsLoading}>
+            刷新变更记录
+          </Button>
+        </Space>
+        {changeLogTable}
+      </div>
+    )
+    : changeLogReadOnlyPane;
 
   const renderFeeDisplay = (values: WorkInjuryCaseFormValues) => {
     const collections = values.adminInfo?.collections ?? [];
@@ -3165,74 +3750,96 @@ export default function WorkInjuryCaseModal({
     );
   };
 
+  const canSubmitCollectionForm = Boolean(onAddCollection && collectionEditable && !isCreateMode);
+  const shouldRenderCollectionEditor = canSubmitCollectionForm || (isCreateMode && collectionEditable);
+  const canSubmitFeeForm = Boolean(onUpdateFees && feeEditable && !isCreateMode);
+  const shouldRenderFeeEditor = canSubmitFeeForm || (isCreateMode && feeEditable);
+
   const feesEditPane = (
     <div className={styles.sectionList}>
-      {onAddCollection ? (
+      {shouldRenderCollectionEditor ? (
         <>
           <Typography.Title level={5}>新增回款记录</Typography.Title>
-          <Form
-            form={collectionForm}
-            layout="vertical"
-            component={false}
-            disabled={!canAddCollections}
-            onValuesChange={() => markDirty('collection')}
-          >
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item
-                  label="回款金额"
-                  name="amount"
-                  rules={[{ required: true, message: '请输入回款金额' }]}
+          {canSubmitCollectionForm ? (
+            <Form
+              form={collectionForm}
+              layout="vertical"
+              component={false}
+              disabled={!collectionEditable}
+              onValuesChange={() => markDirty('collection')}
+            >
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="回款金额"
+                    name="amount"
+                    rules={[{ required: true, message: '请输入回款金额' }]}
+                  >
+                    <InputNumber
+                      min={0.01}
+                      precision={2}
+                      style={{ width: '100%' }}
+                      placeholder="请输入回款金额"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    label="回款日期"
+                    name="receivedAt"
+                    rules={[{ required: true, message: '请选择回款日期' }]}
+                  >
+                    <DatePicker style={{ width: '100%' }} placeholder="请选择回款日期" format="YYYY-MM-DD" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Space size="middle" wrap>
+                <Button
+                  onClick={() => syncFormsFromValues(displayValues)}
+                  disabled={collectionSaving || !collectionEditable}
                 >
-                  <InputNumber
-                    min={0.01}
-                    precision={2}
-                    style={{ width: '100%' }}
-                    placeholder="请输入回款金额"
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  label="回款日期"
-                  name="receivedAt"
-                  rules={[{ required: true, message: '请选择回款日期' }]}
+                  重置
+                </Button>
+                <Button
+                  type="primary"
+                  onClick={() => void handleCollectionSave()}
+                  loading={collectionSaving}
+                  disabled={!collectionEditable}
                 >
-                  <DatePicker style={{ width: '100%' }} placeholder="请选择回款日期" format="YYYY-MM-DD" />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Space size="middle" wrap>
-              <Button onClick={() => syncFormsFromValues(displayValues)} disabled={collectionSaving}>
-                重置
-              </Button>
-              <Button
-                type="primary"
-                onClick={() => void handleCollectionSave()}
-                loading={collectionSaving}
-                disabled={!canAddCollections}
-              >
-                保存回款记录
-              </Button>
-            </Space>
-          </Form>
+                  保存回款记录
+                </Button>
+              </Space>
+            </Form>
+          ) : (
+            <>
+              <Form form={collectionForm} component={false} />
+              <Typography.Text type="secondary" className={styles.emptyHint}>
+                保存案件后即可维护回款记录
+              </Typography.Text>
+            </>
+          )}
           <Divider dashed />
         </>
       ) : (
-        <Form form={collectionForm} component={false} />
+        <>
+          <Form form={collectionForm} component={false} />
+          <Typography.Text type="secondary" className={styles.emptyHint}>
+            暂无权限新增回款记录
+          </Typography.Text>
+        </>
       )}
       <Typography.Title level={5}>费用信息</Typography.Title>
-      {onUpdateFees ? (
+      {shouldRenderFeeEditor ? (
         <Form
           form={feeForm}
           layout="vertical"
           component={false}
-          disabled={!canUpdateFees}
+          disabled={!feeEditable}
           onValuesChange={() => markDirty('fee')}
         >
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="提成" name="salesCommission">
+              <Form.Item label="销售提成" name="salesCommission">
                 <Input placeholder="请输入销售提成" allowClear />
               </Form.Item>
             </Col>
@@ -3242,19 +3849,28 @@ export default function WorkInjuryCaseModal({
               </Form.Item>
             </Col>
           </Row>
-          <Space size="middle" wrap>
-            <Button onClick={() => syncFormsFromValues(displayValues)} disabled={feeSaving}>
-              重置
-            </Button>
-            <Button
-              type="primary"
-              onClick={() => void handleFeeSave()}
-              loading={feeSaving}
-              disabled={!canUpdateFees}
-            >
-              保存费用信息
-            </Button>
-          </Space>
+          {canSubmitFeeForm ? (
+            <Space size="middle" wrap>
+              <Button
+                onClick={() => syncFormsFromValues(displayValues)}
+                disabled={feeSaving || !feeEditable}
+              >
+                重置
+              </Button>
+              <Button
+                type="primary"
+                onClick={() => void handleFeeSave()}
+                loading={feeSaving}
+                disabled={!feeEditable}
+              >
+                保存费用信息
+              </Button>
+            </Space>
+          ) : (
+            <Typography.Text type="secondary" className={styles.emptyHint}>
+              费用信息将随案件一起保存
+            </Typography.Text>
+          )}
         </Form>
       ) : (
         <>
@@ -3270,16 +3886,16 @@ export default function WorkInjuryCaseModal({
 
 
   const canViewHearingTab = visibleTabsSet.has('hearing') && sessionUser?.role !== 'sale';
-  const canViewStaffTab =
-    visibleTabsSet.has('staff') && sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant';
-  const canViewFeesTab =
-    visibleTabsSet.has('fees') && sessionUser?.role !== 'sale' && sessionUser?.role !== 'lawyer' && sessionUser?.role !== 'assistant';
+  const canViewStaffTab = visibleTabsSet.has('staff');
+  const canViewFeesTab = visibleTabsSet.has('fees') && hasAdministrativePrivileges;
 
-  const shouldRenderAssignmentHiddenForm = !isEditable || !canViewStaffTab;
+  const shouldRenderAssignmentHiddenForm = !isEditable || !canViewStaffTab || !assignmentEditable;
   const shouldRenderHearingHiddenForm = !isEditable || !canViewHearingTab;
   const shouldRenderFeesHiddenForm = !isEditable || !canViewFeesTab;
 
   type TabItem = NonNullable<TabsProps['items']>[number];
+
+  const shouldShowSeparatePartiesTab = visibleTabsSet.has('parties') && !shouldInlinePartySection;
 
   const tabItems: TabItem[] = (() => {
     const items: TabItem[] = [];
@@ -3288,11 +3904,23 @@ export default function WorkInjuryCaseModal({
       items.push({
         key: 'basic',
         label: buildTabLabel('basic'),
-        children: canEditBasicInfo ? basicInfoPane : renderBasicInfoDisplay(displayValues)
+        children: canEditBasicInfo
+          ? basicInfoPane
+          : (
+            <>
+              {renderBasicInfoDisplay(displayValues)}
+              {shouldInlinePartySection ? (
+                <>
+                  <Divider dashed />
+                  {renderPartyDisplay(displayValues)}
+                </>
+              ) : null}
+            </>
+            )
       });
     }
 
-    if (visibleTabsSet.has('parties')) {
+    if (shouldShowSeparatePartiesTab) {
       items.push({
         key: 'parties',
         label: buildTabLabel('parties'),
@@ -3312,7 +3940,15 @@ export default function WorkInjuryCaseModal({
       items.push({
         key: 'staff',
         label: buildTabLabel('staff'),
-        children: isEditable ? staffEditPane : renderAssignmentDisplay(displayValues)
+        children: isEditable && assignmentEditable ? staffEditPane : renderAssignmentDisplay(displayValues)
+      });
+    }
+
+    if (canViewFeesTab) {
+      items.push({
+        key: 'fees',
+        label: buildTabLabel('fees'),
+        children: isEditable ? feesEditPane : renderFeeDisplay(displayValues)
       });
     }
 
@@ -3336,15 +3972,7 @@ export default function WorkInjuryCaseModal({
       items.push({
         key: 'changeLog',
         label: buildTabLabel('changeLog'),
-        children: isEditable ? changeLogEditPane : renderChangeLogDisplay(changeLogs, changeLogsLoading)
-      });
-    }
-
-    if (canViewFeesTab) {
-      items.push({
-        key: 'fees',
-        label: buildTabLabel('fees'),
-        children: isEditable ? feesEditPane : renderFeeDisplay(displayValues)
+        children: isEditable ? changeLogEditPane : changeLogReadOnlyPane
       });
     }
 
@@ -3367,18 +3995,25 @@ export default function WorkInjuryCaseModal({
   const editableFooter = useMemo<ReactNode[]>(
     () => {
       const buttons: ReactNode[] = [
-        <Button key="cancel" onClick={handleCancel} disabled={Boolean(confirmLoading)}>
+        <Button key="cancel" onClick={handleCancelButtonClick} disabled={Boolean(confirmLoading)}>
           取消
         </Button>
       ];
 
       if (activeTab === 'basic' && canEditBasicInfo && (onSubmit || onSaveBasicInfo)) {
-        const basicDirty = hasTabChanges('basic');
+        const basicDirty = shouldInlinePartySection
+          ? hasTabChanges('basic') || hasTabChanges('parties')
+          : hasTabChanges('basic');
         const basicSavingState = mode === 'create' ? mainFormSaving : basicInfoSaving;
         buttons.push(
           <Button
             key="basic-reset"
-            onClick={handleBasicInfoReset}
+            onClick={() => {
+              handleBasicInfoReset();
+              if (shouldInlinePartySection) {
+                handlePartiesReset();
+              }
+            }}
             disabled={basicSavingState || !basicDirty}
           >
             重置
@@ -3386,7 +4021,7 @@ export default function WorkInjuryCaseModal({
           <Button
             key="basic-save"
             type="primary"
-            onClick={() => void handleBasicInfoSave()}
+            onClick={() => void handleBasicInfoSave({ includeParties: shouldInlinePartySection })}
             loading={basicSavingState}
             disabled={!canEditBasicInfo || !basicDirty}
           >
@@ -3418,12 +4053,12 @@ export default function WorkInjuryCaseModal({
         );
       }
 
-      if (activeTab === 'staff' && editableTabsSet.has('staff') && onSaveAssignment) {
+      if (activeTab === 'staff' && editableTabsSet.has('staff') && onSaveAssignment && assignmentEditable) {
         buttons.push(
           <Button
             key="assignment-reset"
             onClick={handleAssignmentReset}
-            disabled={assignmentSaving || !canEditAssignments}
+            disabled={assignmentSaving || !assignmentEditable}
           >
             重置
           </Button>,
@@ -3432,7 +4067,7 @@ export default function WorkInjuryCaseModal({
             type="primary"
             onClick={() => void handleAssignmentSave()}
             loading={assignmentSaving}
-            disabled={!canEditAssignments}
+            disabled={!assignmentEditable}
           >
             保存人员分配
           </Button>
@@ -3444,7 +4079,7 @@ export default function WorkInjuryCaseModal({
           <Button
             key="hearing-reset"
             onClick={handleHearingReset}
-            disabled={hearingSaving || !canAddHearings || !canAddMoreHearings}
+            disabled={hearingSaving || !canAddHearings}
           >
             重置
           </Button>,
@@ -3453,9 +4088,9 @@ export default function WorkInjuryCaseModal({
             type="primary"
             onClick={() => void handleHearingSave()}
             loading={hearingSaving}
-            disabled={!canAddHearings || !canAddMoreHearings}
+            disabled={!canAddHearings}
           >
-            保存庭审信息
+            {hearingActionText}
           </Button>
         );
       }
@@ -3503,20 +4138,19 @@ export default function WorkInjuryCaseModal({
     },
     [
       activeTab,
+      assignmentEditable,
       assignmentSaving,
       basicInfoSaving,
       canEditBasicInfo,
       canAddFollowUps,
       canAddHearings,
-      canAddMoreHearings,
-      canEditAssignments,
       confirmLoading,
       followUpSaving,
       handleAssignmentReset,
       handleAssignmentSave,
       handleBasicInfoReset,
       handleBasicInfoSave,
-      handleCancel,
+  handleCancelButtonClick,
       handleFollowUpReset,
       handleFollowUpSave,
       handleHearingReset,
@@ -3526,6 +4160,7 @@ export default function WorkInjuryCaseModal({
       handleTimeNodeReset,
       handleTimeNodeSave,
       hasTabChanges,
+      hearingActionText,
       hearingSaving,
       isEditable,
       mainFormSaving,
@@ -3540,7 +4175,8 @@ export default function WorkInjuryCaseModal({
       partiesSaving,
       timeNodeSaving,
       canManageTimeNodes,
-      editableTabsSet
+      editableTabsSet,
+      shouldInlinePartySection
     ]
   );
 

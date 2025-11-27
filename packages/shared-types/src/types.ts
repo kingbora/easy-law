@@ -33,11 +33,11 @@ export const CONTRACT_QUOTE_TYPES = ['fixed', 'risk', 'other'] as const;
 
 export type ContractQuoteType = (typeof CONTRACT_QUOTE_TYPES)[number];
 
-export const LITIGATION_FEE_TYPES = ['advance', 'no_advance', 'reimbursed'] as const;
+export const LITIGATION_FEE_TYPES = ['party_pay', 'law_firm_advance', 'other'] as const;
 
 export type LitigationFeeType = (typeof LITIGATION_FEE_TYPES)[number];
 
-export const TRAVEL_FEE_TYPES = ['lawyer', 'reimbursed', 'no_advance'] as const;
+export const TRAVEL_FEE_TYPES = ['law_firm_advance', 'reimbursed', 'other'] as const;
 
 export type TravelFeeType = (typeof TRAVEL_FEE_TYPES)[number];
 
@@ -61,7 +61,7 @@ export const CASE_TIME_NODE_TYPES = [
 
 export type CaseTimeNodeType = (typeof CASE_TIME_NODE_TYPES)[number];
 
-export const TRIAL_STAGES = ['first_instance', 'second_instance', 'retrial'] as const;
+export const TRIAL_STAGES = ['arbitration', 'first_instance', 'second_instance', 'retrial'] as const;
 
 export type TrialStage = (typeof TRIAL_STAGES)[number];
 
@@ -110,15 +110,24 @@ export interface CaseChangeDetail {
   currentValue: string | null;
 }
 
+export interface CaseChangeListItem {
+  id: string;
+  action: string;
+  field: string | null;
+  fieldLabel: string | null;
+  previousValue: string | null;
+  currentValue: string | null;
+}
+
 export interface CaseChangeLog {
   id: string;
   action: string;
-  description: string | null;
-  changes: CaseChangeDetail[] | null;
+  remark: string | null;
   actorId: string | null;
   actorName: string | null;
   actorRole: UserRole | string | null;
   createdAt: string;
+  changeList: CaseChangeListItem[];
 }
 
 export interface CaseUpdateConflictField {
@@ -180,9 +189,9 @@ export interface CaseRecord {
   caseType: CaseType;
   caseLevel: CaseLevel;
   caseCategory: CaseCategory;
-  provinceCity: string | null;
+  province: string | null;
+  city: string | null;
   targetAmount: string | null;
-  feeStandard: string | null;
   agencyFeeEstimate: string | null;
   dataSource: string | null;
   hasContract: boolean | null;
@@ -238,22 +247,27 @@ export interface CaseRecord {
   hearings: CaseHearingRecord[];
 }
 
+export type CaseResponsibleRole = Extract<UserRole, 'sale' | 'lawyer' | 'assistant'>;
+
+export const CASE_RESPONSIBLE_FILTER_OTHERS = '__others__' as const;
+
+export type CaseResponsibleFilterValue =
+  | `${CaseResponsibleRole}:${string}`
+  | typeof CASE_RESPONSIBLE_FILTER_OTHERS;
+
 export type CaseTableColumnKey =
   | 'caseNumber'
   | 'caseStatus'
   | 'caseType'
   | 'caseLevel'
-  | 'claimantNames'
-  | 'respondentNames'
+  | 'partyNames'
   | 'provinceCity'
-  | 'assignedLawyerName'
-  | 'assignedAssistantName'
-  | 'assignedSaleName'
+  | 'responsibleStaff'
+  | 'collectionAmount'
   | 'contractDate'
   | 'clueDate'
   | 'targetAmount'
   | 'contractForm'
-  | 'insuranceRiskLevel'
   | 'insuranceTypes'
   | 'dataSource'
   | 'entryDate'
@@ -301,6 +315,8 @@ export interface CaseListQuery {
   caseLevel?: CaseLevel;
   caseStatus?: CaseStatus;
   caseId?: string;
+  partyName?: string;
+  responsible?: CaseResponsibleFilterValue;
   search?: string;
   orderBy?: 'createdAt' | 'updatedAt';
   orderDirection?: 'asc' | 'desc';
@@ -355,9 +371,9 @@ export interface CasePayload {
   caseType: CaseType;
   caseLevel: CaseLevel;
   caseCategory?: CaseCategory | null;
-  provinceCity?: string | null;
+  province?: string | null;
+  city?: string | null;
   targetAmount?: string | number | null;
-  feeStandard?: string | null;
   agencyFeeEstimate?: string | number | null;
   dataSource?: string | null;
   hasContract?: boolean | null;
@@ -417,3 +433,16 @@ export interface CaseUpdateRequest {
 }
 
 export interface ListCasesOptions extends CaseListQuery {}
+
+export interface DepartmentMenuConfig {
+  department: UserDepartment;
+  dataSources: string[];
+  trialStages: TrialStage[];
+  updatedBy?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface UpdateDepartmentMenuConfigPayload {
+  dataSources?: string[];
+  trialStages?: TrialStage[];
+}

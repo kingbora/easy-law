@@ -15,3 +15,10 @@ export class BadRequestError extends HttpError {
     this.name = 'BadRequestError';
   }
 }
+
+export class AuthorizationError extends HttpError {
+  constructor(message = 'Forbidden', status = 403, details?: unknown) {
+    super(status, message, details);
+    this.name = 'AuthorizationError';
+  }
+}

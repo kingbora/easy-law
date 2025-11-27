@@ -3,12 +3,8 @@ import type { MessageInstance } from 'antd/es/message/interface';
 
 import { createAppStore } from '@/lib/stores/createStore';
 import { ApiError } from '@/lib/api-client';
-import {
-  updateCase,
-  type CaseRecord,
-  type CaseStatus,
-  type CaseTimelineInput
-} from '@/lib/cases-api';
+import { createCaseCollection, fetchCaseById, updateCase } from '@/lib/cases-api';
+import type { CaseRecord, CaseStatus, CaseTimelineInput } from '@easy-law/shared-types';
 import { useSessionStore } from '@/lib/stores/session-store';
 
 export type CaseStatusUpdatePayload = {
@@ -22,11 +18,16 @@ export type FollowUpPayload = {
   note: string | null;
 };
 
-type OperationType = 'status' | 'followUp' | null;
+type OperationType = 'status' | 'followUp' | 'collection' | null;
 
 export type CaseDetailLaunchOptions = {
   mode?: 'view' | 'update';
   tab?: string;
+};
+
+export type CollectionPayload = {
+  amount: number | null;
+  receivedAt: Dayjs | null;
 };
 
 interface CaseOperationsState {
@@ -36,6 +37,8 @@ interface CaseOperationsState {
   followUpDefaults: FollowUpPayload | null;
   statusSubmitting: boolean;
   followUpSubmitting: boolean;
+  collectionDefaults: CollectionPayload | null;
+  collectionSubmitting: boolean;
   messageApi: MessageInstance | null;
   setMessageApi: (api: MessageInstance | null) => void;
   applyCaseUpdate?: (record: CaseRecord) => void;
@@ -47,10 +50,13 @@ interface CaseOperationsState {
   openCaseDetailExternally: (caseId: string, options?: CaseDetailLaunchOptions) => Promise<void>;
   openStatusModal: (record: CaseRecord) => void;
   openFollowUpModal: (record: CaseRecord) => void;
+  openCollectionModal: (record: CaseRecord) => void;
   closeStatusModal: () => void;
   closeFollowUpModal: () => void;
+  closeCollectionModal: () => void;
   submitStatusUpdate: (payload: CaseStatusUpdatePayload) => Promise<void>;
   submitFollowUp: (payload: FollowUpPayload) => Promise<void>;
+  submitCollection: (payload: CollectionPayload) => Promise<void>;
 }
 
 const formatDayValue = (value?: Dayjs | null): string | null =>
@@ -80,6 +86,8 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
     followUpDefaults: null,
     statusSubmitting: false,
     followUpSubmitting: false,
+  collectionDefaults: null,
+  collectionSubmitting: false,
     messageApi: null,
     setMessageApi(api) {
       set((draft) => {
@@ -130,6 +138,17 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
         draft.followUpSubmitting = false;
       });
     },
+    openCollectionModal(record) {
+      set((draft) => {
+        draft.targetCase = record;
+        draft.activeOperation = 'collection';
+        draft.collectionDefaults = {
+          amount: null,
+          receivedAt: dayjs()
+        };
+        draft.collectionSubmitting = false;
+      });
+    },
     closeStatusModal() {
       set((draft) => {
         if (draft.activeOperation === 'status') {
@@ -146,6 +165,16 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
           draft.activeOperation = null;
           draft.followUpDefaults = null;
           draft.followUpSubmitting = false;
+          draft.targetCase = null;
+        }
+      });
+    },
+    closeCollectionModal() {
+      set((draft) => {
+        if (draft.activeOperation === 'collection') {
+          draft.activeOperation = null;
+          draft.collectionDefaults = null;
+          draft.collectionSubmitting = false;
           draft.targetCase = null;
         }
       });
@@ -232,6 +261,51 @@ export const useWorkInjuryCaseOperationsStore = createAppStore<CaseOperationsSta
         state.messageApi?.error(errorMessage);
         set((draft) => {
           draft.followUpSubmitting = false;
+        });
+      }
+    },
+    async submitCollection(payload) {
+      const state = get();
+      const target = state.targetCase;
+      if (!target) {
+        state.messageApi?.error('未找到案件信息');
+        return;
+      }
+      const amount = payload.amount ?? null;
+      if (amount === null || amount <= 0) {
+        state.messageApi?.error('请输入有效的回款金额');
+        return;
+      }
+      const receivedAtText = payload.receivedAt?.format('YYYY-MM-DD') ?? null;
+      if (!receivedAtText) {
+        state.messageApi?.error('请选择回款日期');
+        return;
+      }
+      set((draft) => {
+        draft.collectionSubmitting = true;
+      });
+      try {
+        await createCaseCollection(target.id, {
+          amount,
+          receivedAt: receivedAtText
+        });
+        const updated = await fetchCaseById(target.id);
+        state.applyCaseUpdate?.(updated);
+        set((draft) => {
+          draft.targetCase = updated;
+          draft.collectionDefaults = {
+            amount: null,
+            receivedAt: dayjs(receivedAtText)
+          };
+          draft.activeOperation = null;
+          draft.collectionSubmitting = false;
+        });
+        state.messageApi?.success('回款记录已新增');
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : '新增回款记录失败，请稍后重试';
+        state.messageApi?.error(errorMessage);
+        set((draft) => {
+          draft.collectionSubmitting = false;
         });
       }
     }

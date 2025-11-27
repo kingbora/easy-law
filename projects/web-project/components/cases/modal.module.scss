@@ -117,3 +117,122 @@
 .statusSelect {
   min-width: 128px;
 }
+
+.changeLogActorCell {
+  display: inline-flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.changeEntry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.changeEntryTitle {
+  font-size: 14px;
+  color: #1f1f1f;
+  margin-bottom: 2px;
+}
+
+.changeContentList {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.changeLine {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.changeLineBody {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.changeLineLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f1f1f;
+}
+
+.changeLineColon {
+  color: #8c8c8c;
+}
+
+.changeValueFlow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.changeValueTag {
+  font-size: 13px;
+  line-height: 24px;
+  padding: 0 10px;
+}
+
+.changeInfoText {
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
+.changeArrow {
+  color: #bfbfbf;
+  font-size: 14px;
+}
+
+.remarkDisplay {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.remarkTextRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.remarkText {
+  margin-bottom: 0;
+  white-space: pre-wrap;
+  flex: 1;
+}
+
+.remarkEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.remarkActions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.remarkIconButton {
+  padding: 0;
+  min-width: 0;
+  height: 24px;
+  width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1677ff;
+
+  :global(.ant-btn-icon) {
+    font-size: 14px;
+    line-height: 1;
+  }
+}

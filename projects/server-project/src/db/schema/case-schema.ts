@@ -1,3 +1,4 @@
+import type { CaseChangeListItem } from '@easy-law/shared-types';
 import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
@@ -15,19 +16,12 @@ import {
 
 import { departmentEnum, users } from './auth-schema';
 
-export interface CaseChangeDetail {
-  field: string;
-  label: string;
-  previousValue: string | null;
-  currentValue: string | null;
-}
-
 export const caseTypeEnum = pgEnum('case_type', ['work_injury', 'personal_injury', 'other']);
 export const caseLevelEnum = pgEnum('case_level', ['A', 'B', 'C']);
 export const participantRoleEnum = pgEnum('case_participant_role', ['claimant', 'respondent']);
 export const participantEntityEnum = pgEnum('case_participant_entity', ['personal', 'organization']);
 export const caseStatusEnum = pgEnum('case_status', ['open', 'closed', 'void']);
-export const trialStageEnum = pgEnum('case_trial_stage', ['first_instance', 'second_instance', 'retrial']);
+export const trialStageEnum = pgEnum('case_trial_stage', ['arbitration', 'first_instance', 'second_instance', 'retrial']);
 export const caseTimeNodeTypeEnum = pgEnum('case_time_node_type', [
   'apply_employment_confirmation',
   'labor_arbitration_decision',
@@ -44,8 +38,8 @@ export const caseTimeNodeTypeEnum = pgEnum('case_time_node_type', [
 
 export const caseCategoryEnum = pgEnum('case_category', ['work_injury', 'insurance']);
 export const contractQuoteTypeEnum = pgEnum('contract_quote_type', ['fixed', 'risk', 'other']);
-export const litigationFeeTypeEnum = pgEnum('litigation_fee_type', ['advance', 'no_advance', 'reimbursed']);
-export const travelFeeTypeEnum = pgEnum('travel_fee_type', ['lawyer', 'reimbursed', 'no_advance']);
+export const litigationFeeTypeEnum = pgEnum('litigation_fee_type', ['party_pay', 'law_firm_advance', 'other']);
+export const travelFeeTypeEnum = pgEnum('travel_fee_type', ['law_firm_advance', 'reimbursed', 'other']);
 export const contractFormEnum = pgEnum('contract_form_type', ['electronic', 'paper']);
 
 export const cases = pgTable('case_record', {
@@ -53,9 +47,9 @@ export const cases = pgTable('case_record', {
   caseType: caseTypeEnum('case_type').notNull(), // 案件类型
   caseLevel: caseLevelEnum('case_level').notNull(), // 案件级别
   caseCategory: caseCategoryEnum('case_category').notNull().default('work_injury'), // 案件类别
-  provinceCity: text('province_city'), // 省份/城市
-  targetAmount: text('target_amount'), // 标的额
-  feeStandard: text('fee_standard'), // 收费标准
+  province: text('province'), // 省份
+  city: text('city'), // 城市
+  targetAmount: text('target_amount'), // 案件标的
   agencyFeeEstimate: text('agency_fee_estimate'), // 预估代理费
   dataSource: text('data_source'), // 数据来源
   hasContract: boolean('has_contract'), // 是否有合同
@@ -186,10 +180,8 @@ export const caseChangeLogs = pgTable('case_change_log', {
   actorName: text('actor_name'),
   actorRole: text('actor_role'),
   action: text('action').notNull(),
-  description: text('description'),
-  changes: jsonb('changes')
-    .$type<CaseChangeDetail[] | null>()
-    .default(sql`'[]'::jsonb`),
+  changeList: jsonb('change_list').$type<CaseChangeListItem[]>().notNull().default(sql`'[]'::jsonb`),
+  remark: text('remark'),
   createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
@@ -210,6 +202,22 @@ export const caseTablePreferences = pgTable(
       table.userId,
       table.tableKey
     )
+  })
+);
+
+export const departmentMenuConfigs = pgTable(
+  'department_menu_config',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    department: departmentEnum('department').notNull(),
+    dataSources: jsonb('data_sources').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    trialStages: jsonb('trial_stages').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull()
+  },
+  (table) => ({
+    departmentUnique: uniqueIndex('department_menu_config_department_ui').on(table.department)
   })
 );
 

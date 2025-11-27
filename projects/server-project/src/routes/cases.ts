@@ -5,6 +5,7 @@ import {
   createCaseCollection,
   deleteCase,
   getAssignableStaff,
+  getResponsibleStaffOptions,
   getCaseTablePreferences,
   getCaseById,
   getCaseHearings,
@@ -13,7 +14,8 @@ import {
   CaseUpdateConflictError,
   updateCaseTablePreferences,
   updateCase,
-  updateCaseTimeNodes
+  updateCaseTimeNodes,
+  updateCaseChangeLogRemark
 } from '../services/cases-service';
 import { asyncHandler } from '../utils/async-handler';
 
@@ -65,6 +67,17 @@ router.get(
 );
 
 router.get(
+  '/responsible-staff',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+    const query = sanitizeQueryParams(req.query);
+    const department = typeof query.department === 'string' ? query.department : undefined;
+    const result = await getResponsibleStaffOptions(session.user, department);
+    res.json({ data: result });
+  })
+);
+
+router.get(
   '/column-preferences',
   asyncHandler(async (req, res) => {
     const session = req.sessionContext!;
@@ -104,6 +117,23 @@ router.get(
     }
 
     res.json({ data: logs });
+  })
+);
+
+router.put(
+  '/:caseId/change-logs/:logId/remark',
+  asyncHandler(async (req, res) => {
+    const session = req.sessionContext!;
+    const remark = typeof req.body?.remark === 'string' ? req.body.remark : null;
+
+    const updated = await updateCaseChangeLogRemark(req.params.caseId, req.params.logId, remark, session.user);
+
+    if (!updated) {
+      res.status(404).json({ message: 'Change log not found' });
+      return;
+    }
+
+    res.json({ data: updated });
   })
 );
 

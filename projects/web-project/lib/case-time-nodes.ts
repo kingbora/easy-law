@@ -20,7 +20,7 @@ export const CASE_TIME_NODE_DEFINITIONS: ReadonlyArray<CaseTimeNodeDefinition> =
   { type: 'insurance_arbitration_decision', label: '工伤保险待遇裁决时间', departments: ['work_injury'] },
   { type: 'file_lawsuit', label: '起诉立案', departments: ['work_injury', 'insurance'] },
   { type: 'lawsuit_review_approved', label: '立案审核通过', departments: ['work_injury', 'insurance'] },
-  { type: 'final_judgement', label: '裁决时间', departments: ['work_injury', 'insurance'] }
+  { type: 'final_judgement', label: '裁判时间', departments: ['work_injury', 'insurance'] }
 ];
 
 const isDefinitionSupported = (definition: CaseTimeNodeDefinition, department?: UserDepartment | null) => {
